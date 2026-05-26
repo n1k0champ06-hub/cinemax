@@ -293,7 +293,7 @@ export const useMovieDetail = (rawSlug: string) => {
   useEffect(() => {
     if (servers && servers.length > 0) {
       const isNewSlug = slug !== prevSlugRef.current;
-      const isInvalidIndex = selectedServerId < 0 || selectedServerId >= servers.length;
+      const isInvalidIndex = selectedServerId < 0;
       
       if (isNewSlug || isInvalidIndex) {
         prevSlugRef.current = slug;

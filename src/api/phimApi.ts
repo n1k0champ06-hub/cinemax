@@ -1,3 +1,13 @@
+const getNguonCUrl = (url: string) => {
+  if (typeof window !== 'undefined') {
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      return `/api/nguonc-proxy?url=${encodeURIComponent(url)}`;
+    }
+    return `https://focusflow.id.vn/api/nguonc-proxy?url=${encodeURIComponent(url)}`;
+  }
+  return url;
+};
+
 export const fetchMultiSource = async (type: string, page: number = 1) => {
   const isNew = type === 'phim-moi-cap-nhat';
   const isCategory = type.startsWith('the-loai/') || type.startsWith('quoc-gia/');
@@ -32,7 +42,7 @@ export const fetchMultiSource = async (type: string, page: number = 1) => {
     { name: 'KKPhim1', url: `https://phimapi.com/${path1}` },
     { name: 'KKPhim2', url: `https://phimapi.com/${path2}` },
     { name: 'OPhim', url: `https://ophim1.com/${path1}` },
-    { name: 'NguonC', url: nguonCUrl }
+    { name: 'NguonC', url: getNguonCUrl(nguonCUrl) }
   ];
 
   const results = await Promise.allSettled(sources.map(s => fetch(s.url).then(r => r.json()).then(data => ({ sourceName: s.name, data }))));
@@ -91,7 +101,7 @@ export const fetchSearch = async (keyword: string) => {
   const sources = [
     { name: 'KKPhim', url: `https://phimapi.com/v1/api/tim-kiem?keyword=${encodedKw}&limit=30` },
     { name: 'OPhim', url: `https://ophim1.com/v1/api/tim-kiem?keyword=${encodedKw}&limit=30` },
-    { name: 'NguonC', url: `https://phim.nguonc.com/api/films/search?keyword=${encodedKw}` }
+    { name: 'NguonC', url: getNguonCUrl(`https://phim.nguonc.com/api/films/search?keyword=${encodedKw}`) }
   ];
 
   const results = await Promise.allSettled(
@@ -172,7 +182,7 @@ const findAlternativeSlug = async (sourceName: string, title: string, originTitl
     const encodedKw = encodeURIComponent(keyword);
 
     if (sourceName === 'NguonC') {
-      searchUrl = `https://phim.nguonc.com/api/films/search?keyword=${encodedKw}`;
+      searchUrl = getNguonCUrl(`https://phim.nguonc.com/api/films/search?keyword=${encodedKw}`);
     } else if (sourceName === 'OPhim') {
       searchUrl = `https://ophim1.com/v1/api/tim-kiem?keyword=${encodedKw}&limit=10`;
     } else {
@@ -230,7 +240,7 @@ export const fetchDetail = async (slug: string) => {
   const sources = [
     { name: 'OPhim', url: `https://ophim1.com/phim/${slug}` },
     { name: 'KKPhim', url: `https://phimapi.com/phim/${slug}` },
-    { name: 'NguonC', url: `https://phim.nguonc.com/api/film/${slug}` }
+    { name: 'NguonC', url: getNguonCUrl(`https://phim.nguonc.com/api/film/${slug}`) }
   ];
   
   const results = await Promise.allSettled(
@@ -283,7 +293,7 @@ export const fetchDetail = async (slug: string) => {
         let altUrl = '';
         if (sourceName === 'OPhim') altUrl = `https://ophim1.com/phim/${altSlug}`;
         else if (sourceName === 'KKPhim') altUrl = `https://phimapi.com/phim/${altSlug}`;
-        else altUrl = `https://phim.nguonc.com/api/film/${altSlug}`;
+        else altUrl = getNguonCUrl(`https://phim.nguonc.com/api/film/${altSlug}`);
 
         const res = await fetchWithTimeout(altUrl, {}, 8000);
         const data = await res.json();
