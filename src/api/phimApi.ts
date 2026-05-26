@@ -316,7 +316,7 @@ export const fetchDetail = async (slug: string) => {
     const statusObj = serverResultsMap[s.name];
     if (statusObj.success && statusObj.data) {
       const v = statusObj.data;
-      const eps = v.episodes || v.items;
+      const eps = v.episodes || v.items || v.movie?.episodes;
       if (Array.isArray(eps) && eps.length > 0) {
         eps.forEach((ep: any) => {
           let server_data = ep.server_data;

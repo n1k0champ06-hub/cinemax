@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -308,9 +308,10 @@ export const MovieDetail = ({
     staleTime: 1000 * 60 * 60 * 24 // 24h
   });
 
-  let currentServers = servers;
-  if (isTv && seasonServerData && seasonServerData.length > 0) {
-     currentServers = seasonServerData.map((s: any) => {
+  const currentServers = useMemo(() => {
+    let list = servers;
+    if (isTv && seasonServerData && seasonServerData.length > 0) {
+      list = seasonServerData.map((s: any) => {
         let newName = s.server_name;
         const lowerName = s.server_name?.toLowerCase() || '';
         if (lowerName.includes("châu âu")) newName = "VIP (Mượt) - " + s.server_name;
@@ -320,34 +321,36 @@ export const MovieDetail = ({
            ...s,
            server_name: newName || s.server_name
         };
-     });
-     
-     // Thêm CinemaOS vào currentServers cho TV series
-     if (finalTmdbData?.id) {
-         let baseEps = currentServers[0]?.server_data || [];
-         if (baseEps.length === 0) {
-             const epCount = finalTmdbData.number_of_episodes || 1;
-             baseEps = Array.from({length: Math.min(epCount, 50)}).map((_, i) => ({
-                 name: `${i + 1}`,
-                 filename: `Tập ${i + 1}`
-             }));
-         }
-         const cinemaosServerData = baseEps.map((ep: any, index: number) => {
-            const epNum = parseInt(ep.name) || (index + 1);
-            return {
-                ...ep,
-                link_embed: `https://cinemaos.tech/player/${finalTmdbData.id}/${currentSeason}/${epNum}?theme=ffffff&autoPlay=true`,
-                link_m3u8: ""
-            }
-         });
-         if (cinemaosServerData.length > 0) {
-             currentServers.push({
-                 server_name: "VIP Server (CinemaOS)",
-                 server_data: cinemaosServerData
-             });
-         }
-     }
-  }
+      });
+      
+      // Thêm CinemaOS vào currentServers cho TV series
+      if (finalTmdbData?.id) {
+          let baseEps = list[0]?.server_data || [];
+          if (baseEps.length === 0) {
+              const epCount = finalTmdbData.number_of_episodes || 1;
+              baseEps = Array.from({length: Math.min(epCount, 50)}).map((_, i) => ({
+                  name: `${i + 1}`,
+                  filename: `Tập ${i + 1}`
+              }));
+          }
+          const cinemaosServerData = baseEps.map((ep: any, index: number) => {
+             const epNum = parseInt(ep.name) || (index + 1);
+             return {
+                 ...ep,
+                 link_embed: `https://cinemaos.tech/player/${finalTmdbData.id}/${currentSeason}/${epNum}?theme=ffffff&autoPlay=true`,
+                 link_m3u8: ""
+             }
+          });
+          if (cinemaosServerData.length > 0) {
+              list = [...list, {
+                  server_name: "VIP Server (CinemaOS)",
+                  server_data: cinemaosServerData
+              }];
+          }
+      }
+    }
+    return list;
+  }, [servers, isTv, seasonServerData, finalTmdbData?.id, currentSeason]);
 
   // Sync player states to URL query parameters
   useEffect(() => {
@@ -452,7 +455,8 @@ export const MovieDetail = ({
     if (isPlaying) return;
 
     if (targetServerIdx !== -1) {
-      const selectedServer = seasonServerData[targetServerIdx];
+      const selectedServer = currentServers[targetServerIdx];
+      if (!selectedServer) return;
       // Check URL query parameter first
       const params = new URLSearchParams(window.location.search);
       const urlEp = params.get("ep");
@@ -489,7 +493,7 @@ export const MovieDetail = ({
       setActiveEp(matchedEp || selectedServer.server_data[0]);
       setActiveEpSeason(currentSeason || 1);
     }
-  }, [currentSeason, seasonServerData, isTv, setActiveEp, setSelectedServerId, slug, isPlaying]);
+  }, [currentSeason, seasonServerData, currentServers, isTv, setActiveEp, setSelectedServerId, slug, isPlaying]);
 
   const parseEpNum = (epNumberStr: string | undefined | null) => {
     if (!epNumberStr) return NaN;
