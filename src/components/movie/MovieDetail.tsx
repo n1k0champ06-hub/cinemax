@@ -427,18 +427,23 @@ export const MovieDetail = ({
     if (seasonServerData === lastProcessedSeasonDataRef.current) return;
     lastProcessedSeasonDataRef.current = seasonServerData;
 
-    // 1. Always find the best server for this season's data
-    let targetServerIdx = seasonServerData.findIndex((s: any) => 
-      s.server_data?.length > 0 && 
-      s.status !== 'empty' && 
-      s.status !== 'error' && 
-      !s.server_name.toLowerCase().includes("cinemaos")
-    );
-    if (targetServerIdx === -1) {
-      targetServerIdx = seasonServerData.findIndex((s: any) => s.server_data?.length > 0);
-    }
-    if (targetServerIdx !== -1) {
-      setSelectedServerId(targetServerIdx);
+    // 1. Only find the best server automatically if the player is NOT actively playing
+    let targetServerIdx = -1;
+    if (!isPlaying) {
+      targetServerIdx = seasonServerData.findIndex((s: any) => 
+        s.server_data?.length > 0 && 
+        s.status !== 'empty' && 
+        s.status !== 'error' && 
+        !s.server_name.toLowerCase().includes("cinemaos")
+      );
+      if (targetServerIdx === -1) {
+        targetServerIdx = seasonServerData.findIndex((s: any) => s.server_data?.length > 0);
+      }
+      if (targetServerIdx !== -1) {
+        setSelectedServerId(targetServerIdx);
+      }
+    } else {
+      targetServerIdx = selectedServerId;
     }
 
     // 2. Only auto-select an episode when the player is NOT actively playing.
@@ -735,8 +740,6 @@ export const MovieDetail = ({
                       const isSelected = selectedServerId === idx;
                       const isFailed = srv.status === 'empty' || srv.status === 'error';
                       
-                      if (isFailed) return null; // Don't show failed/empty sources
-                      
                       // Map formatted server name: "Ophim - Vietsub", "KKphim - Vietsub", "CinemaOS - VIP"
                       let cleanName = "CinemaOS - VIP";
                       if (!srv.server_name.includes("CinemaOS")) {
@@ -768,27 +771,45 @@ export const MovieDetail = ({
                               setActiveEp(matchingEp);
                             } else if (srvEps[0]) {
                               setActiveEp(srvEps[0]);
+                            } else {
+                              const fallbackEpNum = getEpisodeNumber(activeEpName) || 1;
+                              const fallbackEp = {
+                                name: activeEpName,
+                                filename: `Tập ${activeEpName}`,
+                                link_embed: `https://cinemaos.tech/player/${finalTmdbData?.id}/${currentSeason}/${fallbackEpNum}?theme=ffffff&autoPlay=true`,
+                                link_m3u8: ""
+                              };
+                              setActiveEp(fallbackEp);
                             }
                           }}
                           className={cn(
                             "w-full px-4 py-3.5 rounded-xl text-xs font-extrabold transition-all duration-200 border flex items-center justify-between cursor-pointer active:scale-[0.99] select-none outline-none",
                             isSelected 
                               ? "bg-[#E50914] text-white border-transparent shadow-md shadow-red-500/10" 
-                              : "bg-black hover:bg-neutral-900/40 text-gray-300 border-white/5 hover:border-white/10"
+                              : "bg-black hover:bg-neutral-900/40 text-gray-300 border-white/5 hover:border-white/10",
+                            isFailed && !isSelected && "opacity-60"
                           )}
                         >
                           <div className="flex items-center gap-3">
                             <span className={cn(
                               "w-2 h-2 rounded-full",
-                              isSelected ? "bg-white" : "bg-red-500/80 animate-pulse"
+                              isSelected 
+                                ? "bg-white" 
+                                : isFailed 
+                                  ? "bg-neutral-600" 
+                                  : "bg-red-500/80 animate-pulse"
                             )} />
                             <span>{cleanName}</span>
                           </div>
                           <span className={cn(
                             "text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded",
-                            isSelected ? "bg-white/20 text-white" : "bg-white/5 text-gray-500"
+                            isSelected 
+                              ? "bg-white/20 text-white" 
+                              : isFailed 
+                                ? "bg-white/5 text-gray-600" 
+                                : "bg-white/5 text-gray-500"
                           )}>
-                            {srv.server_name.includes("CinemaOS") ? "VIP" : "FAST"}
+                            {srv.server_name.includes("CinemaOS") ? "VIP" : isFailed ? "ERR/EMPTY" : "FAST"}
                           </span>
                         </button>
                       );
