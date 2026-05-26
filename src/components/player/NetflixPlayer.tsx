@@ -284,9 +284,13 @@ export const NetflixPlayer = ({
     
     if (Hls.isSupported() && url) {
       hls = new Hls({ 
-        maxBufferLength: 30,
+        maxBufferLength: 10,
+        maxMaxBufferLength: 20,
+        maxBufferSize: 15 * 1000 * 1000,
         enableWorker: true,
-        lowLatencyMode: true
+        lowLatencyMode: true,
+        capLevelToPlayerSize: true,
+        backBufferLength: 10
       });
       hlsRef.current = hls;
       hls.loadSource(url);

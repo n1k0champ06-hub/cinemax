@@ -189,7 +189,7 @@ const findAlternativeSlug = async (sourceName: string, title: string, originTitl
       searchUrl = `https://phimapi.com/v1/api/tim-kiem?keyword=${encodedKw}&limit=10`;
     }
 
-    const res = await fetchWithTimeout(searchUrl, {}, 8000);
+    const res = await fetchWithTimeout(searchUrl, {}, 2500);
     const v = await res.json();
     
     let items: any[] = [];
@@ -245,7 +245,7 @@ export const fetchDetail = async (slug: string) => {
   
   const results = await Promise.allSettled(
     sources.map(s => 
-      fetchWithTimeout(s.url, {}, 5000)
+      fetchWithTimeout(s.url, {}, 3000)
         .then(r => r.json())
         .then(data => ({ sourceName: s.name, data }))
     )
@@ -295,7 +295,7 @@ export const fetchDetail = async (slug: string) => {
         else if (sourceName === 'KKPhim') altUrl = `https://phimapi.com/phim/${altSlug}`;
         else altUrl = getNguonCUrl(`https://phim.nguonc.com/api/film/${altSlug}`);
 
-        const res = await fetchWithTimeout(altUrl, {}, 8000);
+        const res = await fetchWithTimeout(altUrl, {}, 2500);
         const data = await res.json();
         if ((data.status === true || data.status === "success" || data.movie || data.film) && (data.movie || data.film)) {
           serverResultsMap[sourceName] = { success: true, data };

@@ -800,8 +800,8 @@ export const MovieDetail = ({
                               isSelected 
                                 ? "bg-white" 
                                 : isFailed 
-                                  ? "bg-neutral-600" 
-                                  : "bg-red-500/80 animate-pulse"
+                                  ? "bg-red-500" 
+                                  : "bg-green-500/80 animate-pulse"
                             )} />
                             <span>{cleanName}</span>
                           </div>
@@ -810,7 +810,7 @@ export const MovieDetail = ({
                             isSelected 
                               ? "bg-white/20 text-white" 
                               : isFailed 
-                                ? "bg-white/5 text-gray-600" 
+                                ? "bg-red-950/30 text-red-500 border border-red-500/10" 
                                 : "bg-white/5 text-gray-500"
                           )}>
                             {srv.server_name.includes("CinemaOS") ? "VIP" : isFailed ? "ERR/EMPTY" : "FAST"}
