@@ -3,6 +3,8 @@ import { motion } from 'framer-motion';
 import { X, Play, Calendar, Star } from 'lucide-react';
 import { SafeImage } from '../ui/ImageShimmer';
 import { useTmdbCollection } from '../../hooks/useTmdb';
+import { useQuery } from '@tanstack/react-query';
+import { fetchTmdb } from '../../api/tmdbApi';
 
 export const MovieCollectionPage = ({
   collectionId,
@@ -16,6 +18,51 @@ export const MovieCollectionPage = ({
   onSelectMovie: (slug: string) => void;
 }) => {
   const { data: collectionData } = useTmdbCollection(collectionId);
+
+  // Fetch the collection in English for language fallbacks (e.g. Japanese/non-Latin titles)
+  const { data: collectionDataEn } = useQuery({
+    queryKey: ['tmdb', 'collection', collectionId, 'en'],
+    queryFn: () => fetchTmdb(`/collection/${collectionId}`, { language: 'en' }),
+    enabled: !!collectionId
+  });
+
+  const enTitleMap = React.useMemo(() => {
+    const map = new Map<number, string>();
+    if (collectionDataEn?.parts) {
+      collectionDataEn.parts.forEach((p: any) => {
+        map.set(p.id, p.title || p.name);
+      });
+    }
+    return map;
+  }, [collectionDataEn]);
+
+  const isLatin = (str: string): boolean => {
+    if (!str) return false;
+    // Standard Latin characters including Vietnamese diacritics
+    return /^[a-zA-Z0-9\s\-\:\(\)\[\]\+\&\'\.\,\!\?ÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂÂÊÔƠưăâêôơ]*$/.test(str);
+  };
+
+  const getMovieTitle = (movie: any) => {
+    const defaultTitle = movie.title || movie.name || '';
+    if (!isLatin(defaultTitle)) {
+      const enTitle = enTitleMap.get(movie.id);
+      if (enTitle && isLatin(enTitle)) {
+        return enTitle;
+      }
+    }
+    return defaultTitle;
+  };
+
+  const getCollectionName = () => {
+    const defaultName = collectionData?.name || "Danh Sách Bộ Sưu Tập";
+    if (defaultName !== "Danh Sách Bộ Sưu Tập" && !isLatin(defaultName)) {
+      const enName = collectionDataEn?.name;
+      if (enName && isLatin(enName)) {
+        return enName;
+      }
+    }
+    return defaultName;
+  };
 
   const parts = collectionData?.parts ? [...collectionData.parts].sort((a, b) => {
     return new Date(a.release_date || 0).getTime() - new Date(b.release_date || 0).getTime();
@@ -55,8 +102,8 @@ export const MovieCollectionPage = ({
           <span className="text-[10px] sm:text-[11px] font-black uppercase text-[#ff2e35] tracking-[0.3em] mb-2.5 block select-none">
             Đại Diện Bản Quyền • Loạt Phim Trọn Bộ
           </span>
-          <h1 className="text-3xl sm:text-5xl md:text-6xl font-black text-white tracking-tighter mb-4 leading-none uppercase select-none">
-            {collectionData?.name || "Danh Sách Bộ Sưu Tập"}
+          <h1 className="text-3xl sm:text-5xl md:text-6xl font-black text-white tracking-tighter mb-4 leading-tight uppercase select-none">
+            {getCollectionName()}
           </h1>
           <div className="w-16 h-[3px] bg-[#ff2e35] mb-5 rounded-full" />
           <p className="text-gray-400 text-sm sm:text-base leading-relaxed max-w-2xl font-semibold opacity-90">
@@ -69,6 +116,7 @@ export const MovieCollectionPage = ({
            {parts.map((movie: any) => {
              const posterUrl = movie.poster_path ? (movie.poster_path.startsWith('http') ? movie.poster_path : `https://image.tmdb.org/t/p/w342/${movie.poster_path.split('/').pop()}`) : null;
              const year = movie.release_date ? movie.release_date.split('-')[0] : '';
+             const movieTitle = getMovieTitle(movie);
              
              return (
                <div 
@@ -80,9 +128,9 @@ export const MovieCollectionPage = ({
                  {/* Compact Columnized Poster on Left */}
                  <div className="w-[80px] sm:w-[110px] md:w-[130px] shrink-0 rounded-xl overflow-hidden aspect-[2/3] bg-black/40 relative border border-white/[0.08] group-hover:border-[#ff2e35]/40 transition-all duration-300 shadow-md">
                    {posterUrl ? (
-                     <SafeImage src={posterUrl} alt={movie.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                     <SafeImage src={posterUrl} alt={movieTitle} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
                    ) : (
-                     <div className="w-full h-full flex items-center justify-center text-gray-600 font-bold p-3 text-center text-xs select-none">{movie.title}</div>
+                     <div className="w-full h-full flex items-center justify-center text-gray-600 font-bold p-3 text-center text-xs select-none">{movieTitle}</div>
                    )}
                    <div className="absolute inset-0 bg-[#ff2e35]/15 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
                       <div className="bg-[#ff2e35] text-white rounded-full p-2.5 sm:p-3.5 shadow-lg transform scale-90 group-hover:scale-100 transition-transform duration-300">
@@ -95,7 +143,7 @@ export const MovieCollectionPage = ({
                  <div className="flex-1 min-w-0 flex flex-col justify-center py-1">
                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                      <h3 className="text-base sm:text-xl md:text-2xl font-extrabold text-white group-hover:text-[#ff2e35] transition-colors leading-tight truncate pr-2 w-full">
-                       {movie.title}
+                       {movieTitle}
                      </h3>
                    </div>
                    

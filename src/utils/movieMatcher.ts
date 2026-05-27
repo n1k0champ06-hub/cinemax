@@ -30,43 +30,76 @@ export const setResolvedSlug = (originalId: string, resolvedSlug: string) => {
   resolvedSlugCache.set(originalId, resolvedSlug);
 };
 
+const getNonNumericWords = (str: string): string[] => {
+  return cleanString(str)
+    .split(' ')
+    .filter(Boolean)
+    .filter(w => !/^\d+$/.test(w));
+};
+
 export const getWordIntersectionRatio = (str1: string, str2: string): number => {
-  const words1 = cleanString(str1).split(' ').filter(Boolean);
-  const words2 = cleanString(str2).split(' ').filter(Boolean);
+  const words1 = getNonNumericWords(str1);
+  const words2 = getNonNumericWords(str2);
   if (words1.length === 0 || words2.length === 0) return 0;
   const set1 = new Set(words1);
   const intersect = words2.filter(w => set1.has(w));
   return intersect.length / Math.min(words1.length, words2.length);
 };
 
+const isTooShortOrNumericForPartial = (s: string) => {
+  return s.length < 3 || /^\d+$/.test(s);
+};
+
 export const computeMatchScore = (
   item: any,
   tmdb: { original_title: string; title: string; year: number; type?: 'movie' | 'tv' }
 ) => {
-  let score = 0;
-  
   const itemCleanedOrigin = stripSeasonAndSuffixes(item.origin_name || item.original_name || '');
   const tmdbCleanedOrigin = stripSeasonAndSuffixes(tmdb.original_title || '');
   
   const itemCleanedName = stripSeasonAndSuffixes(item.name || '');
   const tmdbCleanedName = stripSeasonAndSuffixes(tmdb.title || '');
 
+  const ratio = getWordIntersectionRatio(item.name || '', tmdb.title || '');
+  const ratioOrigin = getWordIntersectionRatio(item.origin_name || item.original_name || '', tmdb.original_title || '');
+
+  // Strict title matching requirement: must share at least one basic title similarity indicator
+  const hasTitleMatch = 
+    (itemCleanedOrigin === tmdbCleanedOrigin && tmdbCleanedOrigin !== '') ||
+    (itemCleanedName === tmdbCleanedName && tmdbCleanedName !== '') ||
+    (itemCleanedName === tmdbCleanedOrigin && tmdbCleanedOrigin !== '') ||
+    (itemCleanedOrigin === tmdbCleanedName && tmdbCleanedName !== '') ||
+    (ratio >= 0.75) ||
+    (ratioOrigin >= 0.75 && tmdb.original_title) ||
+    (itemCleanedOrigin && tmdbCleanedOrigin && !isTooShortOrNumericForPartial(itemCleanedOrigin) && !isTooShortOrNumericForPartial(tmdbCleanedOrigin) && (itemCleanedOrigin.includes(tmdbCleanedOrigin) || tmdbCleanedOrigin.includes(itemCleanedOrigin))) ||
+    (itemCleanedName && tmdbCleanedName && !isTooShortOrNumericForPartial(itemCleanedName) && !isTooShortOrNumericForPartial(tmdbCleanedName) && (itemCleanedName.includes(tmdbCleanedName) || tmdbCleanedName.includes(itemCleanedName)));
+
+  if (!hasTitleMatch) {
+    return 0; // Return 0 immediately if there is absolutely no title resemblance
+  }
+
+  let score = 0;
+  
   // 1. Original title match (highest weight)
   if (itemCleanedOrigin === tmdbCleanedOrigin && tmdbCleanedOrigin !== '') {
     score += 100;
-  } else if (itemCleanedOrigin && tmdbCleanedOrigin && (itemCleanedOrigin.startsWith(tmdbCleanedOrigin) || tmdbCleanedOrigin.startsWith(itemCleanedOrigin))) {
-    score += 40;
-  } else if (itemCleanedOrigin && tmdbCleanedOrigin && (itemCleanedOrigin.includes(tmdbCleanedOrigin) || tmdbCleanedOrigin.includes(itemCleanedOrigin))) {
-    score += 20;
+  } else if (itemCleanedOrigin && tmdbCleanedOrigin && !isTooShortOrNumericForPartial(itemCleanedOrigin) && !isTooShortOrNumericForPartial(tmdbCleanedOrigin)) {
+    if (itemCleanedOrigin.startsWith(tmdbCleanedOrigin) || tmdbCleanedOrigin.startsWith(itemCleanedOrigin)) {
+      score += 40;
+    } else if (itemCleanedOrigin.includes(tmdbCleanedOrigin) || tmdbCleanedOrigin.includes(itemCleanedOrigin)) {
+      score += 20;
+    }
   }
 
   // 2. Localized/Vietnamese title match
   if (itemCleanedName === tmdbCleanedName && tmdbCleanedName !== '') {
     score += 80;
-  } else if (itemCleanedName && tmdbCleanedName && (itemCleanedName.startsWith(tmdbCleanedName) || tmdbCleanedName.startsWith(itemCleanedName))) {
-    score += 30;
-  } else if (itemCleanedName && tmdbCleanedName && (itemCleanedName.includes(tmdbCleanedName) || tmdbCleanedName.includes(itemCleanedName))) {
-    score += 10;
+  } else if (itemCleanedName && tmdbCleanedName && !isTooShortOrNumericForPartial(itemCleanedName) && !isTooShortOrNumericForPartial(tmdbCleanedName)) {
+    if (itemCleanedName.startsWith(tmdbCleanedName) || tmdbCleanedName.startsWith(itemCleanedName)) {
+      score += 30;
+    } else if (itemCleanedName.includes(tmdbCleanedName) || tmdbCleanedName.includes(itemCleanedName)) {
+      score += 10;
+    }
   }
 
   // Swap check (if fields are swapped in API results)
@@ -77,13 +110,11 @@ export const computeMatchScore = (
     score += 70;
   }
 
-  // Word intersection bonus (handles suffix variations gracefully)
-  const nameIntersection = getWordIntersectionRatio(item.name || '', tmdb.title || '');
-  if (nameIntersection >= 0.75) {
+  // Word intersection bonus
+  if (ratio >= 0.75) {
     score += 50;
   }
-  const originIntersection = getWordIntersectionRatio(item.origin_name || item.original_name || '', tmdb.original_title || '');
-  if (originIntersection >= 0.75 && tmdb.original_title) {
+  if (ratioOrigin >= 0.75 && tmdb.original_title) {
     score += 50;
   }
 
