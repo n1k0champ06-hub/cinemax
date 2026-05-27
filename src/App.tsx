@@ -15,6 +15,7 @@ import {
   MyListRow,
 } from "./components/movie/MovieRows";
 import { AnimeRankingRow } from "./components/movie/AnimeRankingRow";
+import { AnimeRow } from "./components/movie/AnimeRow";
 import { MovieDetail } from "./components/movie/MovieDetail";
 import { SearchPage } from "./components/pages/SearchPage";
 import { ListingPage } from "./components/pages/ListingPage";
@@ -205,6 +206,11 @@ export default function App() {
                 <ImdbRow title="Top Phim Thế Giới" type="top250-movies" onSelect={setSelectedMovieSlug} />
                 <ImdbRow title="Phim Bộ Phổ Biến Nhất" type="popular-tv" onSelect={setSelectedMovieSlug} />
                 <AnimeRankingRow onSelect={setSelectedMovieSlug} />
+                <AnimeRow
+                  title="Anime Mới Mùa Này"
+                  type="season-now"
+                  onSelect={setSelectedMovieSlug}
+                />
                 <MovieRow
                   title="Hành Động Kịch Tính"
                   type="the-loai/hanh-dong"
@@ -367,6 +373,16 @@ export default function App() {
                 className="pb-32 mt-4 sm:mt-12 relative z-20 flex flex-col gap-0"
               >
                 <AnimeRankingRow onSelect={setSelectedMovieSlug} />
+                <AnimeRow
+                  title="Anime Mới Mùa Này"
+                  type="season-now"
+                  onSelect={setSelectedMovieSlug}
+                />
+                <AnimeRow
+                  title="Anime Sắp Chiếu"
+                  type="upcoming"
+                  onSelect={setSelectedMovieSlug}
+                />
                 <MovieRow
                   title="Anime Thịnh Hành"
                   type="anime-popular"
