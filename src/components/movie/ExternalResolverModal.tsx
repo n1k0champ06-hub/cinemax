@@ -32,38 +32,46 @@ export const ExternalResolverModal = ({
 
   const { data: tmdbDetail, isLoading: isLoadingTmdb } = useTmdbDetails(tmdbId || 0, tmdbType);
 
-  let primaryTitle = tmdbDetail?.original_title || tmdbDetail?.original_name;
-  let searchTitle = primaryTitle;
-  
-  if (tmdbType === 'tv' && tmdbSeason && tmdbSeason > 1 && searchTitle) {
-      searchTitle = `${searchTitle} Season ${tmdbSeason}`;
+  const isLatin = (str: string): boolean => {
+    if (!str) return false;
+    return /^[a-zA-Z0-9\s\-\:\(\)\[\]\+\&\'\.\,\!\?ÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂÂÊÔƠưăâêôơ]*$/.test(str);
+  };
+
+  const titleLocalized = tmdbDetail?.title || tmdbDetail?.name || '';
+  const titleOriginal = tmdbDetail?.original_title || tmdbDetail?.original_name || '';
+
+  let primarySearchTitle = titleLocalized || titleOriginal;
+  if (tmdbType === 'tv' && tmdbSeason && tmdbSeason > 1 && primarySearchTitle) {
+      primarySearchTitle = `${primarySearchTitle} Season ${tmdbSeason}`;
   }
 
-  const displayTitle = primaryTitle || (tmdbDetail?.title || tmdbDetail?.name);
+  const fallbackSearchTitle = (titleOriginal && titleOriginal !== titleLocalized && isLatin(titleOriginal)) ? titleOriginal : '';
+
+  const displayTitle = titleLocalized || titleOriginal;
 
   // First attempt specific search (e.g. with Season)
   const { data: searchResultsSpecific, isLoading: isLoadingSearchSpecific } = useQuery({
-    queryKey: ['phimapi_search', searchTitle],
-    queryFn: () => fetchSearch(searchTitle || ''),
-    enabled: !!searchTitle,
+    queryKey: ['phimapi_search', primarySearchTitle],
+    queryFn: () => fetchSearch(primarySearchTitle),
+    enabled: !!primarySearchTitle,
   });
 
-  // If specific fails and we added Season, try without Season
-  const shouldTryFallback = searchResultsSpecific && searchResultsSpecific.length === 0 && searchTitle !== primaryTitle;
+  // If specific fails and we have a valid Latin-only original title, try searching with it
+  const shouldTryFallback = !!fallbackSearchTitle && searchResultsSpecific && searchResultsSpecific.length === 0;
   const { data: searchResultsFallback, isLoading: isLoadingSearchFallback } = useQuery({
-    queryKey: ['phimapi_search_fallback', primaryTitle],
-    queryFn: () => fetchSearch(primaryTitle || ''),
-    enabled: !!shouldTryFallback && !!primaryTitle,
+    queryKey: ['phimapi_search_fallback', fallbackSearchTitle],
+    queryFn: () => fetchSearch(fallbackSearchTitle),
+    enabled: shouldTryFallback,
   });
 
-  const searchResults = shouldTryFallback ? searchResultsFallback : searchResultsSpecific;
+  const searchResults = (shouldTryFallback && searchResultsFallback) ? searchResultsFallback : searchResultsSpecific;
   const isLoadingSearch = isLoadingSearchSpecific || isLoadingSearchFallback;
 
   useEffect(() => {
     if (searchResults && searchResults.length > 0) {
       const tmdbInfo = {
-        original_title: tmdbDetail?.original_title || tmdbDetail?.original_name || '',
-        title: tmdbDetail?.title || tmdbDetail?.name || '',
+        original_title: titleOriginal,
+        title: titleLocalized,
         year: parseInt((tmdbDetail?.release_date || tmdbDetail?.first_air_date || '').substring(0, 4)) || 0,
         type: tmdbType
       };
@@ -88,9 +96,9 @@ export const ExternalResolverModal = ({
       setResolvedSlug(id, "resolved-" + id);
       onSelect("resolved-" + id);
     }
-  }, [searchResults, onSelect, id, tmdbDetail]);
+  }, [searchResults, onSelect, id, tmdbDetail, titleOriginal, titleLocalized]);
 
-  const isLoading = isLoadingTmdb || (!!primaryTitle && isLoadingSearch);
+  const isLoading = isLoadingTmdb || (!!primarySearchTitle && isLoadingSearch);
   const notFound = !isLoading && searchResults && searchResults.length === 0;
 
   return (

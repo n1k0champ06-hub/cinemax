@@ -40,6 +40,23 @@ const getEpisodeNumber = (nameStr: string | number | undefined | null): number |
   return isNaN(num) ? null : num;
 };
 
+const isGenericEpisodeName = (name: string | undefined | null, epNum: number | string | undefined | null): boolean => {
+  if (!name) return true;
+  const cleanedName = name.toString().trim().toLowerCase();
+  if (!cleanedName) return true;
+  
+  const numStr = epNum ? epNum.toString() : '';
+  if (cleanedName === numStr) return true;
+  if (cleanedName === `episode ${numStr}`) return true;
+  if (cleanedName === `tập ${numStr}`) return true;
+  
+  const paddedNum = numStr.padStart(2, '0');
+  if (cleanedName === `episode ${paddedNum}`) return true;
+  if (cleanedName === `tập ${paddedNum}`) return true;
+  
+  return false;
+};
+
 const isSameEpisode = (epAName: string | number | undefined | null, epBName: string | number | undefined | null): boolean => {
   if (!epAName || !epBName) return false;
   const numA = getEpisodeNumber(epAName);
@@ -309,24 +326,37 @@ export const MovieDetail = ({
   });
 
   const currentServers = useMemo(() => {
-    let list = servers;
-    if (isTv && seasonServerData && seasonServerData.length > 0) {
-      list = seasonServerData.map((s: any) => {
-        let newName = s.server_name;
-        const lowerName = s.server_name?.toLowerCase() || '';
-        if (lowerName.includes("châu âu")) newName = "VIP (Mượt) - " + s.server_name;
-        else if (lowerName.includes("lồng tiếng") || lowerName.includes("thuyết minh")) newName = "Lồng Tiếng - " + s.server_name;
-        
-        return {
-           ...s,
-           server_name: newName || s.server_name
-        };
-      });
+    if (isTv) {
+      let list: any[] = [];
+      
+      if (seasonServerData && seasonServerData.length > 0) {
+        list = seasonServerData.map((s: any) => {
+          let newName = s.server_name;
+          const lowerName = s.server_name?.toLowerCase() || '';
+          if (lowerName.includes("châu âu")) newName = "VIP (Mượt) - " + s.server_name;
+          else if (lowerName.includes("lồng tiếng") || lowerName.includes("thuyết minh")) newName = "Lồng Tiếng - " + s.server_name;
+          
+          return {
+             ...s,
+             server_name: newName || s.server_name
+          };
+        });
+      } else {
+        // While loading or if empty, we populate with placeholders for KKPhim, OPhim, NguonC
+        list = [
+          { server_name: 'OPhim', server_data: [], status: isFetchingTmdbSeason ? 'loading' : 'empty' },
+          { server_name: 'KKPhim', server_data: [], status: isFetchingTmdbSeason ? 'loading' : 'empty' },
+          { server_name: 'NguonC', server_data: [], status: isFetchingTmdbSeason ? 'loading' : 'empty' }
+        ];
+      }
       
       // Thêm CinemaOS vào currentServers cho TV series
       if (finalTmdbData?.id) {
-          let baseEps = list[0]?.server_data || [];
-          if (baseEps.length === 0) {
+          let baseEps = [];
+          const firstServerWithEps = list.find((s: any) => s.server_data && s.server_data.length > 0);
+          if (firstServerWithEps) {
+              baseEps = firstServerWithEps.server_data;
+          } else {
               const epCount = finalTmdbData.number_of_episodes || 1;
               baseEps = Array.from({length: Math.min(epCount, 50)}).map((_, i) => ({
                   name: `${i + 1}`,
@@ -344,13 +374,31 @@ export const MovieDetail = ({
           if (cinemaosServerData.length > 0) {
               list = [...list, {
                   server_name: "VIP Server (CinemaOS)",
-                  server_data: cinemaosServerData
+                  server_data: cinemaosServerData,
+                  status: 'ok'
               }];
           }
       }
+      return list;
     }
-    return list;
-  }, [servers, isTv, seasonServerData, finalTmdbData?.id, currentSeason]);
+    
+    return servers;
+  }, [servers, isTv, seasonServerData, finalTmdbData?.id, currentSeason, isFetchingTmdbSeason]);
+
+  // Ensure selectedServerId doesn't get out of bounds when list sizes shift dynamically
+  useEffect(() => {
+    if (currentServers && currentServers.length > 0) {
+      if (selectedServerId < 0 || selectedServerId >= currentServers.length) {
+        const firstFastIdx = currentServers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && !s.server_name.includes("CinemaOS"));
+        if (firstFastIdx !== -1) {
+          setSelectedServerId(firstFastIdx);
+        } else {
+          const firstValidIdx = currentServers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error');
+          setSelectedServerId(firstValidIdx !== -1 ? firstValidIdx : 0);
+        }
+      }
+    }
+  }, [currentServers, selectedServerId]);
 
   // Sync player states to URL query parameters
   useEffect(() => {
@@ -1389,7 +1437,7 @@ export const MovieDetail = ({
                                     isSelected ? "text-white" : "text-gray-200"
                                   )}>
                                     {ep.episode_number ? `Tập ${ep.episode_number}` : (ep.name.startsWith("Tập") ? ep.name : `Tập ${ep.name}`)}
-                                    {ep.name && ep.name !== ep.episode_number?.toString() && !ep.name.startsWith("Tập") && (
+                                    {ep.name && !isGenericEpisodeName(ep.name, ep.episode_number) && !ep.name.startsWith("Tập") && (
                                       <span className="font-medium text-gray-400 text-xs ml-1.5 line-clamp-1">— {ep.name}</span>
                                     )}
                                   </h4>
@@ -1470,7 +1518,7 @@ export const MovieDetail = ({
                               
                               <div className="flex flex-col gap-1 px-1">
                                 <h4 className="font-bold text-lg text-white line-clamp-1 group-hover:text-gray-300">
-                                  {ep.episode_number ? `Tập ${ep.episode_number}${ep.name.startsWith("Tập") || ep.name === ep.episode_number.toString() ? "" : `: ${ep.name}`}` : (ep.name.startsWith("Tập") ? ep.name : `Tập ${ep.name}`)}
+                                  {ep.episode_number ? `Tập ${ep.episode_number}${isGenericEpisodeName(ep.name, ep.episode_number) ? "" : `: ${ep.name}`}` : (ep.name.startsWith("Tập") ? ep.name : `Tập ${ep.name}`)}
                                 </h4>
                                 <p className="text-sm text-gray-500 line-clamp-2 leading-relaxed">
                                   {getEpOverview(ep.episode_number ? `${ep.episode_number}` : ep.name, ep.overview) || "Đang cập nhật nội dung cho tập này."}

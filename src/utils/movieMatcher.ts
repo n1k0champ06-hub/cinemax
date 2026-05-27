@@ -30,17 +30,26 @@ export const setResolvedSlug = (originalId: string, resolvedSlug: string) => {
   resolvedSlugCache.set(originalId, resolvedSlug);
 };
 
+export const getWordIntersectionRatio = (str1: string, str2: string): number => {
+  const words1 = cleanString(str1).split(' ').filter(Boolean);
+  const words2 = cleanString(str2).split(' ').filter(Boolean);
+  if (words1.length === 0 || words2.length === 0) return 0;
+  const set1 = new Set(words1);
+  const intersect = words2.filter(w => set1.has(w));
+  return intersect.length / Math.min(words1.length, words2.length);
+};
+
 export const computeMatchScore = (
   item: any,
   tmdb: { original_title: string; title: string; year: number; type?: 'movie' | 'tv' }
 ) => {
   let score = 0;
   
-  const itemCleanedOrigin = stripSeasonAndSuffixes(item.origin_name);
-  const tmdbCleanedOrigin = stripSeasonAndSuffixes(tmdb.original_title);
+  const itemCleanedOrigin = stripSeasonAndSuffixes(item.origin_name || item.original_name || '');
+  const tmdbCleanedOrigin = stripSeasonAndSuffixes(tmdb.original_title || '');
   
-  const itemCleanedName = stripSeasonAndSuffixes(item.name);
-  const tmdbCleanedName = stripSeasonAndSuffixes(tmdb.title);
+  const itemCleanedName = stripSeasonAndSuffixes(item.name || '');
+  const tmdbCleanedName = stripSeasonAndSuffixes(tmdb.title || '');
 
   // 1. Original title match (highest weight)
   if (itemCleanedOrigin === tmdbCleanedOrigin && tmdbCleanedOrigin !== '') {
@@ -66,6 +75,16 @@ export const computeMatchScore = (
   }
   if (itemCleanedOrigin === tmdbCleanedName && tmdbCleanedName !== '') {
     score += 70;
+  }
+
+  // Word intersection bonus (handles suffix variations gracefully)
+  const nameIntersection = getWordIntersectionRatio(item.name || '', tmdb.title || '');
+  if (nameIntersection >= 0.75) {
+    score += 50;
+  }
+  const originIntersection = getWordIntersectionRatio(item.origin_name || item.original_name || '', tmdb.original_title || '');
+  if (originIntersection >= 0.75 && tmdb.original_title) {
+    score += 50;
   }
 
   // 3. Year match

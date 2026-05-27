@@ -258,7 +258,7 @@ export const fetchDetail = async (slug: string) => {
     const sourceName = (res as any).value?.sourceName || ['OPhim', 'KKPhim', 'NguonC'][results.indexOf(res)];
     if (res.status === 'fulfilled' && res.value?.data) {
       const v = res.value.data;
-      const movieObj = v.movie || v.film;
+      const movieObj = v.movie || v.film || v.data?.item;
       const isMovieValid = movieObj && typeof movieObj === 'object' && !Array.isArray(movieObj) && Object.keys(movieObj).length > 0;
       if (isMovieValid) {
         if (!baseMovie) {
@@ -297,7 +297,8 @@ export const fetchDetail = async (slug: string) => {
 
         const res = await fetchWithTimeout(altUrl, {}, 2500);
         const data = await res.json();
-        if ((data.status === true || data.status === "success" || data.movie || data.film) && (data.movie || data.film)) {
+        const movieObj = data.movie || data.film || data.data?.item;
+        if ((data.status === true || data.status === "success" || movieObj) && movieObj) {
           serverResultsMap[sourceName] = { success: true, data };
           console.log(`Successfully resolved alternative slug for ${sourceName}: ${altSlug}`);
         }
@@ -316,7 +317,7 @@ export const fetchDetail = async (slug: string) => {
     const statusObj = serverResultsMap[s.name];
     if (statusObj.success && statusObj.data) {
       const v = statusObj.data;
-      const eps = v.episodes || v.items || v.movie?.episodes;
+      const eps = v.episodes || v.items || v.movie?.episodes || v.data?.item?.episodes;
       if (Array.isArray(eps) && eps.length > 0) {
         eps.forEach((ep: any) => {
           let server_data = ep.server_data;

@@ -227,32 +227,47 @@ export const useMovieDetail = (rawSlug: string) => {
     if (!data?.movie) return [];
     let rawServers = Array.isArray(data.episodes) ? data.episodes : [];
     
-    let processedServers = [];
-    let vietsubCount = 1;
-    processedServers = rawServers.map((s: any) => {
-      let newName = s.server_name;
-      const lowerName = s.server_name.toLowerCase();
-      if (lowerName.includes("châu âu")) newName = "VIP (Mượt) - " + s.server_name;
-      else if (lowerName.includes("lồng tiếng") || lowerName.includes("thuyết minh")) newName = "Lồng Tiếng - " + s.server_name;
-      
-      const sortedData = s.server_data ? [...s.server_data].sort((a: any, b: any) => {
-        const getVal = (x: any) => {
-          if (!x || !x.name) return 0;
-          const nameStr = String(x.name).toLowerCase();
-          if (nameStr === 'full') return 0;
-          const parsed = parseInt(nameStr.replace(/\D/g, ''));
-          return isNaN(parsed) ? 999999 : parsed;
+    const mainNames = ['OPhim', 'KKPhim', 'NguonC'];
+    let processedServers = mainNames.map(name => {
+      const found = rawServers.find((s: any) => s.server_name?.startsWith(name) || s.name === name);
+      if (found) {
+        let newName = found.server_name || found.name;
+        const lowerName = newName.toLowerCase();
+        if (lowerName.includes("châu âu")) newName = "VIP (Mượt) - " + newName;
+        else if (lowerName.includes("lồng tiếng") || lowerName.includes("thuyết minh")) newName = "Lồng Tiếng - " + newName;
+        
+        const sortedData = found.server_data ? [...found.server_data].sort((a: any, b: any) => {
+          const getVal = (x: any) => {
+            if (!x || !x.name) return 0;
+            const nameStr = String(x.name).toLowerCase();
+            if (nameStr === 'full') return 0;
+            const parsed = parseInt(nameStr.replace(/\D/g, ''));
+            return isNaN(parsed) ? 999999 : parsed;
+          };
+          return getVal(a) - getVal(b);
+        }) : [];
+        
+        return {
+          ...found,
+          server_name: newName,
+          server_data: sortedData,
+          status: found.status || (sortedData.length > 0 ? 'ok' : 'empty')
         };
-        return getVal(a) - getVal(b);
-      }) : [];
-
-      return { ...s, server_name: newName, server_data: sortedData, status: s.status || (sortedData.length > 0 ? 'ok' : 'empty') };
+      } else {
+        return {
+          server_name: name,
+          server_data: [],
+          status: 'empty'
+        };
+      }
     });
 
     if (finalTmdbData?.id) {
-       let baseEps = rawServers[0]?.server_data || [];
-       
-       if (baseEps.length === 0) {
+       let baseEps = [];
+       const firstServerWithEps = processedServers.find((s: any) => s.server_data && s.server_data.length > 0);
+       if (firstServerWithEps) {
+           baseEps = firstServerWithEps.server_data;
+       } else {
            if (mediaType === 'movie') {
                baseEps = [{ name: 'Full', filename: 'Full' }];
            } else {
@@ -281,7 +296,8 @@ export const useMovieDetail = (rawSlug: string) => {
         if (cinemaosServerData.length > 0) {
             processedServers.push({
                 server_name: "VIP Server (CinemaOS)",
-                server_data: cinemaosServerData
+                server_data: cinemaosServerData,
+                status: 'ok'
             });
         }
     }
@@ -293,7 +309,7 @@ export const useMovieDetail = (rawSlug: string) => {
   useEffect(() => {
     if (servers && servers.length > 0) {
       const isNewSlug = slug !== prevSlugRef.current;
-      const isInvalidIndex = selectedServerId < 0;
+      const isInvalidIndex = selectedServerId < 0 || selectedServerId >= servers.length;
       
       if (isNewSlug || isInvalidIndex) {
         prevSlugRef.current = slug;
