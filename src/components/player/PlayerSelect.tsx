@@ -67,13 +67,11 @@ export const PlayerSelect = ({ options, value, onChange, activeColor, className 
     };
   }
 
-  // Find dynamic portal target (supporting fullscreen element, netflix-player-container class, or document.body)
+  // Find dynamic portal target (supporting fullscreen element or document.body)
   const getPortalTarget = () => {
     if (typeof document === 'undefined') return null;
     const fsElement = document.fullscreenElement || (document as any).webkitFullscreenElement;
     if (fsElement) return fsElement;
-    const playerContainer = containerRef.current?.closest('.netflix-player-container');
-    if (playerContainer) return playerContainer;
     return document.body;
   };
 

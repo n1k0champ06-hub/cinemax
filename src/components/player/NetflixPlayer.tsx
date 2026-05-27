@@ -129,12 +129,20 @@ export const NetflixPlayer = ({
   const [gestureRight, setGestureRight] = useState<'brightness' | 'volume' | 'disabled'>(() => {
     return (localStorage.getItem('cinemax_gesture_right') as any) || 'volume';
   });
-  const [gestureHorizontal, setGestureHorizontal] = useState<'seek' | 'disabled'>(() => {
-    return (localStorage.getItem('cinemax_gesture_horizontal') as any) || 'seek';
+  const [gestureLeftZone, setGestureLeftZone] = useState<number>(() => {
+    const val = localStorage.getItem('cinemax_gesture_left_zone');
+    return val ? parseInt(val) : 20; // Default 20%
   });
-  const [gestureSplitRatio, setGestureSplitRatio] = useState<number>(() => {
-    const val = localStorage.getItem('cinemax_gesture_split_ratio');
-    return val ? parseFloat(val) : 0.5;
+  const [gestureRightZone, setGestureRightZone] = useState<number>(() => {
+    const val = localStorage.getItem('cinemax_gesture_right_zone');
+    return val ? parseInt(val) : 20; // Default 20%
+  });
+  const [holdToSeekZone, setHoldToSeekZone] = useState<'center' | 'left' | 'right' | 'any'>(() => {
+    return (localStorage.getItem('cinemax_hold_seek_zone') as any) || 'any';
+  });
+  const [holdToSeekDelay, setHoldToSeekDelay] = useState<number>(() => {
+    const val = localStorage.getItem('cinemax_hold_seek_delay');
+    return val ? parseFloat(val) : 0.5; // Default 0.5 seconds
   });
 
   // HLS stream metadata states
@@ -222,11 +230,17 @@ export const NetflixPlayer = ({
     localStorage.setItem('cinemax_gesture_right', gestureRight);
   }, [gestureRight]);
   useEffect(() => {
-    localStorage.setItem('cinemax_gesture_horizontal', gestureHorizontal);
-  }, [gestureHorizontal]);
+    localStorage.setItem('cinemax_gesture_left_zone', gestureLeftZone.toString());
+  }, [gestureLeftZone]);
   useEffect(() => {
-    localStorage.setItem('cinemax_gesture_split_ratio', gestureSplitRatio.toString());
-  }, [gestureSplitRatio]);
+    localStorage.setItem('cinemax_gesture_right_zone', gestureRightZone.toString());
+  }, [gestureRightZone]);
+  useEffect(() => {
+    localStorage.setItem('cinemax_hold_seek_zone', holdToSeekZone);
+  }, [holdToSeekZone]);
+  useEffect(() => {
+    localStorage.setItem('cinemax_hold_seek_delay', holdToSeekDelay.toString());
+  }, [holdToSeekDelay]);
 
   // Handle hls.js level and track extraction
   useEffect(() => {
@@ -782,9 +796,9 @@ export const NetflixPlayer = ({
       const now = Date.now();
       const timeSinceLastTap = now - touchStateRef.current.lastTapTime;
       if (timeSinceLastTap < 300) {
-        // Double tap handled here on mobile
+        // Double tap handled here on mobile (50/50 split)
         const w = window.innerWidth;
-        if (e.touches[0].clientX < w * gestureSplitRatio) {
+        if (e.touches[0].clientX < w * 0.5) {
            // seek rev
            videoRef.current.currentTime -= 10;
            setSeekIndicator('rev');
@@ -799,13 +813,32 @@ export const NetflixPlayer = ({
       } else {
         touchStateRef.current.lastTapTime = now;
         
-        // Long press for 2x
+        // Long press for seek/2x speed fwd
         if (seekTimeoutRef.current) clearTimeout(seekTimeoutRef.current);
-        seekTimeoutRef.current = setTimeout(() => {
-          if (!touchStateRef.current.isSeeking && !touchStateRef.current.isPinching) {
-            handleHoldSpeedStart(e);
-          }
-        }, 500); // 500ms long press
+        
+        const clickX = e.touches[0].clientX;
+        const w = window.innerWidth;
+        
+        let isInsideHoldZone = false;
+        if (holdToSeekZone === 'any') {
+          isInsideHoldZone = true;
+        } else if (holdToSeekZone === 'center') {
+          const leftBoundary = w * (gestureLeftZone / 100);
+          const rightBoundary = w * (1 - gestureRightZone / 100);
+          isInsideHoldZone = clickX >= leftBoundary && clickX <= rightBoundary;
+        } else if (holdToSeekZone === 'left') {
+          isInsideHoldZone = clickX < w * (gestureLeftZone / 100);
+        } else if (holdToSeekZone === 'right') {
+          isInsideHoldZone = clickX > w * (1 - gestureRightZone / 100);
+        }
+
+        if (isInsideHoldZone) {
+          seekTimeoutRef.current = setTimeout(() => {
+            if (!touchStateRef.current.isSeeking && !touchStateRef.current.isPinching) {
+              handleHoldSpeedStart(e);
+            }
+          }, holdToSeekDelay * 1000);
+        }
       }
     }
   };
@@ -841,21 +874,18 @@ export const NetflixPlayer = ({
          }
        }
 
-       if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 20) {
-         // Horizontal Swipe -> Fine Seek
-         if (gestureHorizontal === 'seek') {
-           touchStateRef.current.isSeeking = true;
-           const percentDelta = dx / w;
-           const timeDelta = percentDelta * (videoRef.current.duration || 0) * 0.2; // 20% max seek per swipe
-           const newTime = Math.max(0, touchStateRef.current.startVideoTime + timeDelta);
-           videoRef.current.currentTime = newTime;
-           setSwipeSeekTime(newTime);
-         }
-       } else if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 20 && !touchStateRef.current.isSeeking) {
+       if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 20 && !touchStateRef.current.isSeeking) {
          // Vertical Swipe
          const percentDelta = -(dy / h); // up is negative dy
-         const isLeftSide = touchStateRef.current.startX < w * gestureSplitRatio;
-         const action = isLeftSide ? gestureLeft : gestureRight;
+         const isLeftSide = touchStateRef.current.startX < w * (gestureLeftZone / 100);
+         const isRightSide = touchStateRef.current.startX > w * (1 - gestureRightZone / 100);
+         
+         let action = 'disabled';
+         if (isLeftSide) {
+           action = gestureLeft;
+         } else if (isRightSide) {
+           action = gestureRight;
+         }
          
          if (action === 'brightness') {
            const newBri = Math.max(0.1, Math.min(2.0, touchStateRef.current.startBrightness + percentDelta * 1.5));
@@ -1170,35 +1200,59 @@ export const NetflixPlayer = ({
                       />
                     </div>
 
-                    <div className="px-5 py-2 mt-2 text-[10px] font-bold tracking-wider uppercase text-gray-500">Cử chỉ vuốt ngang</div>
+                    <div className="px-5 py-2 mt-2 border-t border-white/[0.06] pt-2">
+                      <div className="flex justify-between text-sm text-gray-300 mb-2">
+                         <span>Khu vực sát trái (Vuốt dọc)</span>
+                         <span className="font-mono text-xs">{gestureLeftZone}%</span>
+                      </div>
+                      <input 
+                          type="range" min="5" max="45" step="5" 
+                          value={gestureLeftZone} onChange={(e) => setGestureLeftZone(parseInt(e.target.value))}
+                          className="w-full accent-[#E50914] h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+
+                    <div className="px-5 py-2 mt-2">
+                      <div className="flex justify-between text-sm text-gray-300 mb-2">
+                         <span>Khu vực sát phải (Vuốt dọc)</span>
+                         <span className="font-mono text-xs">{gestureRightZone}%</span>
+                      </div>
+                      <input 
+                          type="range" min="5" max="45" step="5" 
+                          value={gestureRightZone} onChange={(e) => setGestureRightZone(parseInt(e.target.value))}
+                          className="w-full accent-[#E50914] h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+
+                    <div className="px-5 py-2 mt-2 text-[10px] font-bold tracking-wider uppercase text-gray-500 border-t border-white/[0.06] pt-3">Đè màn hình để tua nhanh</div>
                     <div className="flex items-center justify-between py-2 px-5 hover:bg-white/5">
-                      <span className="text-sm text-gray-300">Tua thời gian</span>
+                      <span className="text-sm text-gray-300">Vùng kích hoạt đè</span>
                       <PlayerSelect
-                        value={gestureHorizontal}
-                        onChange={(val: any) => setGestureHorizontal(val)}
+                        value={holdToSeekZone}
+                        onChange={(val: any) => setHoldToSeekZone(val)}
                         activeColor={activeColor}
                         options={[
-                          { value: 'seek', label: 'Bật', icon: <FastForward size={14} /> },
-                          { value: 'disabled', label: 'Tắt', icon: <X size={14} /> }
+                          { value: 'any', label: 'Bất kỳ đâu' },
+                          { value: 'center', label: 'Ở giữa' },
+                          { value: 'left', label: 'Sát trái' },
+                          { value: 'right', label: 'Sát phải' }
                         ]}
                       />
                     </div>
 
-                    <div className="px-5 py-2 mt-3 border-t border-white/[0.06] pt-3">
-                      <div className="flex justify-between text-sm text-gray-300 mb-2">
-                         <span>Phân chia vùng vuốt dọc</span>
-                         <span className="font-mono text-xs">{(gestureSplitRatio * 100).toFixed(0)}% / {((1 - gestureSplitRatio) * 100).toFixed(0)}%</span>
-                      </div>
-                      <input 
-                          type="range" min="0.2" max="0.8" step="0.05" 
-                          value={gestureSplitRatio} onChange={(e) => setGestureSplitRatio(parseFloat(e.target.value))}
-                          className="w-full accent-[#E50914] h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                    <div className="flex items-center justify-between py-2 px-5 hover:bg-white/5">
+                      <span className="text-sm text-gray-300">Thời gian đè để tua</span>
+                      <PlayerSelect
+                        value={holdToSeekDelay}
+                        onChange={(val: any) => setHoldToSeekDelay(val)}
+                        activeColor={activeColor}
+                        options={[
+                          { value: 0.5, label: '0.5 giây' },
+                          { value: 1.0, label: '1.0 giây' },
+                          { value: 1.5, label: '1.5 giây' },
+                          { value: 2.0, label: '2.0 giây' }
+                        ]}
                       />
-                      <div className="flex justify-between text-[9px] text-gray-500 mt-1">
-                        <span>Trái 20%</span>
-                        <span>Cân bằng (50%)</span>
-                        <span>Phải 20%</span>
-                      </div>
                     </div>
                   </div>
                 )}
