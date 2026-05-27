@@ -1325,12 +1325,14 @@ export const NetflixPlayer = ({
           style={{
             transform: isFlipped ? 'scaleX(-1)' : 'none',
             objectFit: videoFit === 'fill' ? 'fill' : (videoFit === 'cover' ? 'cover' : 'contain'),
-            aspectRatio: aspectRatio !== 'default' ? aspectRatio.replace('/', ' / ') : 'auto',
+            aspectRatio: (aspectRatio !== 'default' && videoFit === 'contain') ? aspectRatio.replace('/', ' / ') : 'auto',
             filter: `brightness(${brightness})`,
+            width: '100%',
+            height: (aspectRatio === 'default' || videoFit === 'cover' || videoFit === 'fill') ? '100%' : 'auto'
           }}
           className={cn(
             "w-full transition-all duration-350",
-             aspectRatio === 'default' ? "h-full" : "h-auto max-h-full m-auto" 
+             (aspectRatio === 'default' || videoFit === 'cover' || videoFit === 'fill') ? "h-full" : "h-auto max-h-full m-auto" 
           )}
         />
       )}

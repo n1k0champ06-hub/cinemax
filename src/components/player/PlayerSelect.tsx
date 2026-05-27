@@ -96,75 +96,67 @@ export const PlayerSelect = ({ options, value, onChange, activeColor, className 
         <ChevronDown size={12} className="text-gray-400 opacity-80 shrink-0" />
       </button>
 
-      <AnimatePresence>
-        {isOpen && portalTarget && createPortal(
-          <>
-            {/* Transparent backdrop to handle click outside */}
-            <div 
-              className="fixed inset-0 z-[999998] bg-transparent cursor-default"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsOpen(false);
-              }}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                setIsOpen(false);
-              }}
-              onTouchStart={(e) => {
-                e.stopPropagation();
-                setIsOpen(false);
-              }}
-            />
-            <div 
-              style={dropdownStyle} 
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-              onTouchMove={(e) => e.stopPropagation()}
-              onTouchEnd={(e) => e.stopPropagation()}
-              className="bg-black/95 backdrop-blur-md border border-white/10 rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.85)] p-1.5 overflow-hidden text-sm z-[999999]"
-            >
-              <motion.div
-                initial={{ opacity: 0, y: -8, scale: 0.96 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.15, ease: "easeOut" }}
-                className="flex flex-col gap-0.5"
-              >
-                {options.map((option, i) => {
-                  const isSelected = value === option.value;
-                  return (
-                    <button
-                      key={i}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onChange(option.value);
-                        setIsOpen(false);
-                      }}
-                      className="w-full text-left px-3 py-2 flex items-center justify-between transition-all duration-150 cursor-pointer text-xs rounded-xl hover:bg-white/5 text-gray-300 hover:text-white"
-                      style={isSelected ? {
-                        backgroundColor: `${activeColor}30`,
-                        color: '#ffffff',
-                      } : undefined}
-                    >
-                      <div className="flex items-center gap-2">
-                        {option.icon && (
-                          <span style={isSelected ? { color: '#ffffff' } : { color: '#9ca3af' }}>
-                            {option.icon}
-                          </span>
-                        )}
-                        <span className={cn("font-medium", isSelected ? "font-bold" : "")}>{option.label}</span>
-                      </div>
-                      {isSelected && <Check size={12} className="text-white shrink-0 ml-2" />}
-                    </button>
-                  );
-                })}
-              </motion.div>
+      {isOpen && portalTarget && createPortal(
+        <>
+          {/* Transparent backdrop to handle click outside */}
+          <div 
+            className="fixed inset-0 z-[999998] bg-transparent cursor-default"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsOpen(false);
+            }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              setIsOpen(false);
+            }}
+            onTouchStart={(e) => {
+              e.stopPropagation();
+              setIsOpen(false);
+            }}
+          />
+          <div 
+            style={dropdownStyle} 
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
+            className="bg-black/95 backdrop-blur-md border border-white/10 rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.85)] p-1.5 overflow-hidden text-sm z-[999999]"
+          >
+            <div className="flex flex-col gap-0.5 animate-in fade-in duration-150">
+              {options.map((option, i) => {
+                const isSelected = value === option.value;
+                return (
+                  <button
+                    key={i}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onChange(option.value);
+                      setIsOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 flex items-center justify-between transition-all duration-150 cursor-pointer text-xs rounded-xl hover:bg-white/5 text-gray-300 hover:text-white"
+                    style={isSelected ? {
+                      backgroundColor: `${activeColor}30`,
+                      color: '#ffffff',
+                    } : undefined}
+                  >
+                    <div className="flex items-center gap-2">
+                      {option.icon && (
+                        <span style={isSelected ? { color: '#ffffff' } : { color: '#9ca3af' }}>
+                          {option.icon}
+                        </span>
+                      )}
+                      <span className={cn("font-medium", isSelected ? "font-bold" : "")}>{option.label}</span>
+                    </div>
+                    {isSelected && <Check size={12} className="text-white shrink-0 ml-2" />}
+                  </button>
+                );
+              })}
             </div>
-          </>,
-          portalTarget
-        )}
-      </AnimatePresence>
+          </div>
+        </>,
+        portalTarget
+      )}
     </div>
   );
 };
