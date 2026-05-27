@@ -206,47 +206,47 @@ export default function App() {
                 <ImdbRow title="Phim Bộ Phổ Biến Nhất" type="popular-tv" onSelect={setSelectedMovieSlug} />
                 <AnimeRankingRow onSelect={setSelectedMovieSlug} />
                 <MovieRow
-                  title="Hành Động Khét Lẹt"
+                  title="Hành Động Kịch Tính"
                   type="the-loai/hanh-dong"
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Kinh Dị Rén Ngang"
+                  title="Kinh Dị & Giật Gân"
                   type="the-loai/kinh-di"
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Hài Hước Cười Điên"
+                  title="Hài Hước Đặc Sắc"
                   type="the-loai/hai-huoc"
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Tình Cảm Suy Ngang"
+                  title="Tình Cảm Lãng Mạn"
                   type="the-loai/tinh-cam"
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Oppa Hàn Xẻng"
+                  title="Cực Phẩm Điện Ảnh Hàn"
                   type="quoc-gia/han-quoc"
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Viễn Tưởng Ảo Ma"
+                  title="Viễn Tưởng & Phiêu Lưu"
                   type="the-loai/vien-tuong"
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Tỷ Tỷ Điện Ảnh"
+                  title="Điện Ảnh Hoa Ngữ"
                   type="quoc-gia/trung-quoc"
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Vũ Trụ Hoạt Hình"
+                  title="Thế Giới Hoạt Hình"
                   type="hoat-hinh"
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Chiến Tranh Cháy Nổ"
+                  title="Chiến Tranh & Lịch Sử"
                   type="the-loai/chien-tranh"
                   onSelect={setSelectedMovieSlug}
                 />
@@ -271,21 +271,19 @@ export default function App() {
                 id="movie-lists"
                 className="pb-32 mt-4 sm:mt-12 relative z-20 flex flex-col gap-0"
               >
-                <ContinueWatchingRow onSelect={setSelectedMovieSlug} />
-                <MyListRow onSelect={setSelectedMovieSlug} />
                 <ImdbRow title="Phim Bộ Phổ Biến Nhất" type="popular-tv" onSelect={setSelectedMovieSlug} />
                 <MovieRow
-                  title="Drama Hàn Quốc Gây Nghiện"
+                  title="Drama Hàn Quốc Đặc Sắc"
                   type="quoc-gia/han-quoc"
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Tỷ Tỷ Trung Hoa Cổ Trang"
+                  title="Cổ Trang Hoa Ngữ Chọn Lọc"
                   type="the-loai/co-trang"
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Hành Động Kịch Tính"
+                  title="Hành Động & Phiêu Lưu"
                   type="the-loai/hanh-dong"
                   onSelect={setSelectedMovieSlug}
                 />
@@ -320,12 +318,10 @@ export default function App() {
                 id="movie-lists"
                 className="pb-32 mt-4 sm:mt-12 relative z-20 flex flex-col gap-0"
               >
-                <ContinueWatchingRow onSelect={setSelectedMovieSlug} />
-                <MyListRow onSelect={setSelectedMovieSlug} />
                 <ImdbRow title="Phim Lẻ Đang Thịnh Hành" type="popular-movies" onSelect={setSelectedMovieSlug} />
                 <ImdbRow title="Siêu Phẩm Điện Ảnh (IMDb)" type="top250-movies" onSelect={setSelectedMovieSlug} />
                 <MovieRow
-                  title="Khói Lửa Hành Động"
+                  title="Điện Ảnh Hành Động"
                   type="the-loai/hanh-dong"
                   onSelect={setSelectedMovieSlug}
                 />
@@ -335,7 +331,7 @@ export default function App() {
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Hài Hước Cười Điên"
+                  title="Hài Hước Đặc Sắc"
                   type="the-loai/hai-huoc"
                   onSelect={setSelectedMovieSlug}
                 />
@@ -345,7 +341,7 @@ export default function App() {
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Viễn Tưởng Hoành Tráng"
+                  title="Viễn Tưởng Kỳ Vĩ"
                   type="the-loai/vien-tuong"
                   onSelect={setSelectedMovieSlug}
                 />

@@ -163,6 +163,7 @@ export const MovieRow = ({
   const movieParams: any = {
     sort_by: type === 'phim-moi-cap-nhat' ? 'primary_release_date.desc' : 'popularity.desc',
     'vote_count.gte': type === 'phim-moi-cap-nhat' ? 0 : minVotesMovie,
+    'primary_release_date.gte': '2024-01-01', // Fetch only movies from 2024 onwards to ensure fresh and modern results
     page: 1,
   };
   const movieGenre = GENRE_MAP_MOVIE[type];
@@ -184,13 +185,14 @@ export const MovieRow = ({
   } else if (COUNTRY_MAP[type]) {
     movieParams.with_origin_country = COUNTRY_MAP[type];
   } else if (isCổTrang) {
-    movieParams.with_origin_country = 'CN|HK|TW|KR';
+    movieParams.with_origin_country = 'CN|HK|TW';
   }
 
   // TV parameters setup
   const tvParams: any = {
     sort_by: type === 'phim-moi-cap-nhat' ? 'first_air_date.desc' : 'popularity.desc',
     'vote_count.gte': type === 'phim-moi-cap-nhat' ? 0 : minVotesTv,
+    'first_air_date.gte': '2024-01-01', // Fetch only series from 2024 onwards to ensure fresh and modern results
     page: 1,
   };
   const tvGenre = GENRE_MAP_TV[type];
@@ -212,7 +214,7 @@ export const MovieRow = ({
   } else if (COUNTRY_MAP[type]) {
     tvParams.with_origin_country = COUNTRY_MAP[type];
   } else if (isCổTrang) {
-    tvParams.with_origin_country = 'CN|HK|TW|KR';
+    tvParams.with_origin_country = 'CN|HK|TW';
   }
 
   // Dual React Queries
