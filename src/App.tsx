@@ -273,17 +273,17 @@ export default function App() {
               >
                 <ImdbRow title="Phim Bộ Phổ Biến Nhất" type="popular-tv" onSelect={setSelectedMovieSlug} />
                 <MovieRow
-                  title="Drama Hàn Quốc Đặc Sắc"
+                  title="Phim Bộ Hàn Quốc"
                   type="quoc-gia/han-quoc"
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Cổ Trang Hoa Ngữ Chọn Lọc"
+                  title="Tỷ Tỷ Cổ Trang"
                   type="the-loai/co-trang"
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Hành Động & Phiêu Lưu"
+                  title="Hành Động & Kịch Tính"
                   type="the-loai/hanh-dong"
                   onSelect={setSelectedMovieSlug}
                 />
@@ -373,22 +373,22 @@ export default function App() {
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Anime Hành Động Siêu Cấp"
+                  title="Anime Hành Động"
                   type="anime-action"
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Anime Phiêu Lưu & Phép Thuật"
+                  title="Phiêu Lưu & Kỳ Ảo"
                   type="anime-fantasy"
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Anime Tình Cảm & Trường Học"
+                  title="Lãng Mạn & Học Đường"
                   type="anime-romance"
                   onSelect={setSelectedMovieSlug}
                 />
                 <MovieRow
-                  title="Anime Hài Hước Giải Sầu"
+                  title="Hài Hước & Đời Thường"
                   type="anime-comedy"
                   onSelect={setSelectedMovieSlug}
                 />
