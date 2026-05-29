@@ -432,6 +432,10 @@ export const NetflixPlayer = ({
     const video = videoRef.current;
     if (!video) return;
 
+    // Reset speed state on stream load / episode change
+    setIsSpeeding(false);
+    video.playbackRate = playbackRate;
+
     let initialTime = 0;
     try {
       if (slug && episodeName) {
@@ -1196,10 +1200,10 @@ export const NetflixPlayer = ({
           exit={{ y: (isMobile && isPortrait) ? '100%' : 20, opacity: 0 }}
           transition={{ type: 'tween', ease: [0.16, 1, 0.3, 1], duration: 0.22 }}
           className={cn(
-            "w-full sm:w-[350px] flex flex-col relative z-20 text-white overflow-hidden shadow-2xl transition-all duration-300",
+            "w-full sm:w-[260px] flex flex-col relative z-20 text-white overflow-hidden shadow-2xl transition-all duration-300",
             isMobile && isPortrait 
               ? "bg-[#050505] border-t border-white/[0.08] rounded-t-[32px] pb-8 pt-3 shadow-[0_-15px_40px_rgba(0,0,0,0.85)]" 
-              : "bg-black/80 backdrop-blur-md border border-white/10 rounded-2xl p-0"
+              : "bg-black/90 backdrop-blur-md border border-white/10 rounded-2xl p-0"
           )}
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
@@ -1619,6 +1623,7 @@ export const NetflixPlayer = ({
       onTouchStart={isIframeMode ? undefined : handleTouchStart}
       onTouchMove={isIframeMode ? undefined : handleTouchMove}
       onTouchEnd={isIframeMode ? undefined : handleTouchEnd}
+      onTouchCancel={isIframeMode ? undefined : handleTouchEnd}
     >
       {isIframeMode ? (
         <>
@@ -1749,6 +1754,7 @@ export const NetflixPlayer = ({
             onMouseLeave={handleHoldSpeedEnd}
             onTouchStart={handleHoldSpeedStart}
             onTouchEnd={handleHoldSpeedEnd}
+            onTouchCancel={handleHoldSpeedEnd}
           >
             <AnimatePresence>
               {seekIndicator === 'fwd' && (
@@ -2020,7 +2026,7 @@ export const NetflixPlayer = ({
                   // Extract Still image
                   const imgUrl = tmdbEp?.still_path 
                     ? `https://image.tmdb.org/t/p/w300${tmdbEp.still_path}`
-                    : posterUrl || thumbUrl || '';
+                    : thumbUrl || posterUrl || '';
 
                   // Track watched ratio under localStorage history
                   const saved = progressMap[slug || ''];

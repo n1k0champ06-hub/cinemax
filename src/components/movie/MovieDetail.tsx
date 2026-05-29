@@ -752,14 +752,21 @@ export const MovieDetail = ({
   if (!data?.movie) return null;
   const { movie } = data;
 
-  const currentServer = servers[selectedServerId] || servers[0];
+  const currentServer = currentServers[selectedServerId] || currentServers[0];
   const fallbackRawEpList = currentServer?.server_data || [];
   
-  const baseEpList = (isTv && seasonData?.episodes) ? seasonData.episodes : fallbackRawEpList;
+  // Use server episodes if TV to align with player's episodes list
+  const baseEpList = isTv
+    ? (fallbackRawEpList.length > 0 ? fallbackRawEpList : (seasonData?.episodes || []))
+    : fallbackRawEpList;
 
   const epList = searchEp ? baseEpList.filter((ep: any) => {
     const epName = ep.episode_number ? `${ep.episode_number}` : ep.name;
-    const overview = getEpOverview(epName, ep.overview);
+    // Match with TMDB metadata episodes object
+    const tmdbEp = isTv && seasonData?.episodes
+      ? seasonData.episodes.find((t: any) => isSameEpisode(t.episode_number || t.name, ep.name || ep.episode_number))
+      : null;
+    const overview = getEpOverview(epName, tmdbEp?.overview || ep.overview);
     return epName.toLowerCase().includes(searchEp.toLowerCase()) || 
            overview?.toLowerCase().includes(searchEp.toLowerCase());
   }) : baseEpList;
@@ -1439,8 +1446,10 @@ export const MovieDetail = ({
                                 }
                               }}
                               className={cn(
-                                "px-5 sm:px-6 py-2 sm:py-2.5 rounded-full font-bold whitespace-nowrap transition-colors snap-start text-xs sm:text-sm",
-                                isSelectedSeason ? "bg-white text-black" : "bg-black border border-white/10 text-gray-300 hover:bg-white/20"
+                                "px-5 sm:px-6 py-2 sm:py-2.5 rounded-full font-bold whitespace-nowrap transition-colors snap-start text-xs sm:text-sm border",
+                                isSelectedSeason 
+                                  ? "bg-[#e50914] border-[#e50914] text-white" 
+                                  : "bg-black border-white/10 text-gray-300 hover:bg-white/20"
                               )}
                             >
                               Mùa {s.season_number}
@@ -1466,12 +1475,23 @@ export const MovieDetail = ({
                            ))}
                         </div>
                       ) : (
-                        <div className="flex flex-col gap-3 max-h-[500px] overflow-y-auto pr-1 custom-scrollbar">
+                        <div className="flex flex-col gap-3 w-full">
                           {epList.map((ep: any, i: number) => {
+                            const tmdbEp = isTv && seasonData?.episodes
+                              ? seasonData.episodes.find((t: any) => isSameEpisode(t.episode_number || t.name, ep.name || ep.episode_number))
+                              : null;
+
                             const epNameStr = ep.episode_number ? `${ep.episode_number}` : ep.name;
-                            const stillPath = getEpStillPath(epNameStr, ep.still_path);
+                            const stillPath = getEpStillPath(epNameStr, tmdbEp?.still_path || ep.still_path);
                             const isSelected = currentSeason === activeEpSeason && (activeEp === ep || (activeEp?.name && isSameEpisode(ep.episode_number || ep.name, activeEp.name)));
                             
+                            const displayEpName = ep.episode_number ? `Tập ${ep.episode_number}` : (ep.name.startsWith("Tập") ? ep.name : `Tập ${ep.name}`);
+                            const displayEpTitle = tmdbEp?.name && !isGenericEpisodeName(tmdbEp.name, tmdbEp.episode_number)
+                              ? tmdbEp.name
+                              : (ep.name && !isGenericEpisodeName(ep.name, ep.episode_number) && !ep.name.startsWith("Tập") ? ep.name : '');
+                            
+                            const overview = tmdbEp?.overview || ep.overview;
+
                             return (
                               <button
                                 key={i}
@@ -1488,7 +1508,7 @@ export const MovieDetail = ({
                                   {isSelected ? (
                                     <Play size={14} fill="#ff1e1e" className="text-[#ff1e1e]" />
                                   ) : (
-                                    ep.episode_number || i + 1
+                                    ep.episode_number || getEpisodeNumber(ep.name) || i + 1
                                   )}
                                 </div>
 
@@ -1508,16 +1528,16 @@ export const MovieDetail = ({
                                 {/* Episode Info */}
                                 <div className="flex-1 min-w-0 pr-1 flex flex-col gap-0.5 justify-center">
                                   <h4 className={cn(
-                                    "font-extrabold text-sm line-clamp-1",
+                                    "font-extrabold text-sm line-clamp-2 text-wrap",
                                     isSelected ? "text-white" : "text-gray-200"
                                   )}>
-                                    {ep.episode_number ? `Tập ${ep.episode_number}` : (ep.name.startsWith("Tập") ? ep.name : `Tập ${ep.name}`)}
-                                    {ep.name && !isGenericEpisodeName(ep.name, ep.episode_number) && !ep.name.startsWith("Tập") && (
-                                      <span className="font-medium text-gray-400 text-xs ml-1.5 line-clamp-1">— {ep.name}</span>
+                                    {displayEpName}
+                                    {displayEpTitle && (
+                                      <span className="font-semibold text-gray-400 text-xs ml-1.5">— {displayEpTitle}</span>
                                     )}
                                   </h4>
                                   <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed mt-0.5">
-                                    {getEpOverview(epNameStr, ep.overview) || "Đang cập nhật nội dung cho tập này."}
+                                    {getEpOverview(epNameStr, overview) || "Đang cập nhật nội dung cho tập này."}
                                   </p>
                                 </div>
                               </button>
@@ -1560,8 +1580,20 @@ export const MovieDetail = ({
                            ))
                         ) : (
                           epList.map((ep: any, i: number) => {
-                            const stillPath = getEpStillPath(ep.episode_number ? `${ep.episode_number}` : ep.name, ep.still_path);
+                            const tmdbEp = isTv && seasonData?.episodes
+                              ? seasonData.episodes.find((t: any) => isSameEpisode(t.episode_number || t.name, ep.name || ep.episode_number))
+                              : null;
+
+                            const epNameStr = ep.episode_number ? `${ep.episode_number}` : ep.name;
+                            const stillPath = getEpStillPath(epNameStr, tmdbEp?.still_path || ep.still_path);
                             const isSelected = activeEp === ep || (activeEp?.name && isSameEpisode(ep.episode_number || ep.name, activeEp.name));
+                            
+                            const displayEpName = ep.episode_number ? `Tập ${ep.episode_number}` : (ep.name.startsWith("Tập") ? ep.name : `Tập ${ep.name}`);
+                            const displayEpTitle = tmdbEp?.name && !isGenericEpisodeName(tmdbEp.name, tmdbEp.episode_number)
+                              ? tmdbEp.name
+                              : (ep.name && !isGenericEpisodeName(ep.name, ep.episode_number) && !ep.name.startsWith("Tập") ? ep.name : '');
+                            
+                            const overview = tmdbEp?.overview || ep.overview;
                           
                           return (
                             <div 
@@ -1577,7 +1609,7 @@ export const MovieDetail = ({
                                 }
                                 
                                 <div className="absolute top-2 right-2 bg-black/80 backdrop-blur-md px-2 py-1 rounded text-[10px] font-black text-white z-10 border border-white/10">
-                                  EP {ep.episode_number || (ep.name.startsWith("Tập") ? ep.name.replace("Tập ", "") : ep.name)}
+                                  EP {ep.episode_number || getEpisodeNumber(ep.name) || ep.name}
                                 </div>
 
                                 <div className="absolute inset-0 flex justify-center items-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1593,10 +1625,10 @@ export const MovieDetail = ({
                               
                               <div className="flex flex-col gap-1 px-1">
                                 <h4 className="font-bold text-lg text-white line-clamp-1 group-hover:text-gray-300">
-                                  {ep.episode_number ? `Tập ${ep.episode_number}${isGenericEpisodeName(ep.name, ep.episode_number) ? "" : `: ${ep.name}`}` : (ep.name.startsWith("Tập") ? ep.name : `Tập ${ep.name}`)}
+                                  {displayEpName}{displayEpTitle ? `: ${displayEpTitle}` : ""}
                                 </h4>
                                 <p className="text-sm text-gray-500 line-clamp-2 leading-relaxed">
-                                  {getEpOverview(ep.episode_number ? `${ep.episode_number}` : ep.name, ep.overview) || "Đang cập nhật nội dung cho tập này."}
+                                  {getEpOverview(epNameStr, overview) || "Đang cập nhật nội dung cho tập này."}
                                 </p>
                               </div>
                             </div>
