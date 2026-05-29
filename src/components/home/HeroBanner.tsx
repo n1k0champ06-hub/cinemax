@@ -50,16 +50,18 @@ export const HeroBanner = ({ onSelect }: { onSelect: (slug: string) => void }) =
   const handleNext = () => setCurrentIndex((prev) => (prev + 1) % maxItems);
   const handlePrev = () => setCurrentIndex((prev) => (prev - 1 + maxItems) % maxItems);
 
+  const isDetailsForActiveMovie = tmdbDetails && tmdbMeta && String(tmdbDetails.id) === String(tmdbMeta.id);
+
   // Prefer standard textless backdrops for the main background so that we can overlay the transparent logo cleanly
-  const englishBackdropFile = tmdbDetails?.images?.backdrops?.find((b: any) => b.iso_639_1 === 'en')?.file_path;
+  const englishBackdropFile = isDetailsForActiveMovie ? tmdbDetails?.images?.backdrops?.find((b: any) => b.iso_639_1 === 'en')?.file_path : null;
   const englishBackdropUrl = englishBackdropFile ? `https://image.tmdb.org/t/p/original/${englishBackdropFile}` : null;
 
   const bgImage = (tmdbMeta?.backdrop_path ? (tmdbMeta.backdrop_path?.startsWith('http') ? tmdbMeta.backdrop_path : `https://image.tmdb.org/t/p/original/${tmdbMeta.backdrop_path?.split('/').pop()}`) : null) || englishBackdropUrl || heroMovie.thumb_url || heroMovie.poster_url;
   // Official transparent logo overlay
-  const logoFile = tmdbDetails?.images?.logos?.find((l: any) => l.iso_639_1 === 'en' || l.iso_639_1 === 'vi' || !l.iso_639_1)?.file_path;
+  const logoFile = isDetailsForActiveMovie ? tmdbDetails?.images?.logos?.find((l: any) => l.iso_639_1 === 'en' || l.iso_639_1 === 'vi' || !l.iso_639_1)?.file_path : null;
   const logoUrl = logoFile ? `https://image.tmdb.org/t/p/w500/${logoFile}` : null;
 
-  const description = tmdbMeta?.overview || (typeof heroMovie.origin_name === 'string' && heroMovie.origin_name !== heroMovie.name ? heroMovie.origin_name : 'Trải nghiệm những bộ phim mới nhất và hấp dẫn nhất. Xem ngay hôm nay!');
+  const description = (isDetailsForActiveMovie && tmdbDetails?.overview) || tmdbMeta?.overview || (typeof heroMovie.origin_name === 'string' && heroMovie.origin_name !== heroMovie.name ? heroMovie.origin_name : 'Trải nghiệm những bộ phim mới nhất và hấp dẫn nhất. Xem ngay hôm nay!');
 
   const dateString = heroMovie?.year || '';
 

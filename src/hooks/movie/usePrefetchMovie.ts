@@ -51,7 +51,7 @@ export const usePrefetchMovie = () => {
               })).sort((a: any, b: any) => b.score - a.score);
 
               const bestMatch = scoredMatches[0];
-              if (bestMatch && bestMatch.score >= 50) {
+              if (bestMatch && bestMatch.score >= 80) {
                 const bestSlug = bestMatch.item.slug;
                 setResolvedSlug(rawSlug, bestSlug);
 

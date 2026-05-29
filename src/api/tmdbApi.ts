@@ -140,3 +140,7 @@ export const tmdbDiscover = (mediaType: 'movie' | 'tv' = 'movie', params: Record
 
 export const tmdbFindByExternalId = (externalId: string, source: 'imdb_id' | 'tvdb_id' = 'imdb_id') => 
   fetchTmdb(`/find/${externalId}`, { external_source: source });
+
+/** Fetch external IDs (imdb_id, tvdb_id, etc.) for a movie or TV show */
+export const tmdbGetExternalIds = (mediaType: 'movie' | 'tv', id: number | string) =>
+  fetchTmdb(`/${mediaType}/${id}/external_ids`);

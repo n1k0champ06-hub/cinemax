@@ -83,7 +83,7 @@ export const ExternalResolverModal = ({
 
       const bestMatch = scoredMatches[0];
 
-      if (bestMatch && bestMatch.score >= 50) {
+      if (bestMatch && bestMatch.score >= 80) {
         setResolvedSlug(id, bestMatch.item.slug);
         onSelect(bestMatch.item.slug);
       } else {

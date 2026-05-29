@@ -3,19 +3,24 @@ import { createPortal } from 'react-dom';
 import { 
   Play, Pause, Rewind, FastForward, Maximize, VolumeX, Volume2, Volume1, 
   Settings, ArrowLeft, Loader2, Check, PictureInPicture, RotateCcw, RotateCw, 
-  List, ShieldCheck, Sparkles, Palette, Eye, Sliders, Maximize2, Users, 
+  List, ShieldCheck, Sparkles, Palette, Eye, EyeOff, Sliders, Maximize2, Users, 
   Cast, Download, X, ChevronDown, ChevronRight, CheckSquare, Square, Tv, Film,
-  Minimize2, Expand, Sun
+  Minimize2, Expand, Sun, Subtitles, Plus, Minus, Wifi, Server, Database
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Hls from 'hls.js';
 import { useWatchProgress } from '../../hooks/useStorage';
 import { cn } from '../../lib/utils';
 import { PlayerSelect } from './PlayerSelect';
+import { SubtitleOverlay } from './SubtitleOverlay';
+import { StreamItem } from '../../api/streamProviders/types';
 
 interface NetflixPlayerProps {
   url?: string;
   embedUrl?: string;
+  headers?: Record<string, string>;
+  subtitleUrl?: string | null;
+  externalSubtitles?: any[];
   title?: string;
   slug?: string;
   episodeName?: string;
@@ -34,6 +39,10 @@ interface NetflixPlayerProps {
   seasons?: any[];
   onSeasonChange?: (seasonNumber: number) => void;
   tmdbEpisodes?: any[];
+  streams?: StreamItem[];
+  activeStream?: StreamItem | null;
+  onStreamSelect?: (stream: StreamItem) => void;
+  isAggregatorLoading?: boolean;
 }
 
 const getEpisodeNumber = (nameStr: string | number | undefined | null): number | null => {
@@ -52,11 +61,67 @@ const isSameEpisode = (epAName: string | number | undefined | null, epBName: str
   return epAName.toString().toLowerCase().trim() === epBName.toString().toLowerCase().trim();
 };
 
+const mapLangToDisplay = (lang: string): string => {
+  const clean = lang.trim().toLowerCase();
+  const map: Record<string, string> = {
+    'vi': 'Tiếng Việt',
+    'vie': 'Tiếng Việt',
+    'en': 'Tiếng Anh',
+    'eng': 'Tiếng Anh',
+    'zh': 'Tiếng Trung',
+    'zho': 'Tiếng Trung',
+    'chi': 'Tiếng Trung',
+    'ja': 'Tiếng Nhật',
+    'jpn': 'Tiếng Nhật',
+    'ko': 'Tiếng Hàn',
+    'kor': 'Tiếng Hàn',
+    'fr': 'Tiếng Pháp',
+    'fra': 'Tiếng Pháp',
+    'fre': 'Tiếng Pháp',
+    'de': 'Tiếng Đức',
+    'deu': 'Tiếng Đức',
+    'ger': 'Tiếng Đức',
+    'es': 'Tiếng Tây Ban Nha',
+    'spa': 'Tiếng Tây Ban Nha',
+    'pt': 'Tiếng Bồ Đào Nha',
+    'por': 'Tiếng Bồ Đào Nha',
+    'ru': 'Tiếng Nga',
+    'rus': 'Tiếng Nga',
+    'th': 'Tiếng Thái',
+    'tha': 'Tiếng Thái',
+  };
+  return map[clean] || lang;
+};
+
+const getCleanSubName = (name: string | undefined | null, lang: string | undefined | null, index: number): string => {
+  let cleanName = name ? name.trim() : '';
+  let cleanLang = lang ? lang.trim() : '';
+  
+  if (/^\d+$/.test(cleanName)) {
+    cleanName = '';
+  }
+  
+  if (cleanLang) {
+    const mapped = mapLangToDisplay(cleanLang);
+    if (cleanName && cleanName.toLowerCase() !== cleanLang.toLowerCase()) {
+      return `${mapped} (${cleanName})`;
+    }
+    return mapped;
+  }
+  
+  if (cleanName) {
+    return cleanName;
+  }
+  
+  return `Phụ đề #${index + 1}`;
+};
+
 export const NetflixPlayer = ({ 
-  url, embedUrl, title, slug, episodeName, posterUrl, thumbUrl, movieName, onClose,
+  url, embedUrl, headers, subtitleUrl, externalSubtitles = [], title, slug, episodeName, posterUrl, thumbUrl, movieName, onClose,
   servers, selectedServerId, onServerChange,
   episodes = [], onEpisodeSelect,
-  isTv = false, currentSeason = 1, activeEpSeason = 1, seasons = [], onSeasonChange, tmdbEpisodes = []
+  isTv = false, currentSeason = 1, activeEpSeason = 1, seasons = [], onSeasonChange, tmdbEpisodes = [],
+  streams = [], activeStream = null, onStreamSelect, isAggregatorLoading = false
 }: NetflixPlayerProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -176,13 +241,133 @@ export const NetflixPlayer = ({
     };
   }, []);
 
+  // Resolve streaming details from activeStream if available
+  const resolvedUrl = useMemo(() => {
+    return activeStream ? (activeStream.type === 'hls' ? activeStream.url : undefined) : url;
+  }, [activeStream, url]);
+
+  const resolvedEmbedUrl = useMemo(() => {
+    return activeStream ? (activeStream.type === 'embed' ? activeStream.url : undefined) : embedUrl;
+  }, [activeStream, embedUrl]);
+
+  const resolvedHeaders = useMemo(() => {
+    return activeStream?.headers || headers;
+  }, [activeStream, headers]);
+
+  const [isSourcesOpen, setIsSourcesOpen] = useState(false);
+
   // Embedding
-  const [useEmbed, setUseEmbed] = useState(!url && !!embedUrl);
-  const isIframeMode = useEmbed || (!url && !!embedUrl);
+  const [useEmbed, setUseEmbed] = useState(!resolvedUrl && !!resolvedEmbedUrl);
+  const isIframeMode = useEmbed || (!resolvedUrl && !!resolvedEmbedUrl);
+  const [areIframeControlsVisible, setAreIframeControlsVisible] = useState(true);
 
   useEffect(() => {
-    setUseEmbed(!url && !!embedUrl);
-  }, [url, embedUrl]);
+    setUseEmbed(!resolvedUrl && !!resolvedEmbedUrl);
+  }, [resolvedUrl, resolvedEmbedUrl]);
+
+  // External subtitle offset state & timer
+  const [subtitleOffset, setSubtitleOffset] = useState(0);
+  const [subEnabled, setSubEnabled] = useState(true);
+
+  // Subtitle V3 & Audio source selection state
+  const [selectedSubtitleId, setSelectedSubtitleId] = useState<number | string>('v3');
+
+  const combinedSubtitleTracks = useMemo(() => {
+    const list: { id: number | string; name: string }[] = [
+      { id: 'off', name: 'Tắt phụ đề' }
+    ];
+
+    // Deduplicate by downloadUrl to avoid identical options
+    const seenUrls = new Set<string>();
+    
+    if (subtitleUrl) {
+      seenUrls.add(subtitleUrl);
+      list.push({ id: 'v3', name: 'Tiếng Việt #1' });
+    }
+
+    if (externalSubtitles && externalSubtitles.length > 0) {
+      const langCounts: Record<string, number> = {};
+      
+      // If we already added the default subtitleUrl, increment count for its language
+      if (subtitleUrl) {
+        langCounts['vi'] = 1;
+      }
+
+      externalSubtitles.forEach((track, index) => {
+        if (track.downloadUrl && !seenUrls.has(track.downloadUrl)) {
+          seenUrls.add(track.downloadUrl);
+          
+          const lang = track.lang || 'vi';
+          langCounts[lang] = (langCounts[lang] || 0) + 1;
+          const langLabel = lang === 'en' ? 'Tiếng Anh' : 'Tiếng Việt';
+          
+          list.push({ id: `ext-${track.id || index}`, name: `${langLabel} #${langCounts[lang]}` });
+        }
+      });
+    }
+
+    subtitleTracks.forEach(track => {
+      list.push({ id: track.id, name: track.name });
+    });
+    return list;
+  }, [subtitleTracks, subtitleUrl, externalSubtitles]);
+
+  useEffect(() => {
+    if (subtitleUrl) {
+      setSelectedSubtitleId('v3');
+      setSubEnabled(true);
+    } else if (externalSubtitles && externalSubtitles.length > 0) {
+      const firstExt = externalSubtitles[0];
+      setSelectedSubtitleId(`ext-${firstExt.id || 0}`);
+      setSubEnabled(true);
+    } else {
+      setSelectedSubtitleId('off');
+      setSubEnabled(false);
+    }
+  }, [subtitleUrl, externalSubtitles]);
+
+  const activeExternalSubUrl = useMemo(() => {
+    if (typeof selectedSubtitleId === 'string' && selectedSubtitleId.startsWith('ext-')) {
+      const targetId = selectedSubtitleId.substring(4);
+      const match = externalSubtitles?.find(t => `ext-${t.id}` === selectedSubtitleId || String(t.id) === targetId);
+      return match ? match.downloadUrl : null;
+    }
+    if (selectedSubtitleId === 'v3') {
+      return subtitleUrl || null;
+    }
+    return null;
+  }, [selectedSubtitleId, externalSubtitles, subtitleUrl]);
+
+  useEffect(() => {
+    if (hlsRef.current) {
+      if (subEnabled) {
+        if (typeof selectedSubtitleId === 'number') {
+          hlsRef.current.subtitleTrack = selectedSubtitleId;
+        } else {
+          hlsRef.current.subtitleTrack = -1;
+        }
+      } else {
+        hlsRef.current.subtitleTrack = -1;
+      }
+    }
+  }, [subEnabled, selectedSubtitleId]);
+
+  // Iframe sync
+  const [iframePlayStart, setIframePlayStart] = useState<number | null>(null);
+  const [iframeBase, setIframeBase] = useState(0);
+  const iframeCurrentMs = useMemo(() => {
+    if (!iframePlayStart) return iframeBase;
+    return iframeBase + (Date.now() - iframePlayStart);
+  }, [iframePlayStart, iframeBase]);
+
+  useEffect(() => {
+    if (isIframeMode) {
+      setIframePlayStart(Date.now());
+      setIframeBase(0);
+    } else {
+      setIframePlayStart(null);
+    }
+  }, [resolvedEmbedUrl, isIframeMode]);
 
   // Load progress histories once when overlay is toggled or initialized
   const loadProgressHistory = () => {
@@ -289,25 +474,33 @@ export const NetflixPlayer = ({
 
     const handleVideoError = () => {
       console.warn("Lỗi phát luồng trực tiếp, tự động chuyển sang Iframe embed dự phòng!");
-      if (embedUrl) {
+      if (resolvedEmbedUrl) {
         setUseEmbed(true);
       }
     };
 
     let hls: Hls | null = null;
     
-    if (Hls.isSupported() && url) {
+    if (Hls.isSupported() && resolvedUrl) {
+      const isVietnameseSource = activeStream?.category === 'vi';
       hls = new Hls({ 
-        maxBufferLength: 10,
-        maxMaxBufferLength: 20,
-        maxBufferSize: 15 * 1000 * 1000,
+        maxBufferLength: isVietnameseSource ? 40 : 10,
+        maxMaxBufferLength: isVietnameseSource ? 60 : 20,
+        maxBufferSize: isVietnameseSource ? 80 * 1024 * 1024 : 15 * 1000 * 1000,
         enableWorker: true,
-        lowLatencyMode: true,
+        lowLatencyMode: !isVietnameseSource,
         capLevelToPlayerSize: true,
-        backBufferLength: 10
+        backBufferLength: 10,
+        xhrSetup: (xhr) => {
+          if (resolvedHeaders) {
+            Object.entries(resolvedHeaders).forEach(([key, val]) => {
+              xhr.setRequestHeader(key, String(val));
+            });
+          }
+        }
       });
       hlsRef.current = hls;
-      hls.loadSource(url);
+      hls.loadSource(resolvedUrl);
       hls.attachMedia(video);
 
       hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
@@ -346,7 +539,7 @@ export const NetflixPlayer = ({
         if (hls) {
           const subs = hls.subtitleTracks.map((sub, index) => ({
             id: index,
-            name: sub.name || sub.lang || `Phụ đề ${index + 1}`
+            name: getCleanSubName(sub.name, sub.lang, index)
           }));
           setSubtitleTracks([{ id: -1, name: 'Tắt phụ đề' }, ...subs]);
           setActiveSubtitle(hls.subtitleTrack);
@@ -356,13 +549,13 @@ export const NetflixPlayer = ({
       hls.on(Hls.Events.ERROR, (event, data) => {
         if (data.fatal) {
           console.warn("HLS fatal error, falling back to Iframe embed:", data);
-          if (embedUrl) {
+          if (resolvedEmbedUrl) {
             setUseEmbed(true);
           }
         }
       });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl') && url) {
-      video.src = url;
+    } else if (video.canPlayType('application/vnd.apple.mpegurl') && resolvedUrl) {
+      video.src = resolvedUrl;
       video.addEventListener('loadedmetadata', handleReady);
       video.addEventListener('error', handleVideoError);
     }
@@ -393,7 +586,7 @@ export const NetflixPlayer = ({
       video.removeEventListener('loadedmetadata', handleReady);
       video.removeEventListener('error', handleVideoError);
     };
-  }, [url, slug, episodeName, embedUrl, autoplay, isTv, posterUrl, thumbUrl, movieName]);
+  }, [resolvedUrl, slug, episodeName, resolvedEmbedUrl, autoplay, isTv, posterUrl, thumbUrl, movieName, activeStream, resolvedHeaders]);
 
   // Audio Context Web Audio Boost Configuration
   const handleAudioBoostChange = (boostValue: number) => {
@@ -552,6 +745,14 @@ export const NetflixPlayer = ({
              }
           }
           break;
+        case '[':
+          e.preventDefault();
+          setSubtitleOffset(prev => prev - 250);
+          break;
+        case ']':
+          e.preventDefault();
+          setSubtitleOffset(prev => prev + 250);
+          break;
         case '<':
           if (e.shiftKey) {
             e.preventDefault();
@@ -578,9 +779,9 @@ export const NetflixPlayer = ({
     setShowControls(true);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      if (isPlaying && !isSettingsOpen && !isEpisodesOpen) setShowControls(false);
+      if (isPlaying && !isSettingsOpen && !isEpisodesOpen && !isSourcesOpen) setShowControls(false);
     }, 4000);
-  }, [isPlaying, isSettingsOpen, isEpisodesOpen]);
+  }, [isPlaying, isSettingsOpen, isEpisodesOpen, isSourcesOpen]);
 
   useEffect(() => {
     resetControlsTimeout();
@@ -721,10 +922,20 @@ export const NetflixPlayer = ({
     }
   };
 
-  const handleSubtitleTrackChange = (id: number) => {
-    if (hlsRef.current) {
-      hlsRef.current.subtitleTrack = id;
-      setActiveSubtitle(id);
+  const handleSubtitleTrackChange = (id: number | string) => {
+    setSelectedSubtitleId(id);
+    if (id === 'off') {
+      setSubEnabled(false);
+      if (hlsRef.current) hlsRef.current.subtitleTrack = -1;
+    } else {
+      setSubEnabled(true);
+      if (hlsRef.current) {
+        if (typeof id === 'number') {
+          hlsRef.current.subtitleTrack = id;
+        } else {
+          hlsRef.current.subtitleTrack = -1;
+        }
+      }
     }
   };
 
@@ -1033,6 +1244,32 @@ export const NetflixPlayer = ({
                   </div>
                 </div>
 
+                <div className="flex items-center justify-between py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('captions')}>
+                  <div className="flex items-center gap-4">
+                    <Subtitles size={20} className="text-white" />
+                    <span className="text-sm font-medium">Phụ đề</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-gray-400">
+                    <span className="text-xs">
+                      {combinedSubtitleTracks.find(t => t.id === selectedSubtitleId)?.name || 'Tắt'}
+                    </span>
+                    <ChevronRight size={16} />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('audioTrack')}>
+                  <div className="flex items-center gap-4">
+                    <Volume2 size={20} className="text-white" />
+                    <span className="text-sm font-medium">Kênh âm thanh</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-gray-400">
+                    <span className="text-xs">
+                      {audioTracks.find(t => t.id === activeAudioTrack)?.name || 'Mặc định'}
+                    </span>
+                    <ChevronRight size={16} />
+                  </div>
+                </div>
+
                 <div className="flex items-center justify-between py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('appearance')}>
                   <div className="flex items-center gap-4">
                     <Settings size={20} className="text-white" />
@@ -1066,6 +1303,8 @@ export const NetflixPlayer = ({
                   {settingsTab === 'speed' && 'Tốc độ phát'}
                   {settingsTab === 'appearance' && 'Tuỳ chọn khác'}
                   {settingsTab === 'gestures' && 'Cử chỉ'}
+                  {settingsTab === 'captions' && 'Phụ đề'}
+                  {settingsTab === 'audioTrack' && 'Kênh âm thanh'}
                 </h3>
               </div>
 
@@ -1081,6 +1320,20 @@ export const NetflixPlayer = ({
                   <div key={speed} className="flex items-center gap-4 py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors" onClick={() => { handleRateChange(speed); setSettingsTab('main'); }}>
                     <div className="w-5 flex justify-center">{playbackRate === speed && <Check size={18} className="text-white" />}</div>
                     <span className={cn("text-sm transition-colors", playbackRate === speed ? "text-white font-medium" : "text-gray-300")}>{speed === 1 ? 'Chuẩn' : `${speed}x`}</span>
+                  </div>
+                ))}
+
+                {settingsTab === 'captions' && combinedSubtitleTracks.map(track => (
+                  <div key={track.id} className="flex items-center gap-4 py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors" onClick={() => { handleSubtitleTrackChange(track.id); setSettingsTab('main'); }}>
+                    <div className="w-5 flex justify-center">{selectedSubtitleId === track.id && <Check size={18} className="text-white" />}</div>
+                    <span className={cn("text-sm transition-colors", selectedSubtitleId === track.id ? "text-white font-medium" : "text-gray-300")}>{track.name}</span>
+                  </div>
+                ))}
+
+                {settingsTab === 'audioTrack' && audioTracks.map(track => (
+                  <div key={track.id} className="flex items-center gap-4 py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors" onClick={() => { handleAudioTrackChange(track.id); setSettingsTab('main'); }}>
+                    <div className="w-5 flex justify-center">{activeAudioTrack === track.id && <Check size={18} className="text-white" />}</div>
+                    <span className={cn("text-sm transition-colors", activeAudioTrack === track.id ? "text-white font-medium" : "text-gray-300")}>{track.name}</span>
                   </div>
                 ))}
 
@@ -1271,39 +1524,141 @@ export const NetflixPlayer = ({
     return createPortal(overlayContent, document.body);
   };
 
-  if (isIframeMode) {
+  const getProviderName = (item: StreamItem) => {
+    if (item.provider === 'cinepro') {
+      const match = item.providerLabel.match(/\(([^)]+)\)/);
+      return match ? match[1].toUpperCase() : 'CINEPRO';
+    }
+    return item.provider.toUpperCase();
+  };
+
+  const renderServerGroup = (title: string, groupStreams: StreamItem[]) => {
+    if (groupStreams.length === 0) return null;
+
     return (
-      <iframe 
-        src={embedUrl}
-        className="w-full h-full border-0 bg-black pointer-events-auto"
-        allowFullScreen
-        allow="autoplay; fullscreen; encrypted-media"
-        sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-pointer-lock allow-modals allow-orientation-lock"
-        referrerPolicy="origin"
-      />
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between px-1 py-1">
+          <span className="text-[10px] font-extrabold uppercase tracking-widest text-white/40">{title}</span>
+          <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-white/5 border border-white/5 text-white/35">{groupStreams.length}</span>
+        </div>
+        <div className="flex flex-col gap-2">
+          {groupStreams.map((stream) => {
+            const isSelected = activeStream ? activeStream.id === stream.id : false;
+            
+            // Latency styling
+            let latencyColor = 'text-white/40';
+            if (stream.latencyLabel === 'Ultra-fast') latencyColor = 'text-emerald-400';
+            else if (stream.latencyLabel === 'Fast') latencyColor = 'text-emerald-500';
+            else if (stream.latencyLabel === 'Slow') latencyColor = 'text-amber-400';
+            else if (stream.latencyLabel === 'Offline') latencyColor = 'text-rose-500';
+
+            const uppercaseLatency = (stream.latencyLabel || 'Testing...').toUpperCase();
+
+            return (
+              <div
+                key={stream.id}
+                onClick={() => {
+                  if (onStreamSelect) {
+                    onStreamSelect(stream);
+                  }
+                }}
+                className={cn(
+                  "relative group/card bg-white/[0.01] hover:bg-white/[0.03] border border-white/[0.04] hover:border-white/[0.08] rounded-xl px-4 py-3.5 flex items-center justify-between transition-all duration-200 cursor-pointer overflow-hidden",
+                  isSelected ? "border-emerald-500/30 bg-emerald-500/[0.02] shadow-[0_4px_20px_rgba(16,185,129,0.04)]" : ""
+                )}
+              >
+                {/* Active sidebar highlight line */}
+                {isSelected && (
+                  <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-emerald-500 rounded-l-xl" />
+                )}
+                
+                <div className="flex items-center gap-4">
+                  <div className={cn(
+                    "w-9 h-9 rounded-lg flex items-center justify-center bg-white/5 text-white/40 group-hover/card:bg-white/10 group-hover/card:text-white/70 transition-colors",
+                    isSelected ? "bg-emerald-500/10 text-emerald-400" : ""
+                  )}>
+                    <Database size={16} className={cn(isSelected && 'drop-shadow-[0_0_8px_rgba(52,211,153,0.4)]')} />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className={cn("text-sm font-semibold text-white/80 group-hover/card:text-white transition-colors truncate", isSelected ? "text-white font-semibold" : "")}>
+                      {stream.providerLabel}
+                    </span>
+                    <span className="text-[10px] text-white/40 flex items-center gap-1.5 font-mono tracking-wide mt-1 uppercase">
+                      {getProviderName(stream)} 
+                      <span>•</span> 
+                      <span className={cn("font-bold", latencyColor)}>{uppercaseLatency}</span>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3.5">
+                  <span className="text-[10px] font-bold font-mono text-white/50 bg-white/5 border border-white/5 px-2 py-0.5 rounded uppercase">
+                    {stream.quality === 'auto' ? 'AUTO' : stream.quality}
+                  </span>
+                  {isSelected && (
+                    <Check size={16} className="text-emerald-400 stroke-[3px] shrink-0" />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     );
-  }
+  };
+
+  // No early return for iframe mode to render Cinemax player layout, title and subtitles overlay
 
   return (
     <div 
       ref={containerRef}
       className={cn("relative w-full h-full bg-black group netflix-player-container", isFullscreen ? "overflow-hidden" : "")}
       onMouseMove={isIframeMode ? undefined : resetControlsTimeout}
-      onMouseLeave={isIframeMode ? undefined : () => { if(isPlaying && !isSettingsOpen && !isEpisodesOpen) setShowControls(false); }}
+      onMouseLeave={isIframeMode ? undefined : () => { if(isPlaying && !isSettingsOpen && !isEpisodesOpen && !isSourcesOpen) setShowControls(false); }}
       onClick={isIframeMode ? undefined : toggleControlsMobile}
       onTouchStart={isIframeMode ? undefined : handleTouchStart}
       onTouchMove={isIframeMode ? undefined : handleTouchMove}
       onTouchEnd={isIframeMode ? undefined : handleTouchEnd}
     >
       {isIframeMode ? (
-        <iframe 
-          src={embedUrl}
-          className="w-full h-full border-0 absolute inset-0 z-0 bg-black pointer-events-auto"
-          allowFullScreen
-          allow="autoplay; fullscreen; encrypted-media"
-          sandbox="allow-scripts allow-same-origin allow-presentation allow-forms"
-          referrerPolicy="origin"
-        />
+        <>
+          <iframe 
+            src={resolvedEmbedUrl}
+            className="w-full h-full border-0 absolute inset-0 z-0 bg-black pointer-events-auto"
+            allowFullScreen
+            allow="autoplay; fullscreen; encrypted-media"
+            referrerPolicy="origin"
+          />
+          {!areIframeControlsVisible && onClose && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onClose(); }}
+              className="absolute top-4 left-4 z-50 w-9 h-9 rounded-full bg-black/60 hover:bg-black/90 border border-white/10 hover:border-white/20 text-white flex items-center justify-center transition-all active:scale-95 cursor-pointer shadow-lg backdrop-blur-md"
+              title="Quay lại"
+            >
+              <ArrowLeft size={18} />
+            </button>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setAreIframeControlsVisible(prev => !prev);
+            }}
+            className="absolute top-4 right-4 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/90 border border-white/10 hover:border-white/20 text-white text-xs font-semibold backdrop-blur-md transition-all active:scale-95 cursor-pointer shadow-lg"
+            title={areIframeControlsVisible ? "Ẩn giao diện Cinemax để click vào trình phát" : "Hiện lại giao diện điều khiển Cinemax"}
+          >
+            {areIframeControlsVisible ? (
+              <>
+                <EyeOff size={13} />
+                <span>Ẩn menu</span>
+              </>
+            ) : (
+              <>
+                <Eye size={13} className="text-emerald-400" />
+                <span>Hiện menu</span>
+              </>
+            )}
+          </button>
+        </>
       ) : (
         <video
           ref={videoRef}
@@ -1336,6 +1691,15 @@ export const NetflixPlayer = ({
           )}
         />
       )}
+
+      {/* External Subtitle Overlay */}
+      <SubtitleOverlay
+        subtitleUrl={activeExternalSubUrl}
+        videoRef={!isIframeMode ? videoRef : undefined}
+        currentTimeMs={isIframeMode ? iframeCurrentMs : undefined}
+        offsetMs={subtitleOffset}
+        enabled={activeStream?.category !== 'vi' && subEnabled && (selectedSubtitleId === 'v3' || (typeof selectedSubtitleId === 'string' && selectedSubtitleId.startsWith('ext-')))}
+      />
 
       {/* Subtitles custom styling mock renderer for full aesthetics if enabled */}
       {!isIframeMode && activeSubtitle !== -1 && (
@@ -1462,9 +1826,18 @@ export const NetflixPlayer = ({
 
       {/* Title Bar inside Custom Player controls */}
       <AnimatePresence>
-        {((!isIframeMode && showControls) || (!isPlaying && !isIframeMode)) && !(isMobile && isPortrait && !isFullscreen) && (
+        {((!isIframeMode && showControls) || (!isPlaying && !isIframeMode) || (isIframeMode && areIframeControlsVisible)) && !(isMobile && isPortrait && !isFullscreen) && (
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="absolute top-0 w-full bg-gradient-to-b from-black/90 via-black/40 to-transparent p-4 md:p-6 z-30 pointer-events-auto flex items-center justify-between text-white">
             <h2 className="font-extrabold text-sm md:text-lg drop-shadow-md truncate pr-8 cursor-default flex items-center gap-2">
+              {onClose && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onClose(); }} 
+                  className="mr-2 p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+                  title="Quay lại"
+                >
+                  <ArrowLeft size={20} />
+                </button>
+              )}
               <span className="inline-block w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: activeColor }} />
               <span>{title}</span>
             </h2>
@@ -1474,6 +1847,91 @@ export const NetflixPlayer = ({
 
       {/* Dynamic Player Settings HUD Overlay (YouTube Style) */}
       {renderSettingsOverlay()}
+
+      {/* Video Sources Sidebar Panel */}
+      <AnimatePresence>
+        {isSourcesOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-40 bg-black/20 pointer-events-auto flex justify-end"
+          >
+            {/* Click outside sidebar to close */}
+            <div className="absolute inset-0 z-10" onClick={() => setIsSourcesOpen(false)} />
+
+            <motion.div 
+              initial={{ x: '100%', opacity: 0.5 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: '100%', opacity: 0.5 }}
+              transition={{ type: 'spring', damping: 24, stiffness: 150 }}
+              className="relative z-20 w-full max-w-sm sm:max-w-md h-full bg-[#0c0c0e]/80 backdrop-blur-xl border-l border-white/[0.08] flex flex-col shadow-[rgba(0,0,0,0.9)_0px_0px_50px_10px]"
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+              onTouchMove={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="p-4 border-b border-white/[0.08] flex flex-col gap-3 shrink-0 bg-transparent">
+                <div className="flex items-center justify-between w-full">
+                  <div className="flex items-center gap-3">
+                    <button 
+                      onClick={() => setIsSourcesOpen(false)}
+                      className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                    >
+                      <ArrowLeft size={20} />
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <Database size={18} className="text-emerald-400 animate-pulse" />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-black text-white tracking-wider uppercase">Video Sources</span>
+                        <span className="text-[10px] text-gray-400 font-medium tracking-wide">Select server</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {isAggregatorLoading && (
+                    <Loader2 size={16} className="text-emerald-400 animate-spin shrink-0" />
+                  )}
+                </div>
+              </div>
+
+              {/* Server List */}
+              <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-6">
+                {/* Vietnamese Sources */}
+                {renderServerGroup('NGUỒN VIỆT NAM', streams.filter(s => s.category === 'vi' || s.lang === 'vi'))}
+                
+                {/* Premium Sources */}
+                {renderServerGroup('PREMIUM SOURCES', streams.filter(s => s.category === 'premium' && s.lang !== 'vi'))}
+
+                {/* Community Sources */}
+                {renderServerGroup('COMMUNITY SOURCES', streams.filter(s => (s.category === 'standard' || s.category === 'free' || !s.category) && s.lang !== 'vi'))}
+
+                {streams.length === 0 && !isAggregatorLoading && (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <p className="text-sm text-gray-400 font-medium">Không tìm thấy nguồn phát nào.</p>
+                  </div>
+                )}
+
+                {streams.length === 0 && isAggregatorLoading && (
+                  <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
+                    <Loader2 size={24} className="text-emerald-400 animate-spin" />
+                    <p className="text-sm text-gray-400 font-medium">Đang tìm kiếm các nguồn phát...</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 border-t border-white/[0.08] text-center bg-transparent shrink-0">
+                <span className="text-[10px] font-medium tracking-widest text-white/30 uppercase font-sans">
+                  Switch if experiencing buffering
+                </span>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Dynamic Advanced Episodes Overlay Modal (Matches Second Image Request) */}
       <AnimatePresence>
@@ -1780,12 +2238,33 @@ export const NetflixPlayer = ({
                     </button>
                   )}
 
+                  {/* Video Sources / Server selection list */}
+                  {streams && streams.length > 0 && (
+                    <button 
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        setIsSourcesOpen(!isSourcesOpen); 
+                        setIsEpisodesOpen(false); 
+                        setIsSettingsOpen(false);
+                      }} 
+                      className={cn(
+                        "hover:opacity-100 transition-all flex items-center gap-2 rounded-xl active:scale-95 cursor-pointer px-3 py-1.5 bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.1]",
+                        isSourcesOpen ? "text-emerald-400 opacity-100 font-bold border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.15)]" : "opacity-85 text-white"
+                      )}
+                      title="Nguồn phát video"
+                    >
+                      <Wifi size={18} />
+                      <span className="font-sans text-xs">Nguồn phát</span>
+                    </button>
+                  )}
+
                   {/* Custom System Configuration/Settings Overlay HUD opener */}
                   <button 
                     onClick={(e) => { 
                       e.stopPropagation(); 
                       setIsSettingsOpen(!isSettingsOpen); 
                       setIsEpisodesOpen(false); 
+                      setIsSourcesOpen(false);
                     }} 
                     className={cn("hover:text-gray-300 hover:scale-110 transition-all cursor-pointer", isSettingsOpen && "text-red-500 rotate-90")}
                   >
@@ -1801,6 +2280,101 @@ export const NetflixPlayer = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Embed bottom controls bar */}
+      {isIframeMode && areIframeControlsVisible && (
+        <div className="absolute bottom-0 left-0 w-full p-4 md:p-6 z-30 pointer-events-none flex items-center justify-between text-white">
+          <div className="flex items-center gap-3 sm:gap-4 pointer-events-auto bg-[#0a0a0c]/85 backdrop-blur-md px-3.5 py-2.5 rounded-2xl border border-white/10 shadow-[rgba(0,0,0,0.8)_0px_8px_30px]">
+            {/* Subtitle offset */}
+            <div className="flex items-center gap-1.5 bg-white/5 rounded-xl px-2.5 py-1 border border-white/10">
+              <Subtitles size={14} className="text-white/40" />
+              <button 
+                onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev - 250); }} 
+                className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-white/60 cursor-pointer"
+                title="Sub nhanh hơn [-250ms]"
+              >
+                <Minus size={11} />
+              </button>
+              <span className={cn('text-xs font-mono font-bold min-w-[36px] text-center', subtitleOffset === 0 ? 'text-white/30' : 'text-emerald-400')}>
+                {subtitleOffset >= 0 ? '+' : ''}{(subtitleOffset / 1000).toFixed(2)}s
+              </span>
+              <button 
+                onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev + 250); }} 
+                className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-white/60 cursor-pointer"
+                title="Sub chậm hơn [+250ms]"
+              >
+                <Plus size={11} />
+              </button>
+              {subtitleOffset !== 0 && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setSubtitleOffset(0); }} 
+                  className="w-4 h-4 flex items-center justify-center text-white/20 hover:text-white transition-colors cursor-pointer"
+                  title="Reset delay"
+                >
+                  <RotateCcw size={10} />
+                </button>
+              )}
+            </div>
+
+            {/* Sub VI Toggle Button */}
+            <button
+              onClick={(e) => { e.stopPropagation(); setSubEnabled(p => !p); }}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer',
+                subEnabled ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.1)]' : 'bg-white/5 border-white/10 text-white/30'
+              )}
+            >
+              {subEnabled ? <Check size={10} /> : <Subtitles size={10} />}
+              Sub VI
+            </button>
+          </div>
+
+          <div className="flex items-center gap-4 pointer-events-auto bg-[#0a0a0c]/85 backdrop-blur-md px-3.5 py-2.5 rounded-2xl border border-white/10 shadow-[rgba(0,0,0,0.8)_0px_8px_30px]">
+            {/* Video Sources / Server selection list for iframe embed */}
+            {streams && streams.length > 0 && (
+              <button 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  setIsSourcesOpen(!isSourcesOpen); 
+                  setIsEpisodesOpen(false); 
+                }} 
+                className={cn(
+                  "hover:opacity-100 transition-all flex items-center gap-2 rounded-xl active:scale-95 cursor-pointer px-3 py-1.5 bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.1]",
+                  isSourcesOpen ? "text-emerald-400 opacity-100 font-bold border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.15)]" : "opacity-85 text-white"
+                )}
+                title="Nguồn phát video"
+              >
+                <Wifi size={18} />
+                <span className="font-sans text-xs">Nguồn phát</span>
+              </button>
+            )}
+
+            {/* Episode list trigger (for TV shows in embed mode) */}
+            {episodes && episodes.length > 0 && (
+              <button 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  setIsEpisodesOpen(!isEpisodesOpen); 
+                  setIsSourcesOpen(false);
+                }} 
+                className={cn(
+                  "hover:opacity-100 transition-all flex items-center gap-2 rounded-xl active:scale-95 cursor-pointer px-3 py-1.5 bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.1]",
+                  isEpisodesOpen ? "text-[#E50914] opacity-100 font-bold border-red-500/50" : "opacity-85 text-white"
+                )}
+                title="Danh sách tập"
+              >
+                <List size={18} />
+                <span className="font-sans text-xs">Tập phim</span>
+              </button>
+            )}
+
+            {/* Fullscreen button */}
+            <button onClick={toggleFullscreen} className="hover:text-gray-300 hover:scale-110 active:scale-95 transition-all cursor-pointer">
+              <Maximize size={20} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

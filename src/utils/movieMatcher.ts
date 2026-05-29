@@ -50,6 +50,26 @@ const isTooShortOrNumericForPartial = (s: string) => {
   return s.length < 3 || /^\d+$/.test(s);
 };
 
+const containsWholePhrase = (container: string, phrase: string): boolean => {
+  if (!container || !phrase) return false;
+  const cWords = container.split(' ').filter(Boolean);
+  const pWords = phrase.split(' ').filter(Boolean);
+  if (pWords.length === 0) return false;
+  if (pWords.length > cWords.length) return false;
+
+  for (let i = 0; i <= cWords.length - pWords.length; i++) {
+    let match = true;
+    for (let j = 0; j < pWords.length; j++) {
+      if (cWords[i + j] !== pWords[j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) return true;
+  }
+  return false;
+};
+
 export const computeMatchScore = (
   item: any,
   tmdb: { original_title: string; title: string; year: number; type?: 'movie' | 'tv' }
@@ -71,8 +91,8 @@ export const computeMatchScore = (
     (itemCleanedOrigin === tmdbCleanedName && tmdbCleanedName !== '') ||
     (ratio >= 0.75) ||
     (ratioOrigin >= 0.75 && tmdb.original_title) ||
-    (itemCleanedOrigin && tmdbCleanedOrigin && !isTooShortOrNumericForPartial(itemCleanedOrigin) && !isTooShortOrNumericForPartial(tmdbCleanedOrigin) && (itemCleanedOrigin.includes(tmdbCleanedOrigin) || tmdbCleanedOrigin.includes(itemCleanedOrigin))) ||
-    (itemCleanedName && tmdbCleanedName && !isTooShortOrNumericForPartial(itemCleanedName) && !isTooShortOrNumericForPartial(tmdbCleanedName) && (itemCleanedName.includes(tmdbCleanedName) || tmdbCleanedName.includes(itemCleanedName)));
+    (itemCleanedOrigin && tmdbCleanedOrigin && !isTooShortOrNumericForPartial(itemCleanedOrigin) && !isTooShortOrNumericForPartial(tmdbCleanedOrigin) && (containsWholePhrase(itemCleanedOrigin, tmdbCleanedOrigin) || containsWholePhrase(tmdbCleanedOrigin, itemCleanedOrigin))) ||
+    (itemCleanedName && tmdbCleanedName && !isTooShortOrNumericForPartial(itemCleanedName) && !isTooShortOrNumericForPartial(tmdbCleanedName) && (containsWholePhrase(itemCleanedName, tmdbCleanedName) || containsWholePhrase(tmdbCleanedName, itemCleanedName)));
 
   if (!hasTitleMatch) {
     return 0; // Return 0 immediately if there is absolutely no title resemblance
@@ -84,10 +104,8 @@ export const computeMatchScore = (
   if (itemCleanedOrigin === tmdbCleanedOrigin && tmdbCleanedOrigin !== '') {
     score += 100;
   } else if (itemCleanedOrigin && tmdbCleanedOrigin && !isTooShortOrNumericForPartial(itemCleanedOrigin) && !isTooShortOrNumericForPartial(tmdbCleanedOrigin)) {
-    if (itemCleanedOrigin.startsWith(tmdbCleanedOrigin) || tmdbCleanedOrigin.startsWith(itemCleanedOrigin)) {
-      score += 40;
-    } else if (itemCleanedOrigin.includes(tmdbCleanedOrigin) || tmdbCleanedOrigin.includes(itemCleanedOrigin)) {
-      score += 20;
+    if (containsWholePhrase(itemCleanedOrigin, tmdbCleanedOrigin) || containsWholePhrase(tmdbCleanedOrigin, itemCleanedOrigin)) {
+      score += 30;
     }
   }
 
@@ -95,10 +113,8 @@ export const computeMatchScore = (
   if (itemCleanedName === tmdbCleanedName && tmdbCleanedName !== '') {
     score += 80;
   } else if (itemCleanedName && tmdbCleanedName && !isTooShortOrNumericForPartial(itemCleanedName) && !isTooShortOrNumericForPartial(tmdbCleanedName)) {
-    if (itemCleanedName.startsWith(tmdbCleanedName) || tmdbCleanedName.startsWith(itemCleanedName)) {
-      score += 30;
-    } else if (itemCleanedName.includes(tmdbCleanedName) || tmdbCleanedName.includes(itemCleanedName)) {
-      score += 10;
+    if (containsWholePhrase(itemCleanedName, tmdbCleanedName) || containsWholePhrase(tmdbCleanedName, itemCleanedName)) {
+      score += 20;
     }
   }
 
@@ -118,7 +134,7 @@ export const computeMatchScore = (
     score += 50;
   }
 
-  // 3. Year match
+  // 3. Year match / mismatch
   const itemYear = parseInt(item.year);
   if (itemYear && tmdb.year) {
     const diff = Math.abs(itemYear - tmdb.year);
@@ -127,9 +143,9 @@ export const computeMatchScore = (
     } else if (diff === 1) {
       score += 25;
     } else if (diff === 2) {
-      score += 15;
-    } else if (diff === 3) {
-      score += 5;
+      score -= 50; // Moderate penalty for year difference of 2
+    } else {
+      score -= 150; // Severe penalty for year difference >= 3
     }
   }
 
@@ -143,9 +159,10 @@ export const computeMatchScore = (
     } else if (tmdb.type === 'tv' && isItemTv) {
       score += 60;
     } else {
-      score -= 50; // Penalty for wrong type
+      score -= 80; // Penalty for wrong type
     }
   }
 
   return score;
 };
+

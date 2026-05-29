@@ -98,22 +98,24 @@ export const Hero = ({
     );
   }
 
+  const isDetailsForActiveMovie = tmdbDetails && String(tmdbDetails.id) === String(activeMovie.id);
+
   // 1. Check if we have an English backdrop (this was used before, but now we prefer textless backdrop + logo overlay)
-  const englishBackdropFile = tmdbDetails?.images?.backdrops?.find((b: any) => b.iso_639_1 === 'en')?.file_path;
+  const englishBackdropFile = isDetailsForActiveMovie ? tmdbDetails?.images?.backdrops?.find((b: any) => b.iso_639_1 === 'en')?.file_path : null;
   const englishBackdropUrl = englishBackdropFile ? `https://image.tmdb.org/t/p/original/${englishBackdropFile}` : null;
 
   // 2. Main backdrop image choice (Standard textless backdrop is preferred since we are overlaying the logo)
   const bgImage = activeMovie.backdrop_path ? (activeMovie.backdrop_path.startsWith('http') ? activeMovie.backdrop_path : `https://image.tmdb.org/t/p/original/${activeMovie.backdrop_path.split('/').pop()}`) : englishBackdropUrl || activeMovie.poster_path;
   
   // 3. Official transparent logo overlay
-  const logoFile = tmdbDetails?.images?.logos?.find((l: any) => l.iso_639_1 === 'en' || l.iso_639_1 === 'vi' || !l.iso_639_1)?.file_path;
+  const logoFile = isDetailsForActiveMovie ? tmdbDetails?.images?.logos?.find((l: any) => l.iso_639_1 === 'en' || l.iso_639_1 === 'vi' || !l.iso_639_1)?.file_path : null;
   const logoUrl = logoFile ? `https://image.tmdb.org/t/p/w500/${logoFile}` : null;
 
   const handleNext = () => setCurrentIndex((prev) => (prev + 1) % maxItems);
   const handlePrev = () => setCurrentIndex((prev) => (prev - 1 + maxItems) % maxItems);
 
   const titleString = activeMovie.title || activeMovie.name || activeMovie.original_name || activeMovie.original_title || '';
-  const description = tmdbDetails?.overview || activeMovie.overview || 'Trải nghiệm siêu phẩm điện ảnh đỉnh cao, tích hợp server truyền tải tốc độ nhanh mượt hôm nay.';
+  const description = (isDetailsForActiveMovie && tmdbDetails?.overview) || activeMovie.overview || 'Trải nghiệm siêu phẩm điện ảnh đỉnh cao, tích hợp server truyền tải tốc độ nhanh mượt hôm nay.';
   const dateString = activeMovie.release_date?.split('-')[0] || activeMovie.first_air_date?.split('-')[0] || activeMovie.year || '2026';
   
   const ratingVal = activeMovie.vote_average || 8.0;

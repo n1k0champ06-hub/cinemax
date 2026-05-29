@@ -11,7 +11,8 @@ import {
   tmdbGetTopRated,
   tmdbGetPopular,
   tmdbDiscover,
-  tmdbFindByExternalId
+  tmdbFindByExternalId,
+  tmdbGetExternalIds,
 } from '../api/tmdbApi';
 
 export const useTmdbRanking = (type: 'top250-movies' | 'top250-tv' | 'popular-movies' | 'popular-tv' | 'now-playing') => {
@@ -212,5 +213,26 @@ export const useTmdbFindByExternalId = (externalId: string, source: 'imdb_id' | 
     queryFn: () => tmdbFindByExternalId(externalId, source),
     enabled: !!externalId,
     staleTime: 24 * 60 * 60 * 1000,
+  });
+};
+
+/** Fetch external IDs (imdb_id, tvdb_id, etc.) for a movie or TV show from TMDB. */
+export const useTmdbExternalIds = (
+  id: number | string | null | undefined,
+  mediaType: 'movie' | 'tv'
+) => {
+  const isIdValid =
+    !!id &&
+    id !== 0 &&
+    id !== '0' &&
+    id !== 'undefined' &&
+    id !== 'null' &&
+    String(id).trim() !== '';
+
+  return useQuery({
+    queryKey: ['tmdb', 'external_ids', mediaType, id],
+    queryFn: () => tmdbGetExternalIds(mediaType, id!),
+    enabled: isIdValid,
+    staleTime: 24 * 60 * 60 * 1000, // external IDs rarely change
   });
 };

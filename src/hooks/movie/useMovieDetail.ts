@@ -200,6 +200,14 @@ export const useMovieDetail = (rawSlug: string) => {
     return params.get("play") === "true";
   });
 
+  // Reset all movie-specific state immediately when slug changes to prevent leakage/mismatches
+  useEffect(() => {
+    setActiveEp(null);
+    setSelectedServerId(0);
+    const params = new URLSearchParams(window.location.search);
+    setIsPlaying(params.get("play") === "true");
+  }, [slug]);
+
   const { addToList, removeFromList, isInList } = useMyList();
   const inList = isInList(slug);
 
@@ -307,6 +315,13 @@ export const useMovieDetail = (rawSlug: string) => {
 
   const prevSlugRef = useRef<string | null>(null);
   useEffect(() => {
+    const expectedTmdbId = isTmdbSlug ? slugParts[1] : null;
+    const isDataMatching = isTmdbSlug 
+      ? (finalTmdbData && String(finalTmdbData.id) === String(expectedTmdbId))
+      : (detailData?.movie && detailData.movie.slug === slug);
+
+    if (!isDataMatching) return;
+
     if (servers && servers.length > 0) {
       const isNewSlug = slug !== prevSlugRef.current;
       const isInvalidIndex = selectedServerId < 0 || selectedServerId >= servers.length;
@@ -327,10 +342,18 @@ export const useMovieDetail = (rawSlug: string) => {
         }
       }
     }
-  }, [servers, slug, selectedServerId]);
+  }, [servers, slug, selectedServerId, finalTmdbData, detailData, isTmdbSlug, slugParts]);
 
   useEffect(() => {
-    if (data?.episodes?.length > 0 && !activeEp) {
+    const expectedTmdbId = isTmdbSlug ? slugParts[1] : null;
+    const isDataMatching = isTmdbSlug 
+      ? (finalTmdbData && String(finalTmdbData.id) === String(expectedTmdbId))
+      : (detailData?.movie && detailData.movie.slug === slug);
+
+    if (!isDataMatching) return;
+
+    const hasEpisodes = (data?.episodes?.length > 0) || (servers && servers.some((s: any) => s.server_data?.length > 0));
+    if (hasEpisodes && !activeEp) {
       // First try to restore from URL parameter 'ep'
       const params = new URLSearchParams(window.location.search);
       const urlEp = params.get("ep");
@@ -360,7 +383,7 @@ export const useMovieDetail = (rawSlug: string) => {
           const parsed = JSON.parse(stored);
           const savedProgress = parsed[slug];
           if (savedProgress?.episodeName) {
-            for (const server of data.episodes as any[]) {
+            for (const server of servers) {
               const ep = server.server_data?.find((e: any) => e.name === savedProgress.episodeName);
               if (ep) {
                 setActiveEp(ep);
@@ -374,7 +397,7 @@ export const useMovieDetail = (rawSlug: string) => {
         setActiveEp(servers[selectedServerId].server_data[0]);
       }
     }
-  }, [data, slug, servers, selectedServerId, activeEp]); // Only run once or when activeEp is null
+  }, [data, slug, servers, selectedServerId, activeEp, finalTmdbData, detailData, isTmdbSlug, slugParts]);
 
   return {
     data, isLoading, isFetching,
