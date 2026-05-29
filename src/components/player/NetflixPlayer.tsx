@@ -1627,6 +1627,7 @@ export const NetflixPlayer = ({
             className="w-full h-full border-0 absolute inset-0 z-0 bg-black pointer-events-auto"
             allowFullScreen
             allow="autoplay; fullscreen; encrypted-media"
+            sandbox="allow-scripts allow-same-origin allow-forms"
             referrerPolicy="origin"
           />
           {!areIframeControlsVisible && onClose && (
