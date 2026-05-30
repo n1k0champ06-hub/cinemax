@@ -588,7 +588,11 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           className="absolute inset-0 w-full h-full border-0"
           allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
           allowFullScreen
-          sandbox="allow-scripts allow-same-origin allow-forms"
+          sandbox={
+            iframeUrl && (iframeUrl.includes('cinemaos.tech') || iframeUrl.includes('vidsrc') || iframeUrl.includes('embed.su'))
+              ? "allow-scripts allow-forms"
+              : "allow-scripts allow-same-origin allow-forms"
+          }
           referrerPolicy="origin"
           onLoad={() => {
             setIframePlayStartedAt(Date.now());

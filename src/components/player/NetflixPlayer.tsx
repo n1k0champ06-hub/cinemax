@@ -1632,7 +1632,11 @@ export const NetflixPlayer = ({
             className="w-full h-full border-0 absolute inset-0 z-0 bg-black pointer-events-auto"
             allowFullScreen
             allow="autoplay; fullscreen; encrypted-media"
-            sandbox="allow-scripts allow-same-origin allow-forms"
+            sandbox={
+              resolvedEmbedUrl && (resolvedEmbedUrl.includes('cinemaos.tech') || resolvedEmbedUrl.includes('vidsrc') || resolvedEmbedUrl.includes('embed.su'))
+                ? "allow-scripts allow-forms"
+                : "allow-scripts allow-same-origin allow-forms"
+            }
             referrerPolicy="origin"
           />
           {!areIframeControlsVisible && onClose && (
@@ -1848,6 +1852,31 @@ export const NetflixPlayer = ({
               <span className="inline-block w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: activeColor }} />
               <span>{title}</span>
             </h2>
+
+            {/* Episode List Selection Button inside top-right of player */}
+            {episodes && episodes.length > 0 && onEpisodeSelect && (
+              <button 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  const newOpen = !isEpisodesOpen;
+                  setIsEpisodesOpen(newOpen); 
+                  setIsSettingsOpen(false); 
+                  setIsSourcesOpen(false);
+                  if (newOpen && videoRef.current) {
+                    videoRef.current.pause();
+                    setIsPlaying(false);
+                  }
+                }} 
+                className={cn(
+                  "hover:opacity-100 transition-all flex items-center gap-1.5 rounded-full active:scale-95 cursor-pointer px-3.5 py-1.5 bg-black/50 border border-white/10 hover:bg-black/80 hover:border-white/20 text-white text-xs font-semibold backdrop-blur-md shadow-lg select-none",
+                  isEpisodesOpen ? "text-[#E50914] border-red-500/50 bg-black/70" : "text-white"
+                )}
+                title="Chọn tập phim"
+              >
+                <List size={13} />
+                <span>Chọn tập</span>
+              </button>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
