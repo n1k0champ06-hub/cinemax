@@ -1283,26 +1283,15 @@ export const NetflixPlayer = ({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('audioTrack')}>
-                  <div className="flex items-center gap-4">
-                    <Volume2 size={20} className="text-white" />
-                    <span className="text-sm font-medium">Kênh âm thanh</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-gray-400">
-                    <span className="text-xs">
-                      {audioTracks.find(t => t.id === activeAudioTrack)?.name || 'Mặc định'}
-                    </span>
-                    <ChevronRight size={16} />
-                  </div>
-                </div>
-
                 <div className="flex items-center justify-between py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('subSettings')}>
                   <div className="flex items-center gap-4">
                     <Sliders size={20} className="text-white" />
                     <span className="text-sm font-medium">Tùy chỉnh phụ đề</span>
                   </div>
                   <div className="flex items-center gap-2 text-gray-400">
-                    <span className="text-xs">Chỉnh size, màu, delay</span>
+                    <span className="text-xs">
+                      {`${subSize === 'small' ? 'Nhỏ' : subSize === 'large' ? 'Lớn' : 'Vừa'}, ${subColor === 'white' ? 'Trắng' : subColor === 'yellow' ? 'Vàng' : 'Xanh'}`}
+                    </span>
                     <ChevronRight size={16} />
                   </div>
                 </div>
@@ -1368,13 +1357,6 @@ export const NetflixPlayer = ({
                   <div key={track.id} className="flex items-center gap-4 py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors" onClick={() => { handleSubtitleTrackChange(track.id); setSettingsTab('main'); }}>
                     <div className="w-5 flex justify-center">{selectedSubtitleId === track.id && <Check size={18} className="text-white" />}</div>
                     <span className={cn("text-sm transition-colors", selectedSubtitleId === track.id ? "text-white font-medium" : "text-gray-300")}>{track.name}</span>
-                  </div>
-                ))}
-
-                {settingsTab === 'audioTrack' && audioTracks.map(track => (
-                  <div key={track.id} className="flex items-center gap-4 py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors" onClick={() => { handleAudioTrackChange(track.id); setSettingsTab('main'); }}>
-                    <div className="w-5 flex justify-center">{activeAudioTrack === track.id && <Check size={18} className="text-white" />}</div>
-                    <span className={cn("text-sm transition-colors", activeAudioTrack === track.id ? "text-white font-medium" : "text-gray-300")}>{track.name}</span>
                   </div>
                 ))}
 
@@ -1498,21 +1480,6 @@ export const NetflixPlayer = ({
                           type="range" min="0.1" max="2.0" step="0.1" 
                           value={brightness} onChange={(e) => setBrightness(parseFloat(e.target.value))}
                           className="w-full accent-[#E50914] h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    <div className="px-5 py-2 mt-2 text-[10px] font-bold tracking-wider uppercase text-gray-500">Âm thanh</div>
-                    <div className="flex items-center justify-between py-2 px-5 hover:bg-white/5">
-                      <span className="text-sm text-gray-300">Khuếch đại âm lượng</span>
-                      <PlayerSelect
-                        value={audioBoost}
-                        onChange={(val) => handleAudioBoostChange(val)}
-                        activeColor={activeColor}
-                        options={[
-                          { value: 1.0, label: 'Tắt (1x)', icon: <Volume1 size={14} /> },
-                          { value: 1.5, label: '1.5x', icon: <Volume2 size={14} /> },
-                          { value: 2.0, label: '2.0x', icon: <Volume2 size={14} /> }
-                        ]}
                       />
                     </div>
 
