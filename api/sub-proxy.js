@@ -22,25 +22,25 @@ const CORS_HEADERS = {
  *   provider   = 'download'
  *   url        = encoded subtitle download URL
  */
-export default async function handler(req) {
-  const url = new URL(req.url);
+export default async function handler(req, res) {
+  // Set CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   // Handle preflight
   if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
+    return res.status(204).end();
   }
 
-  const provider = url.searchParams.get('provider') || 'subdl';
-  const lang = url.searchParams.get('lang') || 'vi';
+  const provider = req.query.provider || 'subdl';
+  const lang = req.query.lang || 'vi';
 
   // --- Download proxy (fetch raw subtitle file to avoid CORS) ---
   if (provider === 'download') {
-    const targetUrl = url.searchParams.get('url');
+    const targetUrl = req.query.url;
     if (!targetUrl) {
-      return new Response(JSON.stringify({ error: 'Missing url' }), {
-        status: 400,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-      });
+      return res.status(400).json({ error: 'Missing url' });
     }
 
     // Only allow known subtitle CDNs
@@ -56,57 +56,53 @@ export default async function handler(req) {
       'subs5.strem.io',
       'elfhosted.com',
     ];
-    const target = new URL(targetUrl);
-    const isAllowed = allowed.some(d => target.hostname === d || target.hostname.endsWith('.' + d));
-    if (!isAllowed) {
-      return new Response(JSON.stringify({ error: 'Domain not allowed', hostname: target.hostname }), {
-        status: 403,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-      });
-    }
-
+    
     try {
+      const target = new URL(targetUrl);
+      const isAllowed = allowed.some(d => target.hostname === d || target.hostname.endsWith('.' + d));
+      if (!isAllowed) {
+        return res.status(403).json({ error: 'Domain not allowed', hostname: target.hostname });
+      }
+
       const resp = await proxyFetch(targetUrl, {
         headers: { 'User-Agent': 'CinemaxApp/1.0' },
       });
       const body = await resp.text();
-      return new Response(body, {
-        status: resp.status,
-        headers: {
-          ...CORS_HEADERS,
-          'Content-Type': 'text/plain; charset=utf-8',
-          'Cache-Control': 'public, max-age=86400',
-        },
-      });
+      
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.status(resp.status).send(body);
     } catch (err) {
-      return new Response(JSON.stringify({ error: err.message }), {
-        status: 500,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-      });
+      return res.status(500).json({ error: err.message });
     }
   }
 
   // --- Subdl API (primary, no key required for basic search) ---
   if (provider === 'subdl') {
-    const tmdbId = url.searchParams.get('tmdb_id');
-    const imdbId = url.searchParams.get('imdb_id');
-    const type = url.searchParams.get('type') || 'movie';
-    const season = url.searchParams.get('season');
-    const episode = url.searchParams.get('episode');
+    const tmdbId = req.query.tmdb_id;
+    const imdbId = req.query.imdb_id;
+    const type = req.query.type || 'movie';
+    const season = req.query.season;
+    const episode = req.query.episode;
     const subdlApiKey = process.env.VITE_SUBDL_API_KEY || process.env.SUBDL_API_KEY || '';
 
     // Promise 1: Fetch from Subdl API
     const subdlPromise = (async () => {
       const params = new URLSearchParams();
-      if (tmdbId) params.set('tmdb_id', tmdbId);
-      else if (imdbId) params.set('imdb_id', imdbId);
-      else return [];
-
       params.set('languages', mapLangToSubdl(lang));
-      params.set('type', type === 'movie' ? 'movie' : 'tv');
 
-      if (type !== 'movie' && season) params.set('season_number', season);
-      if (type !== 'movie' && episode) params.set('episode_number', episode);
+      if (imdbId) {
+        params.set('imdb_id', imdbId);
+      } else if (tmdbId) {
+        params.set('tmdb_id', String(tmdbId));
+      } else {
+        return [];
+      }
+
+      if (type === 'episode' || type === 'tv') {
+        if (season) params.set('season_number', String(season));
+        if (episode) params.set('episode_number', String(episode));
+      }
 
       if (subdlApiKey) params.set('api_key', subdlApiKey);
 
@@ -168,36 +164,25 @@ export default async function handler(req) {
       const [subdlSubs, stremioSubs] = await Promise.all([subdlPromise, stremioPromise]);
       const subtitles = [...subdlSubs, ...stremioSubs];
 
-      return new Response(JSON.stringify({ subtitles, source: 'merged' }), {
-        status: 200,
-        headers: {
-          ...CORS_HEADERS,
-          'Content-Type': 'application/json',
-          'Cache-Control': 's-maxage=3600, stale-while-revalidate=86400',
-        },
-      });
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=86400');
+      return res.status(200).json({ subtitles, source: 'merged' });
     } catch (err) {
-      return new Response(JSON.stringify({ error: err.message, subtitles: [], source: 'merged' }), {
-        status: 500,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-      });
+      return res.status(500).json({ error: err.message, subtitles: [], source: 'merged' });
     }
   }
 
   // --- OpenSubtitles REST v2 (optional fallback) ---
   if (provider === 'opensubtitles') {
-    const imdbId = url.searchParams.get('imdb_id');
-    const tmdbId = url.searchParams.get('tmdb_id');
-    const type = url.searchParams.get('type') || 'movie';
-    const season = url.searchParams.get('season');
-    const episode = url.searchParams.get('episode');
+    const imdbId = req.query.imdb_id;
+    const tmdbId = req.query.tmdb_id;
+    const type = req.query.type || 'movie';
+    const season = req.query.season;
+    const episode = req.query.episode;
     const apiKey = process.env.VITE_OPENSUBTITLES_API_KEY || process.env.OPENSUBTITLES_API_KEY || '';
 
     if (!apiKey) {
-      return new Response(JSON.stringify({ error: 'OpenSubtitles API key not configured', subtitles: [] }), {
-        status: 200,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-      });
+      return res.status(200).json({ error: 'OpenSubtitles API key not configured', subtitles: [] });
     }
 
     const params = new URLSearchParams();
@@ -237,26 +222,15 @@ export default async function handler(req) {
       }))
       .filter(s => s.fileId);
 
-      return new Response(JSON.stringify({ subtitles, source: 'opensubtitles' }), {
-        status: 200,
-        headers: {
-          ...CORS_HEADERS,
-          'Content-Type': 'application/json',
-          'Cache-Control': 's-maxage=3600, stale-while-revalidate=86400',
-        },
-      });
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=86400');
+      return res.status(200).json({ subtitles, source: 'opensubtitles' });
     } catch (err) {
-      return new Response(JSON.stringify({ error: err.message, subtitles: [], source: 'opensubtitles' }), {
-        status: 500,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-      });
+      return res.status(500).json({ error: err.message, subtitles: [], source: 'opensubtitles' });
     }
   }
 
-  return new Response(JSON.stringify({ error: 'Unknown provider' }), {
-    status: 400,
-    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-  });
+  return res.status(400).json({ error: 'Unknown provider' });
 }
 
 /** Map language codes to Subdl's expected format */
