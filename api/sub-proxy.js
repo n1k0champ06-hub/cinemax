@@ -1,6 +1,4 @@
-export const config = {
-  runtime: 'edge',
-};
+import { proxyFetch } from './proxy-helper.js';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -68,7 +66,7 @@ export default async function handler(req) {
     }
 
     try {
-      const resp = await fetch(targetUrl, {
+      const resp = await proxyFetch(targetUrl, {
         headers: { 'User-Agent': 'CinemaxApp/1.0' },
       });
       const body = await resp.text();
@@ -115,7 +113,7 @@ export default async function handler(req) {
       const subdlUrl = `https://api.subdl.com/api/v1/subtitles?${params.toString()}`;
 
       try {
-        const resp = await fetch(subdlUrl, {
+        const resp = await proxyFetch(subdlUrl, {
           headers: {
             'User-Agent': 'CinemaxApp/1.0',
             'Accept': 'application/json',
@@ -216,7 +214,7 @@ export default async function handler(req) {
     const osUrl = `https://api.opensubtitles.com/api/v1/subtitles?${params.toString()}`;
 
     try {
-      const resp = await fetch(osUrl, {
+      const resp = await proxyFetch(osUrl, {
         headers: {
           'Api-Key': apiKey,
           'Content-Type': 'application/json',
@@ -289,7 +287,7 @@ async function fetchStremioSubtitles(addonUrl, type, imdbId, season, episode, la
     : `${cleanBase}/subtitles/series/${imdbId}:${season}:${episode}.json`;
 
   try {
-    const res = await fetch(url, {
+    const res = await proxyFetch(url, {
       headers: { 'User-Agent': 'CinemaxApp/1.0' },
     });
     if (!res.ok) return [];

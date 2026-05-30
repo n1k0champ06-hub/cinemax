@@ -1,6 +1,4 @@
-export const config = {
-  runtime: 'edge',
-};
+import { proxyFetch } from './proxy-helper.js';
 
 export default async function handler(req) {
   const url = new URL(req.url);
@@ -28,7 +26,7 @@ export default async function handler(req) {
   }
 
   try {
-    const response = await fetch(targetUrl, {
+    const response = await proxyFetch(targetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'application/json'
