@@ -145,6 +145,21 @@ export const NetflixPlayer = ({
   // When set to true, the next HLS handleReady will skip auto-play and load the episode paused.
   const startPausedRef = useRef<boolean>(false);
 
+  // Reset player state immediately when episode changes to avoid displaying old timestamp/video
+  useEffect(() => {
+    setCurrentTime(0);
+    setDuration(0);
+    setIsBuffering(true);
+    const video = videoRef.current;
+    if (video) {
+      try {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+      } catch (e) {}
+    }
+  }, [episodeName]);
+
   // Settings & Navigation panels
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEpisodesOpen, setIsEpisodesOpen] = useState(false);
@@ -1788,9 +1803,10 @@ export const NetflixPlayer = ({
       </AnimatePresence>
 
       <AnimatePresence>
-        {!isIframeMode && isBuffering && swipeSeekTime === null && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 flex items-center justify-center pointer-events-none z-10" style={{ color: activeColor }}>
+        {((!isIframeMode && isBuffering && swipeSeekTime === null) || isAggregatorLoading || (!resolvedUrl && !resolvedEmbedUrl)) && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 pointer-events-auto z-40 gap-3" style={{ color: activeColor }}>
             <Loader2 size={48} className="animate-spin drop-shadow-lg" />
+            <p className="text-[11px] text-white/70 font-semibold uppercase tracking-widest animate-pulse font-sans">Đang tải tập phim mới...</p>
           </motion.div>
         )}
       </AnimatePresence>
