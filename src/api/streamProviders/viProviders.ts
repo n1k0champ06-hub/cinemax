@@ -6,6 +6,7 @@
 
 import type { StreamItem, StreamProvider, StreamQuery } from './types';
 import { computeScore } from './types';
+import { buildProxiedM3u8Url } from '../cineproApi';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -207,14 +208,21 @@ async function fetchFromVietnameseApi(
 
       // Add HLS stream if available
       if (activeEp.link_m3u8 && String(activeEp.link_m3u8).startsWith('http')) {
-        const url = activeEp.link_m3u8;
+        const rawUrl = activeEp.link_m3u8;
+        let referer = '';
+        if (providerId === 'ophim') referer = 'https://ophim1.com/';
+        else if (providerId === 'kkphim') referer = 'https://phimapi.com/';
+        else if (providerId === 'nguonc') referer = 'https://phim.nguonc.com/';
+
+        const url = buildProxiedM3u8Url(rawUrl, referer);
+
         const item: Omit<StreamItem, 'score'> = {
-          id: `${providerId}:hls:${server.server_name || 'vip'}:${url}`,
+          id: `${providerId}:hls:${server.server_name || 'vip'}:${rawUrl}`,
           provider: providerId,
           providerLabel: `${providerLabel.toUpperCase()} - Vietsub`,
           type: 'hls',
           url,
-          quality: url.toLowerCase().includes('1080') ? '1080p' : 'auto',
+          quality: rawUrl.toLowerCase().includes('1080') ? '1080p' : 'auto',
           lang: 'vi',
           label: `${labelPrefix} · Vietsub · HLS`,
           episodeName: activeEp.name || String(targetEpisode),
