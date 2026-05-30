@@ -358,7 +358,7 @@ export const UnifiedPlayer: React.FC<UnifiedPlayerProps> = ({
           allowFullScreen
           allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
           sandbox={
-            stream.url && (stream.url.includes('cinemaos.tech') || stream.url.includes('vidsrc') || stream.url.includes('embed.su'))
+            stream.url && (stream.url.includes('vidsrc') || stream.url.includes('embed.su'))
               ? "allow-scripts allow-forms"
               : "allow-scripts allow-same-origin allow-forms"
           }

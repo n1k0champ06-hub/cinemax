@@ -154,6 +154,7 @@ export const NetflixPlayer = ({
     if (video) {
       try {
         video.pause();
+        video.currentTime = 0;
         video.removeAttribute('src');
         video.load();
       } catch (e) {}
@@ -164,7 +165,7 @@ export const NetflixPlayer = ({
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEpisodesOpen, setIsEpisodesOpen] = useState(false);
   const [isSeasonDropdownOpen, setIsSeasonDropdownOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'main' | 'quality' | 'speed' | 'captions' | 'audioTrack' | 'appearance' | 'videoFit' | 'aspectRatio' | 'gestures'>('main');
+  const [settingsTab, setSettingsTab] = useState<'main' | 'quality' | 'speed' | 'captions' | 'audioTrack' | 'appearance' | 'videoFit' | 'aspectRatio' | 'gestures' | 'subSettings'>('main');
  
   // Interactive controls & preferences
   const [playbackRate, setPlaybackRate] = useState(1.0);
@@ -467,7 +468,7 @@ export const NetflixPlayer = ({
     } catch (e) {}
 
     const handleReady = () => {
-      if (initialTime > 0 && video) {
+      if (video) {
         video.currentTime = initialTime;
       }
       // If the user picked an episode from the drawer while playing, start the new episode paused.
@@ -1190,6 +1191,7 @@ export const NetflixPlayer = ({
 
   const renderSettingsOverlay = () => {
     if (isIframeMode) return null;
+    const isLandscapeMobile = isMobile && !isPortrait;
 
     const overlayContent = (
       <AnimatePresence>
@@ -1202,7 +1204,9 @@ export const NetflixPlayer = ({
             className={cn(
               "fixed inset-0 z-[9999] bg-black/60 pointer-events-auto flex transition-colors shadow-2xl",
               isFullscreen ? "absolute z-50 inset-0" : "",
-              isMobile && isPortrait ? "items-end justify-center" : "items-end justify-end pb-16 pr-4 sm:pb-24 sm:pr-8"
+              isMobile && isPortrait 
+                ? "items-end justify-center" 
+                : (isLandscapeMobile ? "items-end justify-end pb-2 pr-2" : "items-end justify-end pb-16 pr-4 sm:pb-24 sm:pr-8")
             )}
           >
         {/* Click outside sidebar to close on mobile */}
@@ -1238,7 +1242,10 @@ export const NetflixPlayer = ({
                   <X size={18} className="text-gray-400" />
                 </button>
               </div>
-              <div className="flex flex-col py-2 max-h-[70vh] custom-scrollbar overflow-y-auto">
+              <div className={cn(
+                "flex flex-col py-2 custom-scrollbar overflow-y-auto",
+                isLandscapeMobile ? "max-h-[160px]" : "max-h-[70vh]"
+              )}>
                 {qualities && qualities.length > 0 && (
                   <div className="flex items-center justify-between py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('quality')}>
                     <div className="flex items-center gap-4">
@@ -1289,6 +1296,17 @@ export const NetflixPlayer = ({
                   </div>
                 </div>
 
+                <div className="flex items-center justify-between py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('subSettings')}>
+                  <div className="flex items-center gap-4">
+                    <Sliders size={20} className="text-white" />
+                    <span className="text-sm font-medium">Tùy chỉnh phụ đề</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-gray-400">
+                    <span className="text-xs">Chỉnh size, màu, delay</span>
+                    <ChevronRight size={16} />
+                  </div>
+                </div>
+
                 <div className="flex items-center justify-between py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('appearance')}>
                   <div className="flex items-center gap-4">
                     <Settings size={20} className="text-white" />
@@ -1324,10 +1342,14 @@ export const NetflixPlayer = ({
                   {settingsTab === 'gestures' && 'Cử chỉ'}
                   {settingsTab === 'captions' && 'Phụ đề'}
                   {settingsTab === 'audioTrack' && 'Kênh âm thanh'}
+                  {settingsTab === 'subSettings' && 'Tùy chỉnh phụ đề'}
                 </h3>
               </div>
 
-              <div className="flex flex-col py-2 max-h-[70vh] custom-scrollbar overflow-y-auto">
+              <div className={cn(
+                "flex flex-col py-2 custom-scrollbar overflow-y-auto",
+                isLandscapeMobile ? "max-h-[160px]" : "max-h-[70vh]"
+              )}>
                 {settingsTab === 'quality' && qualities.map(q => (
                   <div key={q.id} className="flex items-center gap-4 py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors" onClick={() => { handleQualityChange(q.id); setSettingsTab('main'); }}>
                     <div className="w-5 flex justify-center">{activeQuality === q.id && <Check size={18} className="text-white" />}</div>
@@ -1355,6 +1377,77 @@ export const NetflixPlayer = ({
                     <span className={cn("text-sm transition-colors", activeAudioTrack === track.id ? "text-white font-medium" : "text-gray-300")}>{track.name}</span>
                   </div>
                 ))}
+
+                {settingsTab === 'subSettings' && (
+                  <div className="flex flex-col gap-1 pb-4">
+                    <div className="px-5 py-2 text-[10px] font-bold tracking-wider uppercase text-gray-500">Cấu hình phụ đề</div>
+                    
+                    <div className="flex items-center justify-between py-2 px-5 hover:bg-white/5">
+                      <span className="text-sm text-gray-300">Cỡ chữ</span>
+                      <PlayerSelect
+                        value={subSize}
+                        onChange={(val) => setSubSize(val)}
+                        activeColor={activeColor}
+                        options={[
+                          { value: 'small', label: 'Nhỏ', icon: <Minus size={14} /> },
+                          { value: 'medium', label: 'Vừa', icon: <CheckSquare size={14} /> },
+                          { value: 'large', label: 'Lớn', icon: <Plus size={14} /> }
+                        ]}
+                      />
+                    </div>
+                    
+                    <div className="flex items-center justify-between py-2 px-5 hover:bg-white/5">
+                      <span className="text-sm text-gray-300">Màu sắc</span>
+                      <PlayerSelect
+                        value={subColor}
+                        onChange={(val) => setSubColor(val)}
+                        activeColor={activeColor}
+                        options={[
+                          { value: 'white', label: 'Trắng', icon: <span className="w-2.5 h-2.5 rounded-full bg-white border border-white/20 inline-block" /> },
+                          { value: 'yellow', label: 'Vàng', icon: <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" /> },
+                          { value: 'cyan', label: 'Xanh', icon: <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 inline-block" /> }
+                        ]}
+                      />
+                    </div>
+
+                    <div className="px-5 py-3 mt-1 border-t border-white/[0.06] pt-3">
+                      <div className="flex justify-between items-center text-sm text-gray-300 mb-2">
+                        <span>Độ lệch (Delay)</span>
+                        <div className="flex items-center gap-2">
+                          <span className={cn('text-xs font-mono font-bold min-w-[40px] text-right', subtitleOffset === 0 ? 'text-white/40' : 'text-emerald-400')}>
+                            {subtitleOffset >= 0 ? '+' : ''}{(subtitleOffset / 1000).toFixed(2)}s
+                          </span>
+                          {subtitleOffset !== 0 && (
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setSubtitleOffset(0); }} 
+                              className="p-1 rounded hover:bg-white/10 text-white/40 hover:text-white transition-colors"
+                              title="Reset delay"
+                            >
+                              <RotateCcw size={12} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev - 250); }}
+                          className="flex-1 bg-white/5 hover:bg-white/10 active:bg-white/15 border border-white/10 rounded-lg py-2 flex items-center justify-center gap-1.5 text-xs text-gray-300 hover:text-white font-bold transition-all"
+                        >
+                          <Minus size={12} />
+                          Nhanh hơn
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev + 250); }}
+                          className="flex-1 bg-white/5 hover:bg-white/10 active:bg-white/15 border border-white/10 rounded-lg py-2 flex items-center justify-center gap-1.5 text-xs text-gray-300 hover:text-white font-bold transition-all"
+                        >
+                          <Plus size={12} />
+                          Chậm hơn
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {settingsTab === 'appearance' && (
                   <div className="flex flex-col gap-1 pb-4">
@@ -1648,7 +1741,7 @@ export const NetflixPlayer = ({
             allowFullScreen
             allow="autoplay; fullscreen; encrypted-media"
             sandbox={
-              resolvedEmbedUrl && (resolvedEmbedUrl.includes('cinemaos.tech') || resolvedEmbedUrl.includes('vidsrc') || resolvedEmbedUrl.includes('embed.su'))
+              resolvedEmbedUrl && (resolvedEmbedUrl.includes('vidsrc') || resolvedEmbedUrl.includes('embed.su'))
                 ? "allow-scripts allow-forms"
                 : "allow-scripts allow-same-origin allow-forms"
             }
@@ -1884,13 +1977,13 @@ export const NetflixPlayer = ({
                   }
                 }} 
                 className={cn(
-                  "hover:opacity-100 transition-all flex items-center gap-1.5 rounded-full active:scale-95 cursor-pointer px-3.5 py-1.5 bg-black/50 border border-white/10 hover:bg-black/80 hover:border-white/20 text-white text-xs font-semibold backdrop-blur-md shadow-lg select-none",
-                  isEpisodesOpen ? "text-[#E50914] border-red-500/50 bg-black/70" : "text-white"
+                  "hover:opacity-100 transition-all flex items-center gap-1.5 md:gap-2 rounded-full active:scale-95 cursor-pointer px-4 py-2 md:px-5 md:py-2.5 bg-black/70 border border-white/15 hover:bg-black/90 hover:border-white/25 text-white text-xs md:text-sm font-bold backdrop-blur-md shadow-2xl select-none",
+                  isEpisodesOpen ? "text-[#E50914] border-red-500/50 bg-black/80 shadow-[0_0_15px_rgba(229,9,20,0.15)]" : "text-white"
                 )}
                 title="Chọn tập phim"
               >
-                <List size={13} />
-                <span>Chọn tập</span>
+                <List size={16} />
+                <span>Chọn tập phim</span>
               </button>
             )}
           </motion.div>
@@ -2255,30 +2348,6 @@ export const NetflixPlayer = ({
                 </div>
 
                 <div className="flex items-center gap-3 sm:gap-4 md:gap-6 text-xs font-semibold">
-                  {/* Side list trigger button for episodes */}
-                  {episodes && episodes.length > 0 && !(isMobile && isPortrait) && (
-                    <button 
-                      onClick={(e) => { 
-                        e.stopPropagation(); 
-                        const newOpen = !isEpisodesOpen;
-                        setIsEpisodesOpen(newOpen); 
-                        setIsSettingsOpen(false); 
-                        if (newOpen && videoRef.current) {
-                          videoRef.current.pause();
-                          setIsPlaying(false);
-                        }
-                      }} 
-                      className={cn(
-                        "hover:opacity-100 transition-all flex items-center gap-2 rounded-xl active:scale-95 cursor-pointer px-3 py-1.5 bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.1]",
-                        isEpisodesOpen ? "text-[#E50914] opacity-100 font-bold border-red-500/50" : "opacity-85 text-white"
-                      )}
-                      title="Danh sách tập"
-                    >
-                      <List size={18} />
-                      <span className="font-sans text-xs">Tập phim</span>
-                    </button>
-                  )}
-
                   {/* Picture-in-Picture (Overlay Player) */}
                   {typeof document !== 'undefined' && document.pictureInPictureEnabled && (
                     <button 
@@ -2401,24 +2470,7 @@ export const NetflixPlayer = ({
               </button>
             )}
 
-            {/* Episode list trigger (for TV shows in embed mode) */}
-            {episodes && episodes.length > 0 && (
-              <button 
-                onClick={(e) => { 
-                  e.stopPropagation(); 
-                  setIsEpisodesOpen(!isEpisodesOpen); 
-                  setIsSourcesOpen(false);
-                }} 
-                className={cn(
-                  "hover:opacity-100 transition-all flex items-center gap-2 rounded-xl active:scale-95 cursor-pointer px-3 py-1.5 bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.1]",
-                  isEpisodesOpen ? "text-[#E50914] opacity-100 font-bold border-red-500/50" : "opacity-85 text-white"
-                )}
-                title="Danh sách tập"
-              >
-                <List size={18} />
-                <span className="font-sans text-xs">Tập phim</span>
-              </button>
-            )}
+
 
             {/* Fullscreen button */}
             <button onClick={toggleFullscreen} className="hover:text-gray-300 hover:scale-110 active:scale-95 transition-all cursor-pointer">

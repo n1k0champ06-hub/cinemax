@@ -589,7 +589,7 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
           allowFullScreen
           sandbox={
-            iframeUrl && (iframeUrl.includes('cinemaos.tech') || iframeUrl.includes('vidsrc') || iframeUrl.includes('embed.su'))
+            iframeUrl && (iframeUrl.includes('vidsrc') || iframeUrl.includes('embed.su'))
               ? "allow-scripts allow-forms"
               : "allow-scripts allow-same-origin allow-forms"
           }

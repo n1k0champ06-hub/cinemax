@@ -156,15 +156,23 @@ export default {
             if (!resp.ok) return [];
             const data = await resp.json();
 
-            return (data.subtitles || []).map(s => ({
-              id: s.sd_id || String(Math.random()),
-              language: lang,
-              name: s.release_name || s.full_name || 'Subdl Subtitle',
-              downloadUrl: s.url ? `https://dl.subdl.com${s.url}` : s.download_link || '',
-              format: 'srt',
-              hi: s.hi || false,
-              rating: s.ratings || 0,
-            }));
+            return (data.subtitles || [])
+              .filter(s => {
+                const sLang = (s.lang || '').toLowerCase();
+                const target = lang.toLowerCase();
+                if (target === 'vi') return sLang === 'vietnamese' || sLang === 'vi';
+                if (target === 'en') return sLang === 'english' || sLang === 'en';
+                return sLang.startsWith(target) || sLang === target;
+              })
+              .map(s => ({
+                id: s.sd_id || String(Math.random()),
+                language: lang,
+                name: s.release_name || s.full_name || 'Subdl Subtitle',
+                downloadUrl: s.url ? `https://dl.subdl.com${s.url}` : s.download_link || '',
+                format: 'srt',
+                hi: s.hi || false,
+                rating: s.ratings || 0,
+              }));
           } catch (err) {
             console.warn('[sub-proxy] subdl fetch failed:', err.message);
             return [];

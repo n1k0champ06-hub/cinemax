@@ -211,7 +211,7 @@ async function fetchFromVietnameseApi(
         const item: Omit<StreamItem, 'score'> = {
           id: `${providerId}:hls:${server.server_name || 'vip'}:${url}`,
           provider: providerId,
-          providerLabel: `${providerLabel} (${server.server_name || 'VIP'}) - HLS`,
+          providerLabel: `${providerLabel.toUpperCase()} - Vietsub`,
           type: 'hls',
           url,
           quality: url.toLowerCase().includes('1080') ? '1080p' : 'auto',
