@@ -87,7 +87,7 @@ export const Hero = ({
 
   if (isTrendingLoading || !activeMovie) {
     return (
-      <div className="relative h-screen h-[100dvh] min-h-[550px] w-full overflow-hidden bg-[#050505] flex items-center justify-center">
+      <div className="relative h-[65dvh] min-h-[460px] lg:h-screen lg:h-[100dvh] lg:min-h-[550px] w-full overflow-hidden bg-[#050505] flex items-center justify-center">
         {/* Top Slim Crimson Loading Progress Bar */}
         <div className="absolute top-0 left-0 h-[2.5px] bg-[#E50914] shadow-[0_0_8px_#E50914] animate-[shimmer_2s_infinite_linear]" style={{ width: "65%" }} />
         
@@ -125,7 +125,7 @@ export const Hero = ({
   const activeSlug = `tmdb-${activeMovie.id}-${activeMovie.media_type || 'movie'}`;
 
   return (
-    <div className="relative h-screen h-[100dvh] min-h-[550px] w-full overflow-hidden bg-[#050505]">
+    <div className="relative h-[65dvh] min-h-[460px] lg:h-screen lg:h-[100dvh] lg:min-h-[550px] w-full overflow-hidden bg-[#050505]">
       {/* 1. Backdrop Background Crossfade */}
       <AnimatePresence mode="popLayout">
         <motion.div 
@@ -158,16 +158,16 @@ export const Hero = ({
             animate={{ opacity: 1, y: 0 }} 
             exit={{ opacity: 0, y: -15 }} 
             transition={{ duration: 0.4 }}
-            className="flex flex-col space-y-4 max-w-full sm:max-w-xl lg:max-w-3xl pointer-events-auto text-left items-start"
+            className="flex flex-col space-y-4 max-w-full sm:max-w-xl lg:max-w-3xl pointer-events-auto text-center md:text-left items-stretch md:items-start"
           >
             {/* Official English Title Artwork Logo or Large Text-Fallback */}
             {logoUrl ? (
-              <div className="max-w-[80%] sm:max-w-[70%] lg:max-w-[420px] aspect-[16/7] relative flex items-end justify-start pointer-events-none drop-shadow-[0_4px_12px_rgba(0,0,0,0.85)] filter brightness-115">
-                <SafeImage src={logoUrl} alt={titleString} className="max-h-full max-w-full object-contain object-left origin-left scale-95" />
+              <div className="max-w-[80%] sm:max-w-[70%] lg:max-w-[420px] aspect-[16/7] relative flex items-end justify-center md:justify-start mx-auto md:mx-0 pointer-events-none drop-shadow-[0_4px_12px_rgba(0,0,0,0.85)] filter brightness-115">
+                <SafeImage src={logoUrl} alt={titleString} className="max-h-full max-w-full object-contain object-center md:object-left origin-center md:origin-left scale-95" />
               </div>
             ) : (
               <h1 
-                className="text-2xl sm:text-4xl lg:text-5xl font-black text-white leading-tight drop-shadow-2xl tracking-tighter uppercase select-none line-clamp-2 max-w-[95%] text-left"
+                className="text-3xl sm:text-4xl lg:text-5xl font-black text-white leading-tight drop-shadow-2xl tracking-tighter uppercase select-none line-clamp-2 max-w-[95%] text-center md:text-left mx-auto md:mx-0"
                 style={{ fontFamily: '"Space Grotesk", sans-serif' }}
               >
                 {titleString}
@@ -175,10 +175,10 @@ export const Hero = ({
             )}
 
             {/* Movie Badges: Stars, Rating, Year */}
-            <div className="flex items-center gap-2.5 text-[11px] sm:text-xs md:text-sm font-semibold text-gray-300 drop-shadow-md select-none flex-wrap">
+            <div className="hidden md:flex items-center gap-3 text-xs md:text-sm font-semibold text-gray-300 drop-shadow-md select-none">
               <div className="flex items-center text-yellow-500 gap-0.5">
                 {Array.from({ length: 5 }).map((_, i) => (
-                  <span key={i} className={i < starCount ? "text-yellow-500 text-xs sm:text-sm md:text-base" : "text-white/20 text-xs sm:text-sm md:text-base"}>★</span>
+                  <span key={i} className={i < starCount ? "text-yellow-500 text-sm md:text-base" : "text-white/20 text-sm md:text-base"}>★</span>
                 ))}
               </div>
               <span className="text-white font-bold">{roundedRating} IMDb</span>
@@ -189,12 +189,12 @@ export const Hero = ({
             </div>
 
             {/* Synopsis Overview: Hidden on mobile to fulfill "no description on phone" requirement */}
-            <p className="hidden sm:block text-white/80 text-xs sm:text-sm md:text-base lg:text-lg font-medium drop-shadow-lg w-[95%] md:w-[90%] leading-relaxed max-h-[120px] overflow-hidden line-clamp-3">
+            <p className="hidden md:block text-white/80 text-sm md:text-base lg:text-lg font-medium drop-shadow-lg w-[90%] leading-relaxed max-h-[120px] overflow-hidden line-clamp-3">
               {description}
             </p>
 
             {/* Functional Buttons: Styled elegantly, neat and compact */}
-            <div className="flex items-center justify-start gap-3 pt-1 md:pt-2 w-full">
+            <div className="flex items-center justify-center md:justify-start gap-3 pt-2">
               {/* Play Button */}
               <button 
                 onClick={() => onSelect && onSelect(activeSlug)} 

@@ -5,7 +5,7 @@ import {
   Settings, ArrowLeft, Loader2, Check, PictureInPicture, RotateCcw, RotateCw, 
   List, ShieldCheck, Sparkles, Palette, Eye, EyeOff, Sliders, Maximize2, Users, 
   Cast, Download, X, ChevronDown, ChevronRight, CheckSquare, Square, Tv, Film,
-  Minimize2, Expand, Sun, Subtitles, Plus, Minus, Wifi, Server, Database
+  Minimize2, Expand, Sun, Subtitles, Plus, Minus, Wifi, Server, Database, AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Hls from 'hls.js';
@@ -1896,10 +1896,38 @@ export const NetflixPlayer = ({
       </AnimatePresence>
 
       <AnimatePresence>
-        {((!isIframeMode && isBuffering && swipeSeekTime === null) || isAggregatorLoading || (!resolvedUrl && !resolvedEmbedUrl)) && (
+        {((!isIframeMode && isBuffering && swipeSeekTime === null) || (isAggregatorLoading && !resolvedUrl && !resolvedEmbedUrl)) && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 pointer-events-auto z-40 gap-3" style={{ color: activeColor }}>
             <Loader2 size={48} className="animate-spin drop-shadow-lg" />
             <p className="text-[11px] text-white/70 font-semibold uppercase tracking-widest animate-pulse font-sans">Đang tải tập phim mới...</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {!isAggregatorLoading && !resolvedUrl && !resolvedEmbedUrl && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 pointer-events-auto z-40 gap-4 text-center px-6">
+            <AlertCircle size={48} className="text-red-500 drop-shadow-lg animate-pulse" />
+            <div className="space-y-1">
+              <p className="text-base font-bold text-white font-sans">Không tìm thấy nguồn phát nào</p>
+              <p className="text-xs text-white/60 max-w-sm font-sans">Chúng tôi không thể tìm thấy liên kết phát cho tập phim này. Vui lòng chọn nguồn khác hoặc thử lại sau.</p>
+            </div>
+            <div className="flex gap-3 mt-2">
+              {onClose && (
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full text-white text-xs font-semibold transition-all active:scale-95 cursor-pointer font-sans"
+                >
+                  Quay lại
+                </button>
+              )}
+              <button
+                onClick={() => setIsSourcesOpen(true)}
+                className={cn("px-4 py-2 rounded-full text-white text-xs font-semibold transition-all active:scale-95 cursor-pointer font-sans shadow-lg", activeBg)}
+              >
+                Chọn nguồn phát
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
