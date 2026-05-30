@@ -26,12 +26,6 @@ const fetchWithTimeout = async (url: string, timeout = 8000) => {
 };
 
 const getNguonCUrl = (url: string) => {
-  if (typeof window !== 'undefined') {
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      return `/api/nguonc-proxy?url=${encodeURIComponent(url)}`;
-    }
-    return `https://focusflow.id.vn/api/nguonc-proxy?url=${encodeURIComponent(url)}`;
-  }
   return url;
 };
 
@@ -214,7 +208,7 @@ async function fetchFromVietnameseApi(
         else if (providerId === 'kkphim') referer = 'https://phimapi.com/';
         else if (providerId === 'nguonc') referer = 'https://phim.nguonc.com/';
 
-        const url = buildProxiedM3u8Url(rawUrl, referer);
+        const url = rawUrl;
 
         const item: Omit<StreamItem, 'score'> = {
           id: `${providerId}:hls:${server.server_name || 'vip'}:${rawUrl}`,

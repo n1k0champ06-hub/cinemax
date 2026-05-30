@@ -7,7 +7,7 @@
 
 import type { StreamItem, StreamProvider, StreamQuery } from './types';
 import { computeScore } from './types';
-import { fetchCineproStreams, type CineproSource, buildProxiedM3u8Url } from '../cineproApi';
+import { fetchCineproStreams, type CineproSource } from '../cineproApi';
 
 export const cineproProvider: StreamProvider = {
   id: 'cinepro',
@@ -66,7 +66,7 @@ export const cineproProvider: StreamProvider = {
           provider: 'cinepro',
           providerLabel: `${displayProvider} #${currentCount}`,
           type: isHls ? 'hls' : 'embed',
-          url: isHls ? buildProxiedM3u8Url(streamUrl, referer) : streamUrl,
+          url: streamUrl,
           quality: qualityLabel,
           lang: 'en',
           label: `${displayProvider} · ${qualityLabel}`,

@@ -1,10 +1,4 @@
 const getNguonCUrl = (url: string) => {
-  if (typeof window !== 'undefined') {
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      return `/api/nguonc-proxy?url=${encodeURIComponent(url)}`;
-    }
-    return `https://focusflow.id.vn/api/nguonc-proxy?url=${encodeURIComponent(url)}`;
-  }
   return url;
 };
 
