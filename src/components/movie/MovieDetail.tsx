@@ -936,7 +936,16 @@ export const MovieDetail = ({
                         setActiveEp(srvEps[0]);
                       }
                     }}
-                    episodes={(isTv ? (currentServers?.[selectedServerId]?.server_data || []) : fallbackRawEpList)}
+                    episodes={
+                      isTv
+                        ? (seasonData?.episodes && seasonData.episodes.length > 0
+                            ? seasonData.episodes.map((ep: any) => ({
+                                ...ep,
+                                name: String(ep.episode_number),
+                              }))
+                            : (currentServers?.[selectedServerId]?.server_data || []))
+                        : []
+                    }
                     onEpisodeSelect={handleSelectEpisode}
                     isTv={isTv}
                     currentSeason={currentSeason}
