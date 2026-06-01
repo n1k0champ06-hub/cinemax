@@ -19,7 +19,7 @@ export const Footer = () => {
 
         {/* Text description */}
         <p className="text-sm text-neutral-400 leading-relaxed font-medium">
-          CinemaOS hoạt động như một công cụ tổng hợp nội dung và không lưu trữ bất kỳ tệp tin đa phương tiện nào trên máy chủ của mình. 
+          Cinemax hoạt động như một công cụ tổng hợp nội dung và không lưu trữ bất kỳ tệp tin đa phương tiện nào trên máy chủ của mình. 
           Tất cả các liên kết và nguồn phát đều được tích hợp tự động từ bên thứ ba và các dịch vụ nhúng công cộng. 
           Nếu bạn có bất kỳ vấn đề nào liên quan đến bản quyền hoặc yêu cầu gỡ bỏ bản quyền (DMCA), xin vui lòng liên hệ trực tiếp với các bên lưu trữ gốc để được hỗ trợ giải quyết nhanh nhất.
         </p>
@@ -51,7 +51,7 @@ export const Footer = () => {
       {/* Under Disclaimer: Small Site Copyright/Info */}
       <div className="w-full max-w-5xl flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-neutral-500 border-t border-white/[0.04] pt-6">
         <div>
-          <span>© {new Date().getFullYear()} CinemaOS. Trải nghiệm phim trực tuyến chất lượng cao.</span>
+          <span>© {new Date().getFullYear()} Cinemax. Trải nghiệm phim trực tuyến chất lượng cao.</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span>Phát triển & Vận hành bởi</span>

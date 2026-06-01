@@ -621,10 +621,16 @@ function rewriteM3U8(content, baseUrl, referer, proxyReqUrl) {
       return line;
     }
 
-    // Non-comment, non-empty lines are segment URLs
+    // Non-comment, non-empty lines are segment or sub-playlist URLs
     if (!trimmed.startsWith('#')) {
       const absolute = resolveUrl(trimmed);
-      return buildProxyUrl(absolute);
+      // Only proxy sub-playlists (.m3u8) to keep browser playing and rewrite nested playlists.
+      // Video segments (.ts, .mp4, etc.) are fetched directly to avoid bandwidth limits and CDN blocks.
+      const isPlaylist = absolute.toLowerCase().includes('.m3u8');
+      if (isPlaylist) {
+        return buildProxyUrl(absolute);
+      }
+      return absolute;
     }
 
     return line;

@@ -623,6 +623,33 @@ export const MovieDetail = ({
     };
   }, [currentServers, setIsPlaying, setActiveEp, setActiveEpSeason]);
 
+  // Auto-select VidSrc stream when the virtual VidSrc server is chosen on details page
+  useEffect(() => {
+    const currentSrv = currentServers[selectedServerId] || currentServers[0];
+    if (isPlaying && currentSrv?._isVidSrc && streams.length > 0) {
+      // Check if activeStream is already a VidSrc stream
+      const isCurrentlyVidSrc = activeStream && (
+        activeStream.provider.startsWith('vidsrc') || 
+        activeStream.provider.startsWith('vsrc') || 
+        activeStream.url?.includes('vidsrc') || 
+        activeStream.url?.includes('vsrc.su')
+      );
+      
+      if (!isCurrentlyVidSrc) {
+        const vidsrcStream = streams.find(s => 
+          s.provider.startsWith('vidsrc') || 
+          s.provider.startsWith('vsrc') || 
+          s.url?.includes('vidsrc') || 
+          s.url?.includes('vsrc.su')
+        );
+        if (vidsrcStream) {
+          console.log("[MovieDetail] Auto-selecting VidSrc stream to match virtual VidSrc server:", vidsrcStream.providerLabel);
+          selectStream(vidsrcStream);
+        }
+      }
+    }
+  }, [isPlaying, currentServers, selectedServerId, streams, activeStream, selectStream]);
+
   // Auto-select server & episode when season data loads
   // Server selection always runs (so the drawer shows correct episodes).
   // Episode selection is blocked when the player is actively playing.
@@ -895,7 +922,7 @@ export const MovieDetail = ({
                 <div className="flex justify-between items-center z-[110] relative">
                   <button
                     onClick={() => setIsPlaying(false)}
-                    className="flex items-center justify-center gap-2 text-gray-300 hover:text-white bg-[#141414]/90 backdrop-blur-md hover:bg-neutral-800 border border-white/10 w-10 h-10 sm:w-auto sm:h-auto sm:px-4 sm:py-2.5 rounded-full transition-all font-bold tracking-wide shadow-lg cursor-pointer hover:border-white/20 hover:scale-105 active:scale-95 shrink-0"
+                    className="flex items-center justify-center gap-2 text-gray-300 hover:text-white bg-black/95 backdrop-blur-md hover:bg-neutral-900 border border-white/15 w-10 h-10 sm:w-auto sm:h-auto sm:px-4 sm:py-2.5 rounded-full transition-all font-bold tracking-wide shadow-lg cursor-pointer hover:scale-105 active:scale-95 shrink-0"
                   >
                     <ChevronLeft size={20} className="sm:hidden" />
                     <ChevronLeft size={16} className="hidden sm:block" /> 
@@ -908,7 +935,10 @@ export const MovieDetail = ({
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="w-full aspect-video rounded-2xl overflow-hidden bg-black shadow-2xl relative z-[110]"
+                  className={cn(
+                    "w-full rounded-2xl overflow-hidden bg-black shadow-2xl relative z-[110]",
+                    (activeStream?.type === 'embed' || !activeStream?.url) ? "" : "aspect-video"
+                  )}
                 >
                   <NetflixPlayer
                     key={isTv ? `player-${currentSeason}-${activeEp?.name || '1'}` : 'player-movie'}

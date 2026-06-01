@@ -14,6 +14,7 @@ import { aggregateStreams } from '../api/streamAggregator';
 import type { AggregatorState, StreamQuery, StreamItem } from '../api/streamAggregator';
 import { VI_PROVIDERS } from '../api/streamProviders/viProviders';
 import { cineproProvider } from '../api/streamProviders/cineproProvider';
+import { EMBED_PROVIDERS } from '../api/streamProviders/embedProviders';
 import type { StreamProvider } from '../api/streamProviders/types';
 import { computeScore } from '../api/streamProviders/types';
 
@@ -143,6 +144,9 @@ export function useStreamAggregator({
 
     // 3. CinemaOS VIP Embed (Backup embed source)
     allProviders.push(cinemaosProvider);
+
+    // 4. International Embed providers (VidSrc, VidSrc Embed, etc.)
+    allProviders.push(...EMBED_PROVIDERS);
 
     // Set initial loading state
     setState({

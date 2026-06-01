@@ -5,7 +5,7 @@ import {
   Settings, ArrowLeft, Loader2, Check, PictureInPicture, RotateCcw, RotateCw, 
   List, ShieldCheck, Sparkles, Palette, Eye, EyeOff, Sliders, Maximize2, Users, 
   Cast, Download, X, ChevronDown, ChevronRight, CheckSquare, Square, Tv, Film,
-  Minimize2, Expand, Sun, Subtitles, Plus, Minus, Wifi, Server, Database, AlertCircle
+  Minimize2, Expand, Sun, Subtitles, Plus, Minus, Wifi, Server, Database, AlertCircle, AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Hls from 'hls.js';
@@ -173,6 +173,9 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
   // Settings & Navigation panels
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [showAdWarning, setShowAdWarning] = useState(false);
+  const [pendingStream, setPendingStream] = useState<StreamItem | null>(null);
+  const [hasShownAdWarningForUrl, setHasShownAdWarningForUrl] = useState<string | null>(null);
   const [isEpisodesOpen, setIsEpisodesOpen] = useState(false);
   const [isSeasonDropdownOpen, setIsSeasonDropdownOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'main' | 'quality' | 'speed' | 'captions' | 'audioTrack' | 'appearance' | 'videoFit' | 'aspectRatio' | 'gestures' | 'subSettings'>('main');
@@ -290,6 +293,26 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   useEffect(() => {
     setUseEmbed(!resolvedUrl && !!resolvedEmbedUrl);
   }, [resolvedUrl, resolvedEmbedUrl]);
+
+  // Monitor resolvedEmbedUrl to auto-trigger ad warning popup for VidSrc/embed.su/vsrc.su
+  useEffect(() => {
+    console.log("[NetflixPlayer debug] resolvedEmbedUrl useEffect fired:", {
+      resolvedEmbedUrl,
+      activeStreamProvider: activeStream?.provider,
+      hasShownAdWarningForUrl,
+      shouldTrigger: resolvedEmbedUrl && 
+        (resolvedEmbedUrl.includes('vidsrc') || resolvedEmbedUrl.includes('embed.su') || resolvedEmbedUrl.includes('vsrc.su')) && 
+        hasShownAdWarningForUrl !== resolvedEmbedUrl
+    });
+    if (resolvedEmbedUrl && 
+        (resolvedEmbedUrl.includes('vidsrc') || resolvedEmbedUrl.includes('embed.su') || resolvedEmbedUrl.includes('vsrc.su')) && 
+        hasShownAdWarningForUrl !== resolvedEmbedUrl) {
+      console.log("[NetflixPlayer debug] Setting showAdWarning to true");
+      setPendingStream(activeStream);
+      setShowAdWarning(true);
+      setHasShownAdWarningForUrl(resolvedEmbedUrl);
+    }
+  }, [resolvedEmbedUrl, activeStream, hasShownAdWarningForUrl]);
 
   // External subtitle offset state & timer
   const [subtitleOffset, setSubtitleOffset] = useState(0);
@@ -1018,6 +1041,58 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     };
   }, []);
 
+  // Auto-next listener for native video ended and cross-origin iframe messages
+  useEffect(() => {
+    // 1. Listen for native video element ended event
+    const video = videoRef.current;
+    const onEndedListener = () => {
+      console.log('[Cinemax] Native video ended event triggered.');
+      handleVideoEnded();
+    };
+
+    if (video) {
+      video.addEventListener('ended', onEndedListener);
+    }
+
+    // 2. Listen for cross-origin iframe postMessages (vidsrc, embed.su, etc.)
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        if (!data) return;
+
+        // Common ended flags in postMessage from embed providers
+        const isEnded = 
+          data.event === 'ended' || 
+          data.event === 'video_ended' ||
+          data.event === 'player_ended' ||
+          data.type === 'ended' ||
+          data.type === 'video_ended' ||
+          data.status === 'ended' ||
+          data.state === 'ended' ||
+          data.state === 'FINISHED' ||
+          (data.type === 'MEDIA_DATA' && (data.data?.event === 'ended' || data.data?.state === 'ended' || data.data?.status === 'ended')) ||
+          data.method === 'ended' ||
+          data.action === 'ended';
+
+        if (isEnded) {
+          console.log('[Cinemax] Detected video ended from iframe message:', data);
+          handleVideoEnded();
+        }
+      } catch (err) {
+        // Ignore JSON parse errors
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    return () => {
+      if (video) {
+        video.removeEventListener('ended', onEndedListener);
+      }
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [videoRef.current, autoNext, episodes, episodeName]);
+
   // Touch Gesture States
   const touchStateRef = useRef<{
     startX: number;
@@ -1223,9 +1298,91 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     return 'border-red-500/50';
   }, [playerTheme]);
 
+  const renderAdWarningModal = () => {
+    const modalContent = (
+      <AnimatePresence>
+        {showAdWarning && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className={cn(
+              "z-[99999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm pointer-events-auto",
+              isFullscreen ? "absolute inset-0" : "fixed inset-0"
+            )}
+            onClick={() => {
+              setShowAdWarning(false);
+              setPendingStream(null);
+            }}
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 180 }}
+              className="w-full max-w-md bg-[#0c0c0e]/95 backdrop-blur-md border border-white/10 rounded-2xl p-6 sm:p-8 flex flex-col items-center text-center shadow-[0_24px_60px_rgba(0,0,0,0.8)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500 mb-5 border border-amber-500/20">
+                <AlertTriangle size={32} className="animate-pulse" />
+              </div>
+              <h3 className="text-lg sm:text-xl md:text-2xl font-extrabold uppercase tracking-wide text-white mb-3">
+                Nguồn phát có quảng cáo
+              </h3>
+              <p className="text-sm md:text-base text-gray-300 leading-relaxed mb-6 font-medium">
+                Nguồn phát này từ nhà cung cấp bên thứ ba có chứa nhiều quảng cáo. Để có trải nghiệm tốt nhất, chúng tôi khuyên bạn nên cài đặt tiện ích chặn quảng cáo <strong className="text-emerald-400">uBlock Origin</strong> hoặc sử dụng trình duyệt <strong className="text-emerald-400">Cốc Cốc</strong>.
+              </p>
+              
+              <div className="flex flex-col sm:flex-row gap-3 w-full">
+                <button
+                  onClick={() => {
+                    setShowAdWarning(false);
+                    setPendingStream(null);
+                    if (!isSourcesOpen && onClose) {
+                      onClose();
+                    }
+                  }}
+                  className="w-full sm:flex-1 h-12 rounded-xl border border-white/10 hover:bg-white/5 text-sm font-bold text-gray-300 transition-colors cursor-pointer flex items-center justify-center"
+                >
+                  Quay lại
+                </button>
+                <button
+                  onClick={() => {
+                    if (pendingStream && onStreamSelect) {
+                      if (pendingStream.url) {
+                        setHasShownAdWarningForUrl(pendingStream.url);
+                      }
+                      onStreamSelect(pendingStream);
+                    }
+                    setShowAdWarning(false);
+                    setPendingStream(null);
+                    setIsSourcesOpen(false);
+                  }}
+                  className="w-full sm:flex-1 h-12 rounded-xl hover:opacity-90 text-sm font-bold tracking-wide text-white transition-all shadow-lg cursor-pointer active:scale-95 flex items-center justify-center text-center"
+                  style={{
+                    backgroundColor: activeColor,
+                    boxShadow: `0 4px 20px ${activeColor}33`
+                  }}
+                >
+                  Tôi đã hiểu, tiếp tục
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
+
+    if (isFullscreen) {
+      return modalContent;
+    }
+    return createPortal(modalContent, document.body);
+  };
+
   const renderSettingsOverlay = () => {
     if (isIframeMode) return null;
     const isLandscapeMobile = isMobile && !isPortrait;
+    const textBaseClass = "text-sm md:text-base lg:text-lg font-medium text-gray-300";
 
     const overlayContent = (
       <AnimatePresence>
@@ -1253,7 +1410,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
           exit={{ y: (isMobile && isPortrait) ? '100%' : 20, opacity: 0 }}
           transition={{ type: 'tween', ease: [0.16, 1, 0.3, 1], duration: 0.22 }}
           className={cn(
-            "w-full sm:w-[260px] flex flex-col relative z-20 text-white overflow-hidden shadow-2xl transition-all duration-300",
+            "w-full sm:w-[300px] md:w-[380px] lg:w-[420px] flex flex-col relative z-20 text-white overflow-hidden shadow-2xl transition-all duration-300",
             isMobile && isPortrait 
               ? "bg-[#050505] border-t border-white/[0.08] rounded-t-[32px] pb-8 pt-3 shadow-[0_-15px_40px_rgba(0,0,0,0.85)]" 
               : "bg-black/90 backdrop-blur-md border border-white/10 rounded-2xl p-0"
@@ -1266,14 +1423,14 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
         >
           {settingsTab === 'main' ? (
             <>
-              <div className="flex justify-between items-center px-5 py-4 border-b border-white/[0.06] relative">
+              <div className="flex justify-between items-center px-5 py-4 md:px-7 md:py-5 lg:px-8 lg:py-6 border-b border-white/[0.06] relative">
                 <span className="w-12 h-1.5 bg-white/15 rounded-full absolute top-2.5 left-1/2 -translate-x-1/2 sm:hidden" />
-                <h3 className="text-sm font-extrabold ml-1 mt-2 sm:mt-0 uppercase tracking-wider text-gray-200">Cài đặt</h3>
+                <h3 className="text-sm md:text-base lg:text-lg font-extrabold ml-1 mt-2 sm:mt-0 uppercase tracking-wider text-gray-200">Cài đặt</h3>
                 <button 
                   onClick={() => { setIsSettingsOpen(false); setTimeout(() => setSettingsTab('main'), 300); }}
-                  className="p-1.5 rounded-full hover:bg-white/10 transition-colors mt-2 sm:mt-0"
+                  className="p-1.5 md:p-2 rounded-full hover:bg-white/10 transition-colors mt-2 sm:mt-0"
                 >
-                  <X size={18} className="text-gray-400" />
+                  <X className="text-gray-400 w-4.5 h-4.5 md:w-5 md:h-5 lg:w-6 lg:h-6" />
                 </button>
               </div>
               <div className={cn(
@@ -1281,84 +1438,84 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                 isLandscapeMobile ? "max-h-[160px]" : "max-h-[70vh]"
               )}>
                 {qualities && qualities.length > 0 && (
-                  <div className="flex items-center justify-between py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('quality')}>
+                  <div className="flex items-center justify-between py-3 px-5 md:py-4.5 md:px-7 lg:py-5 lg:px-8 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('quality')}>
                     <div className="flex items-center gap-4">
-                      <Sliders size={20} className="text-white" />
-                      <span className="text-sm font-medium">Chất lượng</span>
+                      <Sliders className="text-white w-5 h-5 md:w-5.5 md:h-5.5 lg:w-6 lg:h-6" />
+                      <span className="text-sm md:text-base lg:text-lg font-medium">Chất lượng</span>
                     </div>
                     <div className="flex items-center gap-2 text-gray-400">
-                      <span className="text-xs">{activeQuality === -1 ? 'Tự động' : qualities.find(q => q.id === activeQuality)?.name || ''}</span>
-                      <ChevronRight size={16} />
+                      <span className="text-xs md:text-sm lg:text-base">{activeQuality === -1 ? 'Tự động' : qualities.find(q => q.id === activeQuality)?.name || ''}</span>
+                      <ChevronRight className="w-4 h-4 md:w-[18px] md:h-[18px] lg:w-5 lg:h-5" />
                     </div>
                   </div>
                 )}
                 
-                <div className="flex items-center justify-between py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('speed')}>
+                <div className="flex items-center justify-between py-3 px-5 md:py-4.5 md:px-7 lg:py-5 lg:px-8 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('speed')}>
                   <div className="flex items-center gap-4">
-                    <Play size={20} className="text-white" />
-                    <span className="text-sm font-medium">Tốc độ phát</span>
+                    <Play className="text-white w-5 h-5 md:w-5.5 md:h-5.5 lg:w-6 lg:h-6" />
+                    <span className="text-sm md:text-base lg:text-lg font-medium">Tốc độ phát</span>
                   </div>
                   <div className="flex items-center gap-2 text-gray-400">
-                    <span className="text-xs">{playbackRate === 1 ? 'Chuẩn' : `${playbackRate}x`}</span>
-                    <ChevronRight size={16} />
+                    <span className="text-xs md:text-sm lg:text-base">{playbackRate === 1 ? 'Chuẩn' : `${playbackRate}x`}</span>
+                    <ChevronRight className="w-4 h-4 md:w-[18px] md:h-[18px] lg:w-5 lg:h-5" />
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('captions')}>
+                <div className="flex items-center justify-between py-3 px-5 md:py-4.5 md:px-7 lg:py-5 lg:px-8 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('captions')}>
                   <div className="flex items-center gap-4">
-                    <Subtitles size={20} className="text-white" />
-                    <span className="text-sm font-medium">Phụ đề</span>
+                    <Subtitles className="text-white w-5 h-5 md:w-5.5 md:h-5.5 lg:w-6 lg:h-6" />
+                    <span className="text-sm md:text-base lg:text-lg font-medium">Phụ đề</span>
                   </div>
                   <div className="flex items-center gap-2 text-gray-400">
-                    <span className="text-xs">
+                    <span className="text-xs md:text-sm lg:text-base">
                       {combinedSubtitleTracks.find(t => t.id === selectedSubtitleId)?.name || 'Tắt'}
                     </span>
-                    <ChevronRight size={16} />
+                    <ChevronRight className="w-4 h-4 md:w-[18px] md:h-[18px] lg:w-5 lg:h-5" />
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('subSettings')}>
+                <div className="flex items-center justify-between py-3 px-5 md:py-4.5 md:px-7 lg:py-5 lg:px-8 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('subSettings')}>
                   <div className="flex items-center gap-4">
-                    <Sliders size={20} className="text-white" />
-                    <span className="text-sm font-medium">Tùy chỉnh phụ đề</span>
+                    <Sliders className="text-white w-5 h-5 md:w-5.5 md:h-5.5 lg:w-6 lg:h-6" />
+                    <span className="text-sm md:text-base lg:text-lg font-medium">Tùy chỉnh phụ đề</span>
                   </div>
                   <div className="flex items-center gap-2 text-gray-400">
-                    <span className="text-xs">
+                    <span className="text-xs md:text-sm lg:text-base">
                       {`${subSize === 'small' ? 'Nhỏ' : subSize === 'large' ? 'Lớn' : 'Vừa'}, ${subColor === 'white' ? 'Trắng' : subColor === 'yellow' ? 'Vàng' : 'Xanh'}`}
                     </span>
-                    <ChevronRight size={16} />
+                    <ChevronRight className="w-4 h-4 md:w-[18px] md:h-[18px] lg:w-5 lg:h-5" />
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('appearance')}>
+                <div className="flex items-center justify-between py-3 px-5 md:py-4.5 md:px-7 lg:py-5 lg:px-8 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('appearance')}>
                   <div className="flex items-center gap-4">
-                    <Settings size={20} className="text-white" />
-                    <span className="text-sm font-medium">Tuỳ chọn khác</span>
+                    <Settings className="text-white w-5 h-5 md:w-5.5 md:h-5.5 lg:w-6 lg:h-6" />
+                    <span className="text-sm md:text-base lg:text-lg font-medium">Tuỳ chọn khác</span>
                   </div>
                   <div className="flex items-center gap-2 text-gray-400">
-                    <ChevronRight size={16} />
+                    <ChevronRight className="w-4 h-4 md:w-[18px] md:h-[18px] lg:w-5 lg:h-5" />
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('gestures')}>
+                <div className="flex items-center justify-between py-3 px-5 md:py-4.5 md:px-7 lg:py-5 lg:px-8 hover:bg-white/5 cursor-pointer transition-colors active:bg-white/10" onClick={() => setSettingsTab('gestures')}>
                    <div className="flex items-center gap-4">
-                     <Sun size={20} className="text-white" />
-                     <span className="text-sm font-medium">Cử chỉ</span>
+                     <Sun className="text-white w-5 h-5 md:w-5.5 md:h-5.5 lg:w-6 lg:h-6" />
+                     <span className="text-sm md:text-base lg:text-lg font-medium">Cử chỉ</span>
                    </div>
                    <div className="flex items-center gap-2 text-gray-400">
-                     <ChevronRight size={16} />
+                     <ChevronRight className="w-4 h-4 md:w-[18px] md:h-[18px] lg:w-5 lg:h-5" />
                    </div>
                  </div>
               </div>
             </>
           ) : (
             <>
-              <div className="flex items-center gap-3 px-4 py-4 border-b border-white/[0.06] relative">
+              <div className="flex items-center gap-3 px-4 py-4 md:px-6 md:py-5 lg:px-7 lg:py-6 border-b border-white/[0.06] relative">
                 <span className="w-12 h-1.5 bg-white/15 rounded-full absolute top-2.5 left-1/2 -translate-x-1/2 sm:hidden" />
-                <button onClick={() => setSettingsTab('main')} className="p-2 ml-1 rounded-full hover:bg-white/10 mt-2 sm:mt-0 transition-colors">
-                  <ArrowLeft size={18} className="text-gray-300" />
+                <button onClick={() => setSettingsTab('main')} className="p-2 md:p-2.5 ml-1 rounded-full hover:bg-white/10 mt-2 sm:mt-0 transition-colors">
+                  <ArrowLeft className="text-gray-300 w-4.5 h-4.5 md:w-5 md:h-5 lg:w-6 lg:h-6" />
                 </button>
-                <h3 className="text-sm font-extrabold mt-2 sm:mt-0 uppercase tracking-wider text-gray-200">
+                <h3 className="text-sm md:text-base lg:text-lg font-extrabold mt-2 sm:mt-0 uppercase tracking-wider text-gray-200">
                   {settingsTab === 'quality' && 'Chất lượng'}
                   {settingsTab === 'speed' && 'Tốc độ phát'}
                   {settingsTab === 'appearance' && 'Tuỳ chọn khác'}
@@ -1374,63 +1531,63 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                 isLandscapeMobile ? "max-h-[160px]" : "max-h-[70vh]"
               )}>
                 {settingsTab === 'quality' && qualities.map(q => (
-                  <div key={q.id} className="flex items-center gap-4 py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors" onClick={() => { handleQualityChange(q.id); setSettingsTab('main'); }}>
-                    <div className="w-5 flex justify-center">{activeQuality === q.id && <Check size={18} className="text-white" />}</div>
-                    <span className={cn("text-sm transition-colors", activeQuality === q.id ? "text-white font-medium" : "text-gray-300")}>{q.id === -1 ? 'Tự động' : q.name}</span>
+                  <div key={q.id} className="flex items-center gap-4 py-3 px-5 md:py-4.5 md:px-7 lg:py-5 lg:px-8 hover:bg-white/5 cursor-pointer transition-colors" onClick={() => { handleQualityChange(q.id); setSettingsTab('main'); }}>
+                    <div className="w-5 md:w-6 lg:w-7 flex justify-center">{activeQuality === q.id && <Check className="text-white w-4.5 h-4.5 md:w-5 md:h-5 lg:w-6 lg:h-6" />}</div>
+                    <span className={cn("text-sm md:text-base lg:text-lg transition-colors", activeQuality === q.id ? "text-white font-medium" : "text-gray-300")}>{q.id === -1 ? 'Tự động' : q.name}</span>
                   </div>
                 ))}
 
                 {settingsTab === 'speed' && [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2].map(speed => (
-                  <div key={speed} className="flex items-center gap-4 py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors" onClick={() => { handleRateChange(speed); setSettingsTab('main'); }}>
-                    <div className="w-5 flex justify-center">{playbackRate === speed && <Check size={18} className="text-white" />}</div>
-                    <span className={cn("text-sm transition-colors", playbackRate === speed ? "text-white font-medium" : "text-gray-300")}>{speed === 1 ? 'Chuẩn' : `${speed}x`}</span>
+                  <div key={speed} className="flex items-center gap-4 py-3 px-5 md:py-4.5 md:px-7 lg:py-5 lg:px-8 hover:bg-white/5 cursor-pointer transition-colors" onClick={() => { handleRateChange(speed); setSettingsTab('main'); }}>
+                    <div className="w-5 md:w-6 lg:w-7 flex justify-center">{playbackRate === speed && <Check className="text-white w-4.5 h-4.5 md:w-5 md:h-5 lg:w-6 lg:h-6" />}</div>
+                    <span className={cn("text-sm md:text-base lg:text-lg transition-colors", playbackRate === speed ? "text-white font-medium" : "text-gray-300")}>{speed === 1 ? 'Chuẩn' : `${speed}x`}</span>
                   </div>
                 ))}
 
                 {settingsTab === 'captions' && combinedSubtitleTracks.map(track => (
-                  <div key={track.id} className="flex items-center gap-4 py-3 px-5 hover:bg-white/5 cursor-pointer transition-colors" onClick={() => { handleSubtitleTrackChange(track.id); setSettingsTab('main'); }}>
-                    <div className="w-5 flex justify-center">{selectedSubtitleId === track.id && <Check size={18} className="text-white" />}</div>
-                    <span className={cn("text-sm transition-colors", selectedSubtitleId === track.id ? "text-white font-medium" : "text-gray-300")}>{track.name}</span>
+                  <div key={track.id} className="flex items-center gap-4 py-3 px-5 md:py-4.5 md:px-7 lg:py-5 lg:px-8 hover:bg-white/5 cursor-pointer transition-colors" onClick={() => { handleSubtitleTrackChange(track.id); setSettingsTab('main'); }}>
+                    <div className="w-5 md:w-6 lg:w-7 flex justify-center">{selectedSubtitleId === track.id && <Check className="text-white w-4.5 h-4.5 md:w-5 md:h-5 lg:w-6 lg:h-6" />}</div>
+                    <span className={cn("text-sm md:text-base lg:text-lg transition-colors", selectedSubtitleId === track.id ? "text-white font-medium" : "text-gray-300")}>{track.name}</span>
                   </div>
                 ))}
 
                 {settingsTab === 'subSettings' && (
                   <div className="flex flex-col gap-1 pb-4">
-                    <div className="px-5 py-2 text-[10px] font-bold tracking-wider uppercase text-gray-500">Cấu hình phụ đề</div>
+                    <div className="px-5 py-2 md:px-7 md:py-3 text-[10px] md:text-xs lg:text-sm font-bold tracking-wider uppercase text-gray-500">Cấu hình phụ đề</div>
                     
-                    <div className="flex items-center justify-between py-2 px-5 hover:bg-white/5">
-                      <span className="text-sm text-gray-300">Cỡ chữ</span>
+                    <div className="flex items-center justify-between py-2.5 px-5 md:py-3.5 md:px-7 lg:py-4 lg:px-8 hover:bg-white/5">
+                      <span className="text-sm md:text-base lg:text-lg text-gray-300">Cỡ chữ</span>
                       <PlayerSelect
                         value={subSize}
                         onChange={(val) => setSubSize(val)}
                         activeColor={activeColor}
                         options={[
-                          { value: 'small', label: 'Nhỏ', icon: <Minus size={14} /> },
-                          { value: 'medium', label: 'Vừa', icon: <CheckSquare size={14} /> },
-                          { value: 'large', label: 'Lớn', icon: <Plus size={14} /> }
+                          { value: 'small', label: 'Nhỏ', icon: <Minus className="w-[14px] h-[14px] md:w-4.5 md:h-4.5 lg:w-5.5 lg:h-5.5" /> },
+                          { value: 'medium', label: 'Vừa', icon: <CheckSquare className="w-[14px] h-[14px] md:w-4.5 md:h-4.5 lg:w-5.5 lg:h-5.5" /> },
+                          { value: 'large', label: 'Lớn', icon: <Plus className="w-[14px] h-[14px] md:w-4.5 md:h-4.5 lg:w-5.5 lg:h-5.5" /> }
                         ]}
                       />
                     </div>
                     
-                    <div className="flex items-center justify-between py-2 px-5 hover:bg-white/5">
-                      <span className="text-sm text-gray-300">Màu sắc</span>
+                    <div className="flex items-center justify-between py-2.5 px-5 md:py-3.5 md:px-7 lg:py-4 lg:px-8 hover:bg-white/5">
+                      <span className="text-sm md:text-base lg:text-lg text-gray-300">Màu sắc</span>
                       <PlayerSelect
                         value={subColor}
                         onChange={(val) => setSubColor(val)}
                         activeColor={activeColor}
                         options={[
-                          { value: 'white', label: 'Trắng', icon: <span className="w-2.5 h-2.5 rounded-full bg-white border border-white/20 inline-block" /> },
-                          { value: 'yellow', label: 'Vàng', icon: <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" /> },
-                          { value: 'cyan', label: 'Xanh', icon: <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 inline-block" /> }
+                          { value: 'white', label: 'Trắng', icon: <span className="w-2.5 h-2.5 md:w-3.5 md:h-3.5 rounded-full bg-white border border-white/20 inline-block" /> },
+                          { value: 'yellow', label: 'Vàng', icon: <span className="w-2.5 h-2.5 md:w-3.5 md:h-3.5 rounded-full bg-yellow-400 inline-block" /> },
+                          { value: 'cyan', label: 'Xanh', icon: <span className="w-2.5 h-2.5 md:w-3.5 md:h-3.5 rounded-full bg-cyan-400 inline-block" /> }
                         ]}
                       />
                     </div>
 
-                    <div className="px-5 py-3 mt-1 border-t border-white/[0.06] pt-3">
-                      <div className="flex justify-between items-center text-sm text-gray-300 mb-2">
-                        <span>Độ lệch (Delay)</span>
+                    <div className="px-5 py-3 md:px-7 md:py-4.5 lg:px-8 lg:py-5.5 mt-1 border-t border-white/[0.06] pt-3">
+                      <div className="flex justify-between items-center text-sm md:text-base lg:text-lg text-gray-300 mb-2">
+                        <span className={textBaseClass}>Độ lệch (Delay)</span>
                         <div className="flex items-center gap-2">
-                          <span className={cn('text-xs font-mono font-bold min-w-[40px] text-right', subtitleOffset === 0 ? 'text-white/40' : 'text-emerald-400')}>
+                          <span className={cn('text-xs md:text-sm lg:text-base font-mono font-bold min-w-[40px] text-right', subtitleOffset === 0 ? 'text-white/40' : 'text-emerald-400')}>
                             {subtitleOffset >= 0 ? '+' : ''}{(subtitleOffset / 1000).toFixed(2)}s
                           </span>
                           {subtitleOffset !== 0 && (
@@ -1439,25 +1596,25 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                               className="p-1 rounded hover:bg-white/10 text-white/40 hover:text-white transition-colors"
                               title="Reset delay"
                             >
-                              <RotateCcw size={12} />
+                              <RotateCcw className="w-[14px] h-[14px] md:w-4.5 md:h-4.5 lg:w-5 lg:h-5" />
                             </button>
                           )}
                         </div>
                       </div>
                       
-                      <div className="flex gap-2">
+                      <div className="flex gap-2.5 mt-1.5">
                         <button 
                           onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev - 250); }}
-                          className="flex-1 bg-white/5 hover:bg-white/10 active:bg-white/15 border border-white/10 rounded-lg py-2 flex items-center justify-center gap-1.5 text-xs text-gray-300 hover:text-white font-bold transition-all"
+                          className="flex-1 bg-white/5 hover:bg-white/10 active:bg-white/15 border border-white/10 rounded-lg py-2.5 md:py-3.5 lg:py-4 flex items-center justify-center gap-1.5 text-xs md:text-sm lg:text-base text-gray-300 hover:text-white font-bold transition-all cursor-pointer"
                         >
-                          <Minus size={12} />
+                          <Minus className="w-[14px] h-[14px] md:w-4.5 md:h-4.5 lg:w-5.5 lg:h-5.5" />
                           Nhanh hơn
                         </button>
                         <button 
                           onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev + 250); }}
-                          className="flex-1 bg-white/5 hover:bg-white/10 active:bg-white/15 border border-white/10 rounded-lg py-2 flex items-center justify-center gap-1.5 text-xs text-gray-300 hover:text-white font-bold transition-all"
+                          className="flex-1 bg-white/5 hover:bg-white/10 active:bg-white/15 border border-white/10 rounded-lg py-2.5 md:py-3.5 lg:py-4 flex items-center justify-center gap-1.5 text-xs md:text-sm lg:text-base text-gray-300 hover:text-white font-bold transition-all cursor-pointer"
                         >
-                          <Plus size={12} />
+                          <Plus className="w-[14px] h-[14px] md:w-4.5 md:h-4.5 lg:w-5.5 lg:h-5.5" />
                           Chậm hơn
                         </button>
                       </div>
@@ -1467,48 +1624,27 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
                 {settingsTab === 'appearance' && (
                   <div className="flex flex-col gap-1 pb-4">
-                    <div className="px-5 py-2 text-[10px] font-bold tracking-wider uppercase text-gray-500">Màn hình & Hiển thị</div>
+                    <div className="px-5 py-2 md:px-7 md:py-3 text-[10px] md:text-xs lg:text-sm font-bold tracking-wider uppercase text-gray-500">Màn hình & Hiển thị</div>
                     
-                    <div className="flex items-center justify-between py-2 px-5 hover:bg-white/5">
-                      <span className="text-sm text-gray-300">Vừa vặn khung hình</span>
+                    <div className="flex items-center justify-between py-2.5 px-5 md:py-3.5 md:px-7 lg:py-4 lg:px-8 hover:bg-white/5">
+                      <span className="text-sm md:text-base lg:text-lg text-gray-300">Vừa vặn khung hình</span>
                       <PlayerSelect
                         value={videoFit}
                         onChange={(val) => setVideoFit(val)}
                         activeColor={activeColor}
                         options={[
-                          { value: 'contain', label: 'Mặc định', icon: <Minimize2 size={14} /> },
-                          { value: 'cover', label: 'Lấp đầy', icon: <Maximize2 size={14} /> },
-                          { value: 'fill', label: 'Kéo giãn', icon: <Expand size={14} /> }
-                        ]}
-                      />
-                    </div>
-                    
-                    <div className="flex items-center justify-between py-2 px-5 hover:bg-white/5">
-                      <span className="text-sm text-gray-300">Tỉ lệ khung hình</span>
-                      <PlayerSelect
-                        value={aspectRatio}
-                        onChange={(val) => setAspectRatio(val)}
-                        activeColor={activeColor}
-                        options={[
-                          { value: 'default', label: 'Tự động', icon: <Tv size={14} /> },
-                          { value: '16/9', label: '16:9', icon: <Film size={14} /> },
-                          { value: '4/3', label: '4:3', icon: <Film size={14} /> },
-                          { value: '21/9', label: '21:9', icon: <Film size={14} /> }
+                          { value: 'contain', label: 'Mặc định', icon: <Minimize2 className="w-[14px] h-[14px] md:w-4.5 md:h-4.5 lg:w-5.5 lg:h-5.5" /> },
+                          { value: 'cover', label: 'Lấp đầy', icon: <Maximize2 className="w-[14px] h-[14px] md:w-4.5 md:h-4.5 lg:w-5.5 lg:h-5.5" /> },
+                          { value: 'fill', label: 'Kéo giãn', icon: <Expand className="w-[14px] h-[14px] md:w-4.5 md:h-4.5 lg:w-5.5 lg:h-5.5" /> }
                         ]}
                       />
                     </div>
 
-                    <div className="flex items-center justify-between py-2 px-5 hover:bg-white/5 cursor-pointer" onClick={() => setIsFlipped(!isFlipped)}>
-                      <span className="text-sm text-gray-300">Lật ngang Video</span>
-                      <div className={cn("w-9 h-5 rounded-full relative transition-colors", isFlipped ? "bg-[#E50914]" : "bg-neutral-600")}>
-                         <div className={cn("absolute top-[2px] bottom-[2px] w-4 bg-white rounded-full transition-all", isFlipped ? "right-[2px]" : "left-[2px]")} />
-                      </div>
-                    </div>
 
-                    <div className="px-5 py-2 mt-1">
-                      <div className="flex justify-between text-sm text-gray-300 mb-2">
-                         <span>Độ sáng</span>
-                         <span className="font-mono text-xs">{(brightness * 100).toFixed(0)}%</span>
+                    <div className="px-5 py-3 md:px-7 md:py-4.5 lg:px-8 lg:py-5.5 mt-1">
+                      <div className="flex justify-between text-sm md:text-base lg:text-lg text-gray-300 mb-2">
+                         <span className={textBaseClass}>Độ sáng</span>
+                         <span className="font-mono text-xs md:text-sm lg:text-base">{(brightness * 100).toFixed(0)}%</span>
                       </div>
                       <input 
                           type="range" min="0.1" max="2.0" step="0.1" 
@@ -1517,18 +1653,18 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                       />
                     </div>
 
-                    <div className="px-5 py-2 mt-2 text-[10px] font-bold tracking-wider uppercase text-gray-500">Phát lại</div>
-                    <div className="flex items-center justify-between py-3 px-5 hover:bg-white/5 cursor-pointer" onClick={() => setAutoplay(!autoplay)}>
-                      <span className="text-sm text-gray-300">Tự động phát</span>
-                      <div className={cn("w-9 h-5 rounded-full relative transition-colors", autoplay ? "bg-[#E50914]" : "bg-neutral-600")}>
-                         <div className={cn("absolute top-[2px] bottom-[2px] w-4 bg-white rounded-full transition-all", autoplay ? "right-[2px]" : "left-[2px]")} />
+                    <div className="px-5 py-2 md:px-7 md:py-3 mt-2 text-[10px] md:text-xs lg:text-sm font-bold tracking-wider uppercase text-gray-500">Phát lại</div>
+                    <div className="flex items-center justify-between py-2.5 px-5 md:py-3.5 md:px-7 lg:py-4 lg:px-8 hover:bg-white/5 cursor-pointer" onClick={() => setAutoplay(!autoplay)}>
+                      <span className="text-sm md:text-base lg:text-lg text-gray-300">Tự động phát</span>
+                      <div className={cn("w-9 h-5 md:w-11 md:h-6 rounded-full relative transition-colors", autoplay ? "bg-[#E50914]" : "bg-neutral-600")}>
+                         <div className={cn("absolute top-[2px] bottom-[2px] w-4 h-4 md:w-5 md:h-5 bg-white rounded-full transition-all", autoplay ? "right-[2px]" : "left-[2px]")} />
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between py-3 px-5 hover:bg-white/5 cursor-pointer" onClick={() => setAutoNext(!autoNext)}>
-                      <span className="text-sm text-gray-300">Tự động nhảy tập tiếp</span>
-                      <div className={cn("w-9 h-5 rounded-full relative transition-colors", autoNext ? "bg-[#E50914]" : "bg-neutral-600")}>
-                         <div className={cn("absolute top-[2px] bottom-[2px] w-4 bg-white rounded-full transition-all", autoNext ? "right-[2px]" : "left-[2px]")} />
+                    <div className="flex items-center justify-between py-2.5 px-5 md:py-3.5 md:px-7 lg:py-4 lg:px-8 hover:bg-white/5 cursor-pointer" onClick={() => setAutoNext(!autoNext)}>
+                      <span className="text-sm md:text-base lg:text-lg text-gray-300">Tự động nhảy tập tiếp</span>
+                      <div className={cn("w-9 h-5 md:w-11 md:h-6 rounded-full relative transition-colors", autoNext ? "bg-[#E50914]" : "bg-neutral-600")}>
+                         <div className={cn("absolute top-[2px] bottom-[2px] w-4 h-4 md:w-5 md:h-5 bg-white rounded-full transition-all", autoNext ? "right-[2px]" : "left-[2px]")} />
                       </div>
                     </div>
                   </div>
@@ -1536,40 +1672,40 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
                 {settingsTab === 'gestures' && (
                   <div className="flex flex-col gap-1 pb-4">
-                    <div className="px-5 py-2 text-[10px] font-bold tracking-wider uppercase text-gray-500">Cử chỉ vuốt dọc</div>
+                    <div className="px-5 py-2 md:px-7 md:py-3 text-[10px] md:text-xs lg:text-sm font-bold tracking-wider uppercase text-gray-500">Cử chỉ vuốt dọc</div>
                     
-                    <div className="flex items-center justify-between py-2 px-5 hover:bg-white/5">
-                      <span className="text-sm text-gray-300">Vuốt bên trái</span>
+                    <div className="flex items-center justify-between py-2.5 px-5 md:py-3.5 md:px-7 lg:py-4 lg:px-8 hover:bg-white/5">
+                      <span className="text-sm md:text-base lg:text-lg text-gray-300">Vuốt bên trái</span>
                       <PlayerSelect
                         value={gestureLeft}
                         onChange={(val: any) => setGestureLeft(val)}
                         activeColor={activeColor}
                         options={[
-                          { value: 'brightness', label: 'Độ sáng', icon: <Sun size={14} /> },
-                          { value: 'volume', label: 'Âm lượng', icon: <Volume2 size={14} /> },
-                          { value: 'disabled', label: 'Tắt', icon: <VolumeX size={14} /> }
+                          { value: 'brightness', label: 'Độ sáng', icon: <Sun className="w-[14px] h-[14px] md:w-4.5 md:h-4.5 lg:w-5.5 lg:h-5.5" /> },
+                          { value: 'volume', label: 'Âm lượng', icon: <Volume2 className="w-[14px] h-[14px] md:w-4.5 md:h-4.5 lg:w-5.5 lg:h-5.5" /> },
+                          { value: 'disabled', label: 'Tắt', icon: <VolumeX className="w-[14px] h-[14px] md:w-4.5 md:h-4.5 lg:w-5.5 lg:h-5.5" /> }
                         ]}
                       />
                     </div>
                     
-                    <div className="flex items-center justify-between py-2 px-5 hover:bg-white/5">
-                      <span className="text-sm text-gray-300">Vuốt bên phải</span>
+                    <div className="flex items-center justify-between py-2.5 px-5 md:py-3.5 md:px-7 lg:py-4 lg:px-8 hover:bg-white/5">
+                      <span className="text-sm md:text-base lg:text-lg text-gray-300">Vuốt bên phải</span>
                       <PlayerSelect
                         value={gestureRight}
                         onChange={(val: any) => setGestureRight(val)}
                         activeColor={activeColor}
                         options={[
-                          { value: 'volume', label: 'Âm lượng', icon: <Volume2 size={14} /> },
-                          { value: 'brightness', label: 'Độ sáng', icon: <Sun size={14} /> },
-                          { value: 'disabled', label: 'Tắt', icon: <VolumeX size={14} /> }
+                          { value: 'volume', label: 'Âm lượng', icon: <Volume2 className="w-[14px] h-[14px] md:w-4.5 md:h-4.5 lg:w-5.5 lg:h-5.5" /> },
+                          { value: 'brightness', label: 'Độ sáng', icon: <Sun className="w-[14px] h-[14px] md:w-4.5 md:h-4.5 lg:w-5.5 lg:h-5.5" /> },
+                          { value: 'disabled', label: 'Tắt', icon: <VolumeX className="w-[14px] h-[14px] md:w-4.5 md:h-4.5 lg:w-5.5 lg:h-5.5" /> }
                         ]}
                       />
                     </div>
 
-                    <div className="px-5 py-2 mt-2 border-t border-white/[0.06] pt-2">
-                      <div className="flex justify-between text-sm text-gray-300 mb-2">
-                         <span>Khu vực sát trái (Vuốt dọc)</span>
-                         <span className="font-mono text-xs">{gestureLeftZone}%</span>
+                    <div className="px-5 py-3 md:px-7 md:py-4.5 lg:px-8 lg:py-5.5 mt-1 border-t border-white/[0.06] pt-2">
+                      <div className="flex justify-between text-sm md:text-base lg:text-lg text-gray-300 mb-2">
+                         <span className={textBaseClass}>Khu vực sát trái (Vuốt dọc)</span>
+                         <span className="font-mono text-xs md:text-sm lg:text-base">{gestureLeftZone}%</span>
                       </div>
                       <input 
                           type="range" min="5" max="45" step="5" 
@@ -1578,10 +1714,10 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                       />
                     </div>
 
-                    <div className="px-5 py-2 mt-2">
-                      <div className="flex justify-between text-sm text-gray-300 mb-2">
-                         <span>Khu vực sát phải (Vuốt dọc)</span>
-                         <span className="font-mono text-xs">{gestureRightZone}%</span>
+                    <div className="px-5 py-3 md:px-7 md:py-4.5 lg:px-8 lg:py-5.5 mt-1">
+                      <div className="flex justify-between text-sm md:text-base lg:text-lg text-gray-300 mb-2">
+                         <span className={textBaseClass}>Khu vực sát phải (Vuốt dọc)</span>
+                         <span className="font-mono text-xs md:text-sm lg:text-base">{gestureRightZone}%</span>
                       </div>
                       <input 
                           type="range" min="5" max="45" step="5" 
@@ -1590,9 +1726,9 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                       />
                     </div>
 
-                    <div className="px-5 py-2 mt-2 text-[10px] font-bold tracking-wider uppercase text-gray-500 border-t border-white/[0.06] pt-3">Đè màn hình để tua nhanh</div>
-                    <div className="flex items-center justify-between py-2 px-5 hover:bg-white/5">
-                      <span className="text-sm text-gray-300">Vùng kích hoạt đè</span>
+                    <div className="px-5 py-2 md:px-7 md:py-3 mt-2 text-[10px] md:text-xs lg:text-sm font-bold tracking-wider uppercase text-gray-500 border-t border-white/[0.06] pt-3">Đè màn hình để tua nhanh</div>
+                    <div className="flex items-center justify-between py-2.5 px-5 md:py-3.5 md:px-7 lg:py-4 lg:px-8 hover:bg-white/5">
+                      <span className="text-sm md:text-base lg:text-lg text-gray-300">Vùng kích hoạt đè</span>
                       <PlayerSelect
                         value={holdToSeekZone}
                         onChange={(val: any) => setHoldToSeekZone(val)}
@@ -1606,8 +1742,8 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                       />
                     </div>
 
-                    <div className="flex items-center justify-between py-2 px-5 hover:bg-white/5">
-                      <span className="text-sm text-gray-300">Thời gian đè để tua</span>
+                    <div className="flex items-center justify-between py-2.5 px-5 md:py-3.5 md:px-7 lg:py-4 lg:px-8 hover:bg-white/5">
+                      <span className="text-sm md:text-base lg:text-lg text-gray-300">Thời gian đè để tua</span>
                       <PlayerSelect
                         value={holdToSeekDelay}
                         onChange={(val: any) => setHoldToSeekDelay(val)}
@@ -1671,8 +1807,23 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
               <div
                 key={stream.id}
                 onClick={() => {
-                  if (onStreamSelect) {
-                    onStreamSelect(stream);
+                  console.log("[NetflixPlayer debug] Stream card clicked in sidebar:", {
+                    streamId: stream.id,
+                    provider: stream.provider,
+                    type: stream.type,
+                    url: stream.url
+                  });
+                  const isThirdPartyEmbed = stream.type === 'embed' && !stream.url?.includes('cinemaos.tech');
+                  console.log("[NetflixPlayer debug] isThirdPartyEmbed evaluated:", isThirdPartyEmbed);
+                  if (isThirdPartyEmbed) {
+                    console.log("[NetflixPlayer debug] Clicking third party embed, setting pendingStream and showAdWarning to true");
+                    setPendingStream(stream);
+                    setShowAdWarning(true);
+                  } else {
+                    console.log("[NetflixPlayer debug] Selecting stream directly (no warning needed)");
+                    if (onStreamSelect) {
+                      onStreamSelect(stream);
+                    }
                   }
                 }}
                 className={cn(
@@ -1723,17 +1874,21 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   // No early return for iframe mode to render Cinemax player layout, title and subtitles overlay
 
   return (
-    <div 
-      ref={containerRef}
-      className={cn("relative w-full h-full bg-black group netflix-player-container", isFullscreen ? "overflow-hidden" : "")}
-      onMouseMove={isIframeMode ? undefined : resetControlsTimeout}
-      onMouseLeave={isIframeMode ? undefined : () => { if(isPlaying && !isSettingsOpen && !isEpisodesOpen && !isSourcesOpen) setShowControls(false); }}
-      onClick={isIframeMode ? undefined : toggleControlsMobile}
-      onTouchStart={isIframeMode ? undefined : handleTouchStart}
-      onTouchMove={isIframeMode ? undefined : handleTouchMove}
-      onTouchEnd={isIframeMode ? undefined : handleTouchEnd}
-      onTouchCancel={isIframeMode ? undefined : handleTouchEnd}
-    >
+    <div className={cn("w-full flex flex-col", isFullscreen ? "h-screen bg-black" : "h-auto bg-black")}>
+      <div 
+        ref={containerRef}
+        className={cn(
+          "relative w-full bg-black group netflix-player-container",
+          isFullscreen ? "h-full overflow-hidden" : "aspect-video"
+        )}
+        onMouseMove={isIframeMode ? undefined : resetControlsTimeout}
+        onMouseLeave={isIframeMode ? undefined : () => { if(isPlaying && !isSettingsOpen && !isEpisodesOpen && !isSourcesOpen) setShowControls(false); }}
+        onClick={isIframeMode ? undefined : toggleControlsMobile}
+        onTouchStart={isIframeMode ? undefined : handleTouchStart}
+        onTouchMove={isIframeMode ? undefined : handleTouchMove}
+        onTouchEnd={isIframeMode ? undefined : handleTouchEnd}
+        onTouchCancel={isIframeMode ? undefined : handleTouchEnd}
+      >
       {isIframeMode ? (
         <>
           <iframe 
@@ -1741,43 +1896,9 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
             src={resolvedEmbedUrl}
             className="w-full h-full border-0 absolute inset-0 z-0 bg-black pointer-events-auto"
             allowFullScreen
-            allow="autoplay; fullscreen; encrypted-media"
-            sandbox={
-              resolvedEmbedUrl && (resolvedEmbedUrl.includes('vidsrc') || resolvedEmbedUrl.includes('embed.su'))
-                ? "allow-scripts allow-forms"
-                : "allow-scripts allow-same-origin allow-forms"
-            }
+            allow="autoplay *; fullscreen *; encrypted-media *; picture-in-picture *"
             referrerPolicy="origin"
           />
-          {!areIframeControlsVisible && onClose && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onClose(); }}
-              className="absolute top-4 left-4 z-50 w-9 h-9 rounded-full bg-black/60 hover:bg-black/90 border border-white/10 hover:border-white/20 text-white flex items-center justify-center transition-all active:scale-95 cursor-pointer shadow-lg backdrop-blur-md"
-              title="Quay lại"
-            >
-              <ArrowLeft size={18} />
-            </button>
-          )}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setAreIframeControlsVisible(prev => !prev);
-            }}
-            className="absolute top-4 right-4 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/90 border border-white/10 hover:border-white/20 text-white text-xs font-semibold backdrop-blur-md transition-all active:scale-95 cursor-pointer shadow-lg"
-            title={areIframeControlsVisible ? "Ẩn giao diện Cinemax để click vào trình phát" : "Hiện lại giao diện điều khiển Cinemax"}
-          >
-            {areIframeControlsVisible ? (
-              <>
-                <EyeOff size={13} />
-                <span>Ẩn menu</span>
-              </>
-            ) : (
-              <>
-                <Eye size={13} className="text-emerald-400" />
-                <span>Hiện menu</span>
-              </>
-            )}
-          </button>
         </>
       ) : (
         <video
@@ -1979,18 +2100,9 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
       {/* Title Bar inside Custom Player controls */}
       <AnimatePresence>
-        {((!isIframeMode && showControls) || (!isPlaying && !isIframeMode) || (isIframeMode && areIframeControlsVisible)) && !(isMobile && isPortrait && !isFullscreen) && (
+        {((!isIframeMode && showControls) || (!isPlaying && !isIframeMode) || (isIframeMode && areIframeControlsVisible && isFullscreen)) && !(isMobile && isPortrait && !isFullscreen) && (
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="absolute top-0 w-full bg-gradient-to-b from-black/90 via-black/40 to-transparent p-4 md:p-6 z-30 pointer-events-auto flex items-center justify-between text-white">
             <h2 className="font-extrabold text-sm md:text-lg drop-shadow-md truncate pr-8 cursor-default flex items-center gap-2">
-              {onClose && (
-                <button 
-                  onClick={(e) => { e.stopPropagation(); onClose(); }} 
-                  className="mr-2 p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer flex items-center justify-center shrink-0"
-                  title="Quay lại"
-                >
-                  <ArrowLeft size={20} />
-                </button>
-              )}
               <span className="inline-block w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: activeColor }} />
               <span>{title}</span>
             </h2>
@@ -2026,260 +2138,320 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       {/* Dynamic Player Settings HUD Overlay (YouTube Style) */}
       {renderSettingsOverlay()}
 
-      {/* Video Sources Sidebar Panel */}
-      <AnimatePresence>
-        {isSourcesOpen && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-40 bg-black/20 pointer-events-auto flex justify-end"
-          >
-            {/* Click outside sidebar to close */}
-            <div className="absolute inset-0 z-10" onClick={() => setIsSourcesOpen(false)} />
+      {/* Video Sources Sidebar/Popup Panel */}
+      {(() => {
+        const isLandscapeMobile = isMobile && !isPortrait;
+        const sidebarContent = (
+          <AnimatePresence>
+            {isSourcesOpen && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className={cn(
+                  "pointer-events-auto flex",
+                  (isMobile && isPortrait) 
+                    ? "items-end justify-center" 
+                    : (isLandscapeMobile ? "items-end justify-end pb-2 pr-2" : "items-end justify-end pb-16 pr-4 sm:pb-24 sm:pr-8"),
+                  isFullscreen ? "absolute inset-0 z-40 bg-black/20" : "fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm"
+                )}
+              >
+                {/* Click outside sidebar to close */}
+                <div className="absolute inset-0 z-10" onClick={() => setIsSourcesOpen(false)} />
 
-            <motion.div 
-              initial={{ x: '100%', opacity: 0.5 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: '100%', opacity: 0.5 }}
-              transition={{ type: 'spring', damping: 24, stiffness: 150 }}
-              className="relative z-20 w-full max-w-sm sm:max-w-md h-full bg-[#0c0c0e]/80 backdrop-blur-xl border-l border-white/[0.08] flex flex-col shadow-[rgba(0,0,0,0.9)_0px_0px_50px_10px]"
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-              onTouchMove={(e) => e.stopPropagation()}
-              onTouchEnd={(e) => e.stopPropagation()}
-            >
-              {/* Header */}
-              <div className="p-4 border-b border-white/[0.08] flex flex-col gap-3 shrink-0 bg-transparent">
-                <div className="flex items-center justify-between w-full">
-                  <div className="flex items-center gap-3">
-                    <button 
-                      onClick={() => setIsSourcesOpen(false)}
-                      className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
-                    >
-                      <ArrowLeft size={20} />
-                    </button>
-                    <div className="flex items-center gap-2">
-                      <Database size={18} className="text-emerald-400 animate-pulse" />
-                      <div className="flex flex-col">
-                        <span className="text-sm font-black text-white tracking-wider uppercase">Video Sources</span>
-                        <span className="text-[10px] text-gray-400 font-medium tracking-wide">Select server</span>
+                <motion.div 
+                  initial={(isMobile && isPortrait) ? { y: '100%', opacity: 0.5 } : { y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={(isMobile && isPortrait) ? { y: '100%', opacity: 0.5 } : { y: 20, opacity: 0 }}
+                  transition={(isMobile && isPortrait) ? { type: 'tween', ease: [0.16, 1, 0.3, 1], duration: 0.25 } : { type: 'tween', ease: [0.16, 1, 0.3, 1], duration: 0.22 }}
+                  className={cn(
+                    "relative z-20 flex flex-col transition-all duration-300 overflow-hidden",
+                    (isMobile && isPortrait)
+                      ? "w-full max-h-[82vh] h-auto pb-6 border-t border-white/[0.08] rounded-t-[28px] bg-black shadow-[0_-15px_40px_rgba(0,0,0,0.85)]"
+                      : cn(
+                          "w-full sm:w-[320px] md:w-[400px] lg:w-[440px] max-h-[65vh] sm:max-h-[75vh] h-auto border border-white/10 rounded-2xl shadow-[0_24px_60px_rgba(0,0,0,0.8)] bg-black/90 backdrop-blur-md p-0",
+                          isFullscreen ? "absolute z-50 bg-black/85" : ""
+                        )
+                  )}
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onTouchMove={(e) => e.stopPropagation()}
+                  onTouchEnd={(e) => e.stopPropagation()}
+                >
+                  {isMobile && isPortrait && (
+                    <div className="w-12 h-1.5 bg-white/15 rounded-full mx-auto my-3 shrink-0" />
+                  )}
+                  {/* Header */}
+                  <div className="p-4 border-b border-white/[0.08] flex flex-col gap-3 shrink-0 bg-transparent">
+                    <div className="flex items-center justify-between w-full">
+                      <div className="flex items-center gap-3">
+                        {(isMobile && isPortrait) ? (
+                          <button 
+                            onClick={() => setIsSourcesOpen(false)}
+                            className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                          >
+                            <ArrowLeft size={20} />
+                          </button>
+                        ) : (
+                          <Database size={18} className="text-emerald-400 animate-pulse" />
+                        )}
+                        <div className="flex flex-col">
+                          <span className="text-sm font-black text-white tracking-wider uppercase">Nguồn phát Video</span>
+                          <span className="text-[10px] text-gray-400 font-medium tracking-wide">Chọn server</span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        {isAggregatorLoading && (
+                          <Loader2 size={16} className="text-emerald-400 animate-spin shrink-0" />
+                        )}
+                        {!(isMobile && isPortrait) && (
+                          <button 
+                            onClick={() => setIsSourcesOpen(false)}
+                            className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                          >
+                            <X size={18} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
-                  
-                  {isAggregatorLoading && (
-                    <Loader2 size={16} className="text-emerald-400 animate-spin shrink-0" />
-                  )}
-                </div>
-              </div>
 
-              {/* Server List */}
-              <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-6">
-                {/* Vietnamese Sources */}
-                {renderServerGroup('NGUỒN VIỆT NAM', streams.filter(s => s.category === 'vi' || s.lang === 'vi'))}
-                
-                {/* Premium Sources */}
-                {renderServerGroup('PREMIUM SOURCES', streams.filter(s => s.category === 'premium' && s.lang !== 'vi'))}
+                  {/* Server List */}
+                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-6">
+                    {/* Vietnamese Sources */}
+                    {renderServerGroup('NGUỒN VIỆT NAM', streams.filter(s => s.category === 'vi' || s.lang === 'vi'))}
+                    
+                    {/* Premium Sources */}
+                    {renderServerGroup('PREMIUM SOURCES', streams.filter(s => s.category === 'premium' && s.lang !== 'vi'))}
 
-                {/* Community Sources */}
-                {renderServerGroup('COMMUNITY SOURCES', streams.filter(s => (s.category === 'standard' || s.category === 'free' || !s.category) && s.lang !== 'vi'))}
+                    {/* Community Sources */}
+                    {renderServerGroup('COMMUNITY SOURCES', streams.filter(s => (s.category === 'standard' || s.category === 'free' || !s.category) && s.lang !== 'vi'))}
 
-                {streams.length === 0 && !isAggregatorLoading && (
-                  <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <p className="text-sm text-gray-400 font-medium">Không tìm thấy nguồn phát nào.</p>
+                    {streams.length === 0 && !isAggregatorLoading && (
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <p className="text-sm text-gray-400 font-medium">Không tìm thấy nguồn phát nào.</p>
+                      </div>
+                    )}
+
+                    {streams.length === 0 && isAggregatorLoading && (
+                      <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
+                        <Loader2 size={24} className="text-emerald-400 animate-spin" />
+                        <p className="text-sm text-gray-400 font-medium">Đang tìm kiếm các nguồn phát...</p>
+                      </div>
+                    )}
                   </div>
-                )}
 
-                {streams.length === 0 && isAggregatorLoading && (
-                  <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
-                    <Loader2 size={24} className="text-emerald-400 animate-spin" />
-                    <p className="text-sm text-gray-400 font-medium">Đang tìm kiếm các nguồn phát...</p>
+                  {/* Footer */}
+                  <div className="p-4 border-t border-white/[0.08] text-center bg-transparent shrink-0">
+                    <span className="text-[10px] font-medium tracking-widest text-white/30 uppercase font-sans">
+                      Đổi nguồn phát nếu gặp hiện tượng giật lag
+                    </span>
                   </div>
-                )}
-              </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        );
 
-              {/* Footer */}
-              <div className="p-4 border-t border-white/[0.08] text-center bg-transparent shrink-0">
-                <span className="text-[10px] font-medium tracking-widest text-white/30 uppercase font-sans">
-                  Switch if experiencing buffering
-                </span>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        if (isFullscreen) {
+          return sidebarContent;
+        } else {
+          return createPortal(sidebarContent, document.body);
+        }
+      })()}
 
       {/* Dynamic Advanced Episodes Overlay Modal (Matches Second Image Request) */}
-      <AnimatePresence>
-        {isEpisodesOpen && episodes.length > 0 && onEpisodeSelect && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-40 bg-black/90 pointer-events-auto flex justify-end"
-          >
-            
-            {/* Click outside sidebar to close */}
-            <div className="absolute inset-0 z-10" onClick={() => setIsEpisodesOpen(false)} />
+      {(() => {
+        const episodesContent = (
+          <AnimatePresence>
+            {isEpisodesOpen && episodes.length > 0 && onEpisodeSelect && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className={cn(
+                  "pointer-events-auto flex",
+                  (isMobile && isPortrait) ? "items-end justify-center" : "justify-end",
+                  isFullscreen ? "absolute inset-0 z-40 bg-black/90" : "fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm"
+                )}
+              >
+                {/* Click outside sidebar to close */}
+                <div className="absolute inset-0 z-10" onClick={() => setIsEpisodesOpen(false)} />
 
-            <motion.div 
-              initial={{ x: '100%', opacity: 0.5 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: '100%', opacity: 0.5 }}
-              transition={{ type: 'spring', damping: 24, stiffness: 150 }}
-              className="relative z-20 w-full max-w-md sm:max-w-lg h-full bg-black border-l border-white/[0.08] flex flex-col shadow-[rgba(0,0,0,0.9)_0px_0px_50px_10px]"
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-              onTouchMove={(e) => e.stopPropagation()}
-              onTouchEnd={(e) => e.stopPropagation()}
-            >
-              
-              {/* Overlay Top Bar (Season Selection + Close) */}
-              <div className="p-4 border-b border-white/[0.08] flex flex-col gap-3 shrink-0 bg-black sticky top-0 z-30">
-                <div className="flex items-center justify-between w-full">
-                  <div className="flex flex-col gap-1 min-w-0">
-                    <h3 className="text-sm font-black text-white tracking-wider uppercase">Danh sách tập</h3>
-                    <p className="text-[10px] text-gray-400 font-medium uppercase font-sans tracking-wider truncate max-w-[220px]">{movieName}</p>
+                <motion.div 
+                  initial={(isMobile && isPortrait) ? { y: '100%', opacity: 0.5 } : { x: '100%', opacity: 0.5 }}
+                  animate={(isMobile && isPortrait) ? { y: 0, opacity: 1 } : { x: 0, opacity: 1 }}
+                  exit={(isMobile && isPortrait) ? { y: '100%', opacity: 0.5 } : { x: '100%', opacity: 0.5 }}
+                  transition={(isMobile && isPortrait) ? { type: 'tween', ease: [0.16, 1, 0.3, 1], duration: 0.25 } : { type: 'spring', damping: 24, stiffness: 150 }}
+                  className={cn(
+                    "relative z-20 flex flex-col transition-all duration-300",
+                    (isMobile && isPortrait)
+                      ? "w-full max-h-[82vh] h-auto pb-6 border-t border-white/[0.08] rounded-t-[28px] bg-black shadow-[0_-15px_40px_rgba(0,0,0,0.85)]"
+                      : cn(
+                          "w-full max-w-md sm:max-w-lg h-full border-l border-white/[0.08] shadow-[rgba(0,0,0,0.9)_0px_0px_50px_10px] bg-black",
+                          isFullscreen ? "bg-black" : "bg-black/98 backdrop-blur-2xl"
+                        )
+                  )}
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onTouchMove={(e) => e.stopPropagation()}
+                  onTouchEnd={(e) => e.stopPropagation()}
+                >
+                  {isMobile && isPortrait && (
+                    <div className="w-12 h-1.5 bg-white/15 rounded-full mx-auto my-3 shrink-0" />
+                  )}
+                  {/* Overlay Top Bar (Season Selection + Close) */}
+                  <div className="p-4 border-b border-white/[0.08] flex flex-col gap-3 shrink-0 bg-transparent sticky top-0 z-30">
+                    <div className="flex items-center justify-between w-full">
+                      <div className="flex flex-col gap-1 min-w-0">
+                        <h3 className="text-sm font-black text-white tracking-wider uppercase">Danh sách tập</h3>
+                        <p className="text-[10px] text-gray-400 font-medium uppercase font-sans tracking-wider truncate max-w-[220px]">{movieName}</p>
+                      </div>
+                      
+                      <button 
+                        onClick={() => setIsEpisodesOpen(false)}
+                        className="w-8 h-8 rounded-full hover:bg-white/10 transition-all flex items-center justify-center text-gray-400 hover:text-white shrink-0"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+
+                    {/* Stremio-style Season horizontal tabs */}
+                    {isTv && seasons && seasons.length > 1 && (
+                      <div className="flex gap-1.5 overflow-x-auto pb-1 pt-1 custom-scrollbar snap-x w-full">
+                        {seasons.map((s: any) => {
+                          const isSelectedSeason = currentSeason === s.season_number;
+                          return (
+                            <button 
+                              key={s.season_number}
+                              onClick={() => {
+                                if (onSeasonChange) onSeasonChange(s.season_number);
+                              }}
+                              className={cn(
+                                "px-3.5 py-1.5 rounded-full text-[11px] font-extrabold whitespace-nowrap transition-colors snap-start cursor-pointer",
+                                isSelectedSeason 
+                                  ? cn(activeBg, "text-white") 
+                                  : "bg-black border border-white/10 text-gray-400 hover:bg-white/10 hover:text-white"
+                              )}
+                            >
+                              Mùa {s.season_number}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                  
-                  <button 
-                    onClick={() => setIsEpisodesOpen(false)}
-                    className="w-8 h-8 rounded-full hover:bg-white/10 transition-all flex items-center justify-center text-gray-400 hover:text-white shrink-0"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
 
-                {/* Stremio-style Season horizontal tabs */}
-                {isTv && seasons && seasons.length > 1 && (
-                  <div className="flex gap-1.5 overflow-x-auto pb-1 pt-1 custom-scrollbar snap-x w-full">
-                    {seasons.map((s: any) => {
-                      const isSelectedSeason = currentSeason === s.season_number;
+                  {/* Scrollable Episodes List */}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar bg-transparent">
+                    {episodes.map((ep: any, index: number) => {
+                      const epNameStr = ep.name;
+                      
+                      // Only highlight the episode if the drawer is showing the same season as the playing episode
+                      const isSelected = currentSeason === activeEpSeason && isSameEpisode(episodeName, epNameStr);
+                      
+                      // Match with TMDB metadata episodes object
+                      const tmdbEp = tmdbEpisodes.find(t => isSameEpisode(t.episode_number || t.name, epNameStr));
+
+                      const runtime = tmdbEp?.runtime ? `${tmdbEp.runtime}m` : 'Phát ngay';
+                      const cleanEpNum = getEpisodeNumber(epNameStr)?.toString() || epNameStr.replace("Tập ", "").trim();
+                      const displayTitle = tmdbEp?.name ? `${cleanEpNum}. ${tmdbEp.name}` : (ep.name.startsWith("Tập") ? ep.name : `Tập ${ep.name}`);
+
+                      // Extract Still image
+                      const imgUrl = tmdbEp?.still_path 
+                        ? `https://image.tmdb.org/t/p/w300${tmdbEp.still_path}`
+                        : thumbUrl || posterUrl || '';
+
+                      // Track watched ratio under localStorage history
+                      const saved = progressMap[slug || ''];
+                      let ratio = 0;
+                      if (saved && isSameEpisode(saved.episodeName, ep.name)) {
+                        if (saved.duration) {
+                          ratio = (saved.currentTime / saved.duration) * 100;
+                        }
+                      }
+
                       return (
-                        <button 
-                          key={s.season_number}
+                        <button
+                          key={index}
                           onClick={() => {
-                            if (onSeasonChange) onSeasonChange(s.season_number);
+                            onEpisodeSelect(ep);
+                            setIsEpisodesOpen(false);
                           }}
                           className={cn(
-                            "px-3.5 py-1.5 rounded-full text-[11px] font-extrabold whitespace-nowrap transition-colors snap-start cursor-pointer",
-                            isSelectedSeason 
-                              ? cn(activeBg, "text-white") 
-                              : "bg-black border border-white/10 text-gray-400 hover:bg-white/10 hover:text-white"
+                            "w-full text-left rounded-xl p-2 transition-all duration-200 flex gap-3 border select-none cursor-pointer bg-transparent",
+                            isSelected 
+                              ? cn("border-white/10", activeBorder)
+                              : "border-white/5 hover:bg-white/[0.02] hover:border-white/10"
                           )}
                         >
-                          Mùa {s.season_number}
+                          {/* Thumbnail wrapper */}
+                          <div className="w-[100px] aspect-video rounded-lg overflow-hidden relative bg-neutral-900 border border-white/5 shrink-0 shadow-md">
+                            {imgUrl ? (
+                              <img 
+                                src={imgUrl} 
+                                alt={displayTitle} 
+                                className="w-full h-full object-cover transition-transform duration-500" 
+                                loading="lazy"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-[#111] flex items-center justify-center text-gray-600 text-[10px] font-bold">
+                                CinemaOS
+                              </div>
+                            )}
+
+                            {/* Watched progress bar indicator inside image footer */}
+                            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-white/20">
+                              <div 
+                                className="h-full bg-red-600 transition-all duration-300"
+                                style={{ width: `${ratio ? ratio : isSelected ? 100 : 0}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Title, runtime, description */}
+                          <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
+                            <div className="flex items-center justify-between w-full">
+                              <h4 className={cn(
+                                "text-xs font-bold truncate leading-snug tracking-wide",
+                                isSelected ? cn(activeText, "font-extrabold") : "text-gray-200"
+                              )}>
+                                {displayTitle}
+                              </h4>
+                              {runtime && (
+                                <span className="text-[9px] text-gray-500 font-sans shrink-0 ml-2 font-semibold">
+                                  {runtime}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Overview synopsis if parsed in TMDB */}
+                            {tmdbEp?.overview && (
+                              <p className="text-[10px] text-gray-500 line-clamp-1 leading-relaxed font-medium">
+                                {tmdbEp.overview}
+                              </p>
+                            )}
+                          </div>
                         </button>
                       );
                     })}
                   </div>
-                )}
-              </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        );
 
-              {/* Scrollable Episodes List */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar bg-black">
-                {episodes.map((ep: any, index: number) => {
-                  const epNameStr = ep.name;
-                  
-                  // Only highlight the episode if the drawer is showing the same season as the playing episode
-                  const isSelected = currentSeason === activeEpSeason && isSameEpisode(episodeName, epNameStr);
-                  
-                  // Match with TMDB metadata episodes object
-                  const tmdbEp = tmdbEpisodes.find(t => isSameEpisode(t.episode_number || t.name, epNameStr));
-
-                  const runtime = tmdbEp?.runtime ? `${tmdbEp.runtime}m` : 'Phát ngay';
-                  const cleanEpNum = getEpisodeNumber(epNameStr)?.toString() || epNameStr.replace("Tập ", "").trim();
-                  const displayTitle = tmdbEp?.name ? `${cleanEpNum}. ${tmdbEp.name}` : (ep.name.startsWith("Tập") ? ep.name : `Tập ${ep.name}`);
-
-                  // Extract Still image
-                  const imgUrl = tmdbEp?.still_path 
-                    ? `https://image.tmdb.org/t/p/w300${tmdbEp.still_path}`
-                    : thumbUrl || posterUrl || '';
-
-                  // Track watched ratio under localStorage history
-                  const saved = progressMap[slug || ''];
-                  let ratio = 0;
-                  if (saved && isSameEpisode(saved.episodeName, ep.name)) {
-                    if (saved.duration) {
-                      ratio = (saved.currentTime / saved.duration) * 100;
-                    }
-                  }
-
-                  return (
-                    <button
-                      key={index}
-                      onClick={() => {
-                        onEpisodeSelect(ep);
-                        setIsEpisodesOpen(false);
-                      }}
-                      className={cn(
-                        "w-full text-left rounded-xl p-2 transition-all duration-200 flex gap-3 border select-none cursor-pointer bg-black",
-                        isSelected 
-                          ? cn("border-white/10", activeBorder)
-                          : "border-white/5 hover:bg-white/[0.02] hover:border-white/10"
-                      )}
-                    >
-                      {/* Thumbnail wrapper */}
-                      <div className="w-[100px] aspect-video rounded-lg overflow-hidden relative bg-neutral-900 border border-white/5 shrink-0 shadow-md">
-                        {imgUrl ? (
-                          <img 
-                            src={imgUrl} 
-                            alt={displayTitle} 
-                            className="w-full h-full object-cover transition-transform duration-500" 
-                            loading="lazy"
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <div className="w-full h-full bg-[#111] flex items-center justify-center text-gray-600 text-[10px] font-bold">
-                            CinemaOS
-                          </div>
-                        )}
-
-                        {/* Watched progress bar indicator inside image footer */}
-                        <div className="absolute bottom-0 left-0 w-full h-0.5 bg-white/20">
-                          <div 
-                            className="h-full bg-red-600 transition-all duration-300"
-                            style={{ width: `${ratio ? ratio : isSelected ? 100 : 0}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Title, runtime, description */}
-                      <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
-                        <div className="flex items-center justify-between w-full">
-                          <h4 className={cn(
-                            "text-xs font-bold truncate leading-snug tracking-wide",
-                            isSelected ? cn(activeText, "font-extrabold") : "text-gray-200"
-                          )}>
-                            {displayTitle}
-                          </h4>
-                          {runtime && (
-                            <span className="text-[9px] text-gray-500 font-sans shrink-0 ml-2 font-semibold">
-                              {runtime}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Overview synopsis if parsed in TMDB */}
-                        {tmdbEp?.overview && (
-                          <p className="text-[10px] text-gray-500 line-clamp-1 leading-relaxed font-medium">
-                            {tmdbEp.overview}
-                          </p>
-                        )}
-                      </div>
-
-                    </button>
-                  );
-                })}
-              </div>
-
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        if (isFullscreen) {
+          return episodesContent;
+        } else {
+          return createPortal(episodesContent, document.body);
+        }
+      })()}
 
       {/* Primary Video Screen Controls bar at Bottom */}
       <AnimatePresence>
@@ -2436,7 +2608,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       </AnimatePresence>
 
       {/* Embed bottom controls bar */}
-      {isIframeMode && areIframeControlsVisible && (
+      {isIframeMode && areIframeControlsVisible && isFullscreen && (
         <div className="absolute bottom-0 left-0 w-full p-4 md:p-6 z-30 pointer-events-none flex items-center justify-between text-white">
           <div className="flex items-center gap-3 sm:gap-4 pointer-events-auto bg-[#0a0a0c]/85 backdrop-blur-md px-3.5 py-2.5 rounded-2xl border border-white/10 shadow-[rgba(0,0,0,0.8)_0px_8px_30px]">
             {/* Subtitle offset */}
@@ -2470,17 +2642,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
               )}
             </div>
 
-            {/* Sub VI Toggle Button */}
-            <button
-              onClick={(e) => { e.stopPropagation(); setSubEnabled(p => !p); }}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer',
-                subEnabled ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.1)]' : 'bg-white/5 border-white/10 text-white/30'
-              )}
-            >
-              {subEnabled ? <Check size={10} /> : <Subtitles size={10} />}
-              Sub VI
-            </button>
+
           </div>
 
           <div className="flex items-center gap-4 pointer-events-auto bg-[#0a0a0c]/85 backdrop-blur-md px-3.5 py-2.5 rounded-2xl border border-white/10 shadow-[rgba(0,0,0,0.8)_0px_8px_30px]">
@@ -2509,6 +2671,76 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
             <button onClick={toggleFullscreen} className="hover:text-gray-300 hover:scale-110 active:scale-95 transition-all cursor-pointer">
               <Maximize size={20} />
             </button>
+          </div>
+        </div>
+      )}
+
+      {renderAdWarningModal()}
+      </div>
+
+      {/* Embed bottom controls bar when NOT fullscreen (outside the viewport) */}
+      {isIframeMode && !isFullscreen && (
+        <div className="w-full bg-[#0a0a0c] border border-white/[0.06] rounded-b-2xl p-3 sm:p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4 select-none">
+          {/* Title and source status */}
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="inline-block w-2.5 h-2.5 rounded-full animate-pulse bg-emerald-400 shrink-0" />
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Đang phát (Embed)</span>
+              <span className="text-xs sm:text-sm font-extrabold text-white truncate max-w-[250px] md:max-w-sm">{title}</span>
+            </div>
+          </div>
+
+          {/* Controls button actions */}
+          <div className="grid grid-cols-2 gap-2.5 w-full sm:flex sm:flex-wrap sm:w-auto sm:gap-2.5">
+            {/* Subtitle Offset adjustment */}
+            <div className="flex items-center justify-center gap-1.5 bg-white/[0.04] hover:bg-white/[0.06] rounded-xl px-2 py-1 sm:px-2.5 sm:py-1.5 border border-white/[0.08] transition-all h-8 sm:h-9 w-full sm:w-auto shrink-0">
+              <Subtitles size={14} className="text-white/40" />
+              <button 
+                onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev - 250); }} 
+                className="w-5.5 h-5.5 sm:w-6 sm:h-6 flex items-center justify-center rounded hover:bg-white/10 text-white/60 active:scale-90 transition-all cursor-pointer"
+                title="Sub nhanh hơn [-250ms]"
+              >
+                <Minus size={11} />
+              </button>
+              <span className={cn('text-xs font-mono font-bold min-w-[38px] text-center', subtitleOffset === 0 ? 'text-white/30' : 'text-emerald-400')}>
+                {subtitleOffset >= 0 ? '+' : ''}{(subtitleOffset / 1000).toFixed(2)}s
+              </span>
+              <button 
+                onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev + 250); }} 
+                className="w-5.5 h-5.5 sm:w-6 sm:h-6 flex items-center justify-center rounded hover:bg-white/10 text-white/60 active:scale-90 transition-all cursor-pointer"
+                title="Sub chậm hơn [+250ms]"
+              >
+                <Plus size={11} />
+              </button>
+              {subtitleOffset !== 0 && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setSubtitleOffset(0); }} 
+                  className="w-4 h-4 flex items-center justify-center text-white/25 hover:text-white transition-colors cursor-pointer"
+                  title="Reset delay"
+                >
+                  <RotateCcw size={10} />
+                </button>
+              )}
+            </div>
+
+            {/* Select source selection panel */}
+            {streams && streams.length > 0 && (
+              <button 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  setIsSourcesOpen(!isSourcesOpen); 
+                  setIsEpisodesOpen(false); 
+                }} 
+                className={cn(
+                  "hover:opacity-100 transition-all flex items-center justify-center gap-2 rounded-xl active:scale-95 cursor-pointer h-8 sm:h-9 px-3 w-full sm:w-auto bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-xs sm:text-xs font-bold tracking-wide shrink-0",
+                  isSourcesOpen ? "text-emerald-400 border-emerald-500/50 bg-emerald-500/10 shadow-[0_0_10px_rgba(16,185,129,0.15)]" : "text-white/80"
+                )}
+                title="Chọn nguồn phát"
+              >
+                <Wifi size={15} className={isSourcesOpen ? "text-emerald-400" : "text-white/60"} />
+                <span>Chọn nguồn</span>
+              </button>
+            )}
           </div>
         </div>
       )}

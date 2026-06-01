@@ -88,12 +88,12 @@ export const PlayerSelect = ({ options, value, onChange, activeColor, className 
         onTouchStart={(e) => e.stopPropagation()}
         onTouchEnd={(e) => e.stopPropagation()}
         className={cn(
-          "bg-white/5 border border-white/10 hover:border-white/20 rounded-xl px-3 py-1.5 text-xs font-bold outline-none cursor-pointer active:scale-[0.98] text-white flex items-center justify-between gap-2 select-none transition-all duration-200 w-[115px]",
+          "bg-white/5 border border-white/10 hover:border-white/20 rounded-xl px-3 py-1.5 md:px-4 md:py-2 text-xs md:text-sm font-bold outline-none cursor-pointer active:scale-[0.98] text-white flex items-center justify-between gap-2 select-none transition-all duration-200 w-[115px] sm:w-[130px] md:w-[145px]",
           isOpen && "border-white/20 bg-white/10"
         )}
       >
         <span className="truncate pr-1 text-gray-200">{selectedOption?.label}</span>
-        <ChevronDown size={12} className="text-gray-400 opacity-80 shrink-0" />
+        <ChevronDown size={14} className="text-gray-400 opacity-80 shrink-0" />
       </button>
 
       {isOpen && portalTarget && createPortal(
@@ -134,7 +134,7 @@ export const PlayerSelect = ({ options, value, onChange, activeColor, className 
                       onChange(option.value);
                       setIsOpen(false);
                     }}
-                    className="w-full text-left px-3 py-2 flex items-center justify-between transition-all duration-150 cursor-pointer text-xs rounded-xl hover:bg-white/5 text-gray-300 hover:text-white"
+                    className="w-full text-left px-3 py-2 md:px-4 md:py-2.5 flex items-center justify-between transition-all duration-150 cursor-pointer text-xs md:text-sm rounded-xl hover:bg-white/5 text-gray-300 hover:text-white"
                     style={isSelected ? {
                       backgroundColor: `${activeColor}30`,
                       color: '#ffffff',
@@ -148,7 +148,7 @@ export const PlayerSelect = ({ options, value, onChange, activeColor, className 
                       )}
                       <span className={cn("font-medium", isSelected ? "font-bold" : "")}>{option.label}</span>
                     </div>
-                    {isSelected && <Check size={12} className="text-white shrink-0 ml-2" />}
+                    {isSelected && <Check size={14} className="text-white shrink-0 ml-2" />}
                   </button>
                 );
               })}
