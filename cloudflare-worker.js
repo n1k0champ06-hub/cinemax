@@ -334,35 +334,6 @@ export default {
       }
     }
 
-    // 5. Proxy cho NguonC API -> /api/nguonc-proxy
-    if (url.pathname.startsWith("/api/nguonc-proxy")) {
-      const targetUrl = url.searchParams.get('url');
-      if (!targetUrl) {
-        return json({ error: 'Missing url query parameter' }, 400);
-      }
-      if (!targetUrl.startsWith('https://phim.nguonc.com/')) {
-        return json({ error: 'Domain not allowed' }, 403);
-      }
-      try {
-        const response = await fetch(targetUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json'
-          }
-        });
-        const data = await response.text();
-        return new Response(data, {
-          status: response.status,
-          headers: {
-            ...CORS_HEADERS,
-            'Content-Type': 'application/json; charset=utf-8',
-            'Cache-Control': 'public, max-age=1800'
-          }
-        });
-      } catch (err) {
-        return json({ error: 'Failed to fetch NguonC API', details: err.message }, 500);
-      }
-    }
 
     // 6. Proxy cho img-proxy -> /api/img-proxy
     if (url.pathname.startsWith("/api/img-proxy")) {
@@ -421,15 +392,65 @@ export default {
       const rangeHeader = request.headers.get('Range');
       if (rangeHeader) fetchHeaders['Range'] = rangeHeader;
 
-      try {
-        const res = await fetch(targetUrl, {
-          headers: fetchHeaders,
-          redirect: 'follow',
-        });
-
-        if (!res.ok && res.status !== 206) {
-          return json({ error: `Upstream returned ${res.status}` }, res.status);
+      let res;
+      const referersToTry = [referer];
+      const isOPhimTarget = targetUrl.includes('opstream') || targetUrl.includes('ophim') || targetUrl.includes('phimimg') || referer.includes('ophim') || referer.includes('opstream');
+      const isKKPhimTarget = targetUrl.includes('kkphim') || targetUrl.includes('phimapi') || referer.includes('kkphim') || referer.includes('phimapi');
+      
+      if (isOPhimTarget) {
+        const candidates = [
+          'https://ophim1.com/',
+          'https://ophim.tv/',
+          'https://ophim.cc/',
+          'https://ophim.live/',
+          'https://opstream.tv/'
+        ];
+        for (const c of candidates) {
+          if (c && c !== referer) referersToTry.push(c);
         }
+      } else if (isKKPhimTarget) {
+        const candidates = [
+          'https://phimapi.com/',
+          'https://kkphim.com/',
+          'https://kkphim.link/',
+        ];
+        for (const c of candidates) {
+          if (c && c !== referer) referersToTry.push(c);
+        }
+      }
+
+      for (let i = 0; i < referersToTry.length; i++) {
+        const currentReferer = referersToTry[i];
+        const headers = { ...fetchHeaders };
+        if (currentReferer) {
+          headers['Referer'] = currentReferer;
+          try {
+            headers['Origin'] = new URL(currentReferer).origin;
+          } catch (e) {}
+        } else {
+          delete headers['Referer'];
+          delete headers['Origin'];
+        }
+
+        try {
+          res = await fetch(targetUrl, {
+            headers,
+            redirect: 'follow',
+          });
+          if (res.ok || res.status === 206 || res.status !== 403) {
+            break;
+          }
+          console.warn(`[m3u8-proxy CF] 403 Forbidden with referer ${currentReferer}, retrying next...`);
+        } catch (err) {
+          if (i === referersToTry.length - 1) {
+            return json({ error: `Fetch failed: ${err.message}` }, 502);
+          }
+        }
+      }
+
+      if (!res.ok && res.status !== 206) {
+        return json({ error: `Upstream returned ${res.status}` }, res.status);
+      }
 
         const contentType = res.headers.get('Content-Type') || '';
         const isM3U8 = contentType.includes('mpegurl') || contentType.includes('x-mpegURL') || targetUrl.includes('.m3u8');
@@ -468,9 +489,7 @@ export default {
           headers: responseHeaders,
         });
 
-      } catch (err) {
-        return json({ error: `Fetch failed: ${err.message}` }, 502);
-      }
+
     }
 
     return new Response("Cinemax CF Worker Proxy is running!", {

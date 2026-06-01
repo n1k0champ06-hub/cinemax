@@ -175,24 +175,77 @@ async function routeRequest(pathname, searchParams, method, incomingHeaders) {
   }
 
   try {
-    // Transform ESM → CommonJS
-    let src = fs.readFileSync(handlerPath, 'utf-8');
-    src = src.replace(/export\s+const\s+config\s*=\s*\{[^}]*\}\s*;?\s*/g, '');
-    src = src.replace(/export\s+default\s+async\s+function\s+handler/g, 'module.exports.__handler = async function handler');
-    src = src.replace(/export\s+default\s+function\s+handler/g, 'module.exports.__handler = function handler');
+    // Dynamically import the handler file using the ESM loader (using file:// URL format)
+    const fileUrl = urlModule.pathToFileURL(handlerPath).href;
+    const mod = await import(fileUrl);
+    const handlerFn = mod.default;
 
-    // Write + require temp file
-    const tmpPath = path.join(__dirname, `../.tmp_${handler.replace(/\//g, '_')}_${Date.now()}.cjs`);
-    fs.writeFileSync(tmpPath, src, 'utf-8');
-    delete require.cache[require.resolve(tmpPath)];
-    const mod = require(tmpPath);
-    try { fs.unlinkSync(tmpPath); } catch (_) {}
-
-    const handlerFn = mod.__handler;
     if (typeof handlerFn !== 'function') {
       throw new Error('Handler export is not a function');
     }
 
+    // Detect if this is a standard Node.js serverless function handler(req, res)
+    const isNodeServerless = mod.config?.runtime !== 'edge' && handlerFn.length >= 2;
+
+    if (isNodeServerless) {
+      // Mock Vercel Node.js req and res objects
+      const mockReq = {
+        method,
+        url: reqUrl,
+        headers: incomingHeaders,
+        query: Object.fromEntries(searchParams.entries()),
+      };
+
+      let resStatus = 200;
+      let resHeaders = { 'Content-Type': 'application/json' };
+      let resBody = Buffer.alloc(0);
+
+      const mockRes = {
+        status(code) {
+          resStatus = code;
+          return this;
+        },
+        setHeader(name, value) {
+          resHeaders[name] = value;
+          return this;
+        },
+        json(data) {
+          resHeaders['Content-Type'] = 'application/json';
+          resBody = Buffer.from(JSON.stringify(data));
+          return this;
+        },
+        send(data) {
+          if (typeof data === 'object' && !Buffer.isBuffer(data)) {
+            resBody = Buffer.from(JSON.stringify(data));
+            resHeaders['Content-Type'] = 'application/json';
+          } else {
+            resBody = Buffer.isBuffer(data) ? data : Buffer.from(String(data));
+          }
+          return this;
+        },
+        end(data) {
+          if (data) {
+            resBody = Buffer.isBuffer(data) ? data : Buffer.from(String(data));
+          }
+          return this;
+        }
+      };
+
+      await handlerFn(mockReq, mockRes);
+
+      const isBinary = Buffer.isBuffer(resBody);
+      const contentType = resHeaders['Content-Type'] || resHeaders['content-type'] || 'application/json';
+
+      return {
+        status: resStatus,
+        body: resBody,
+        contentType,
+        isBinary,
+        resHeaders,
+      };
+    }
+
+    // Edge Function (Request/Response) execution path
     const response = await handlerFn(req);
     const resHeaders = response.headers || {};
     const contentType = resHeaders['Content-Type'] || 'application/json';

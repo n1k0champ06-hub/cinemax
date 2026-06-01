@@ -25,9 +25,6 @@ const fetchWithTimeout = async (url: string, timeout = 8000) => {
   }
 };
 
-const getNguonCUrl = (url: string) => {
-  return url;
-};
 
 function cleanSearchQuery(str: string): string {
   if (!str) return '';
@@ -92,7 +89,7 @@ function getBestSlugMatch(
 // ---------------------------------------------------------------------------
 
 async function fetchFromVietnameseApi(
-  providerId: 'ophim' | 'kkphim' | 'nguonc',
+  providerId: 'ophim' | 'kkphim',
   providerLabel: string,
   query: StreamQuery
 ): Promise<StreamItem[]> {
@@ -121,9 +118,7 @@ async function fetchFromVietnameseApi(
       for (const kw of searchKeywords) {
         const encodedKw = encodeURIComponent(kw);
         let searchUrl = '';
-        if (providerId === 'nguonc') {
-          searchUrl = getNguonCUrl(`https://phim.nguonc.com/api/films/search?keyword=${encodedKw}`);
-        } else if (providerId === 'ophim') {
+        if (providerId === 'ophim') {
           searchUrl = `https://ophim1.com/v1/api/tim-kiem?keyword=${encodedKw}&limit=10`;
         } else {
           // kkphim
@@ -135,11 +130,7 @@ async function fetchFromVietnameseApi(
           const data = await res.json();
           let items: any[] = [];
           
-          if (providerId === 'nguonc') {
-            items = data?.items || [];
-          } else {
-            items = data?.data?.items || data?.items || [];
-          }
+          items = data?.data?.items || data?.items || [];
 
           matchedSlug = getBestSlugMatch(items, query.title, query.titleVi || '');
           if (matchedSlug) break;
@@ -154,9 +145,7 @@ async function fetchFromVietnameseApi(
 
     // 2. Fetch movie details
     let detailUrl = '';
-    if (providerId === 'nguonc') {
-      detailUrl = getNguonCUrl(`https://phim.nguonc.com/api/film/${slug}`);
-    } else if (providerId === 'ophim') {
+    if (providerId === 'ophim') {
       detailUrl = `https://ophim1.com/phim/${slug}`;
     } else {
       detailUrl = `https://phimapi.com/phim/${slug}`;
@@ -167,11 +156,7 @@ async function fetchFromVietnameseApi(
 
     // 3. Extract episodes list
     let serversList: any[] = [];
-    if (providerId === 'nguonc') {
-      serversList = detailData?.data?.item?.episodes || detailData?.episodes || [];
-    } else {
-      serversList = detailData?.episodes || [];
-    }
+    serversList = detailData?.episodes || [];
 
     if (!serversList || serversList.length === 0) return [];
 
@@ -180,15 +165,6 @@ async function fetchFromVietnameseApi(
     // 4. Iterate over servers and find matching episode
     serversList.forEach((server: any) => {
       let serverData = server.server_data || [];
-      if (providerId === 'nguonc' && server.items) {
-        serverData = server.items.map((item: any) => ({
-          name: item.name,
-          slug: item.slug,
-          filename: item.filename || `Tập ${item.name}`,
-          link_embed: item.embed || item.link_embed || '',
-          link_m3u8: item.m3u8 || item.link_m3u8 || '',
-        }));
-      }
 
       // Find episode
       let activeEp = serverData[0]; // fallback
@@ -206,9 +182,8 @@ async function fetchFromVietnameseApi(
         let referer = '';
         if (providerId === 'ophim') referer = 'https://ophim1.com/';
         else if (providerId === 'kkphim') referer = 'https://phimapi.com/';
-        else if (providerId === 'nguonc') referer = 'https://phim.nguonc.com/';
 
-        const url = rawUrl;
+        const url = buildProxiedM3u8Url(rawUrl, referer);
 
         const item: Omit<StreamItem, 'score'> = {
           id: `${providerId}:hls:${server.server_name || 'vip'}:${rawUrl}`,
@@ -259,18 +234,7 @@ export const kkphimProvider: StreamProvider = {
   },
 };
 
-export const nguoncProvider: StreamProvider = {
-  id: 'nguonc',
-  label: 'NguonC',
-  lang: 'vi',
-  group: 'vi',
-  async fetchStreams(query: StreamQuery) {
-    return fetchFromVietnameseApi('nguonc', 'NguonC', query);
-  },
-};
-
 export const VI_PROVIDERS: StreamProvider[] = [
   ophimProvider,
   kkphimProvider,
-  nguoncProvider,
 ];

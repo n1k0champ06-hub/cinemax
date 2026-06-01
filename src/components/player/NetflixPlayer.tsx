@@ -116,13 +116,13 @@ const getCleanSubName = (name: string | undefined | null, lang: string | undefin
   return `Phụ đề #${index + 1}`;
 };
 
-export const NetflixPlayer = ({ 
+export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({ 
   url, embedUrl, headers, subtitleUrl, externalSubtitles = [], title, slug, episodeName, posterUrl, thumbUrl, movieName, onClose,
   servers, selectedServerId, onServerChange,
   episodes = [], onEpisodeSelect,
   isTv = false, currentSeason = 1, activeEpSeason = 1, seasons = [], onSeasonChange, tmdbEpisodes = [],
   streams = [], activeStream = null, onStreamSelect, isAggregatorLoading = false
-}: NetflixPlayerProps) => {
+}) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const { saveProgress } = useWatchProgress();
@@ -150,6 +150,16 @@ export const NetflixPlayer = ({
     setCurrentTime(0);
     setDuration(0);
     setIsBuffering(true);
+    
+    // Clean up Hls first before manipulating the video tag
+    if (hlsRef.current) {
+      try {
+        hlsRef.current.detachMedia();
+        hlsRef.current.destroy();
+      } catch (e) {}
+      hlsRef.current = null;
+    }
+
     const video = videoRef.current;
     if (video) {
       try {
@@ -448,6 +458,8 @@ export const NetflixPlayer = ({
     const video = videoRef.current;
     if (!video) return;
 
+    setIsBuffering(true);
+
     // Reset speed state on stream load / episode change
     setIsSpeeding(false);
     video.playbackRate = playbackRate;
@@ -469,13 +481,25 @@ export const NetflixPlayer = ({
 
     const handleReady = () => {
       if (video) {
-        video.currentTime = initialTime;
+        try {
+          video.currentTime = initialTime;
+        } catch (e) {
+          // Fallback if metadata is not loaded yet (readyState < HAVE_METADATA)
+          const onMetadataLoaded = () => {
+            try {
+              video.currentTime = initialTime;
+            } catch (_) {}
+            video.removeEventListener('loadedmetadata', onMetadataLoaded);
+          };
+          video.addEventListener('loadedmetadata', onMetadataLoaded);
+        }
       }
       // If the user picked an episode from the drawer while playing, start the new episode paused.
       if (startPausedRef.current) {
         startPausedRef.current = false;
         video.pause();
         setIsPlaying(false);
+        setIsBuffering(false);
         return;
       }
       if (autoplay) {
@@ -490,6 +514,7 @@ export const NetflixPlayer = ({
       } else {
         setIsPlaying(false);
       }
+      setIsBuffering(false);
     };
 
     const handleVideoError = () => {
@@ -600,13 +625,22 @@ export const NetflixPlayer = ({
       }
 
       if (hls) {
-        hls.destroy();
+        try {
+          hls.detachMedia();
+          hls.destroy();
+        } catch (e) {}
         hlsRef.current = null;
       }
+      try {
+        video.pause();
+        video.currentTime = 0;
+        video.removeAttribute('src');
+        video.load();
+      } catch (e) {}
       video.removeEventListener('loadedmetadata', handleReady);
       video.removeEventListener('error', handleVideoError);
     };
-  }, [resolvedUrl, slug, episodeName, resolvedEmbedUrl, autoplay, isTv, posterUrl, thumbUrl, movieName, activeStream, resolvedHeaders]);
+  }, [resolvedUrl, slug, episodeName, resolvedEmbedUrl, autoplay, isTv, posterUrl, thumbUrl, movieName, activeStream, resolvedHeaders, isIframeMode]);
 
   // Audio Context Web Audio Boost Configuration
   const handleAudioBoostChange = (boostValue: number) => {
@@ -1703,6 +1737,7 @@ export const NetflixPlayer = ({
       {isIframeMode ? (
         <>
           <iframe 
+            key={resolvedEmbedUrl}
             src={resolvedEmbedUrl}
             className="w-full h-full border-0 absolute inset-0 z-0 bg-black pointer-events-auto"
             allowFullScreen
@@ -1755,6 +1790,9 @@ export const NetflixPlayer = ({
           onWaiting={() => setIsBuffering(true)}
           onPlaying={() => setIsBuffering(false)}
           onCanPlay={() => setIsBuffering(false)}
+          onSeeking={() => setIsBuffering(true)}
+          onSeeked={() => setIsBuffering(false)}
+          onLoadedData={() => setIsBuffering(false)}
           onVolumeChange={() => {
             if (videoRef.current) {
               setVolume(videoRef.current.volume);
@@ -1864,7 +1902,7 @@ export const NetflixPlayer = ({
 
       <AnimatePresence>
         {((!isIframeMode && isBuffering && swipeSeekTime === null) || (isAggregatorLoading && !resolvedUrl && !resolvedEmbedUrl)) && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 pointer-events-auto z-40 gap-3" style={{ color: activeColor }}>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 pointer-events-none z-40 gap-3" style={{ color: activeColor }}>
             <Loader2 size={48} className="animate-spin drop-shadow-lg" />
             <p className="text-[11px] text-white/70 font-semibold uppercase tracking-widest animate-pulse font-sans">Đang tải tập phim mới...</p>
           </motion.div>

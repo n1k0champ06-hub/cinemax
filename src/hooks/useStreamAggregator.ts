@@ -104,7 +104,19 @@ export function useStreamAggregator({
     retry: retryCount,
   }), [query.tmdbId, query.imdbId, query.type, query.season, query.episode, query.viSlug, activeEpName, retryCount]);
 
+  const prevRef = useRef<{ queryKey: string; enabled: boolean }>({ queryKey: '', enabled: false });
+
   useEffect(() => {
+    console.log("[useStreamAggregator debug] Effect fired. Change details:", {
+      keyChanged: prevRef.current.queryKey !== queryKey,
+      prevKey: prevRef.current.queryKey,
+      newKey: queryKey,
+      enabledChanged: prevRef.current.enabled !== enabled,
+      prevEnabled: prevRef.current.enabled,
+      newEnabled: enabled
+    });
+    prevRef.current = { queryKey, enabled };
+
     if (!enabled) {
       console.log("[useStreamAggregator] Aggregator disabled (waiting for activeEp or play state)");
       return;
@@ -123,7 +135,7 @@ export function useStreamAggregator({
     // Build provider list
     const allProviders: StreamProvider[] = [];
 
-    // 1. Vietnamese providers (OPhim, KKPhim, NguonC direct API calls)
+    // 1. Vietnamese providers (OPhim, KKPhim direct API calls)
     allProviders.push(...VI_PROVIDERS);
 
     // 2. CinePro HLS (provides all international HLS and embeds dynamically)

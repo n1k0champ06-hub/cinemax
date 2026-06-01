@@ -359,11 +359,10 @@ export const MovieDetail = ({
           };
         });
       } else {
-        // While loading or if empty, we populate with placeholders for KKPhim, OPhim, NguonC
+        // While loading or if empty, we populate with placeholders for KKPhim, OPhim
         list = [
           { server_name: 'OPhim', server_data: [], status: isFetchingTmdbSeason ? 'loading' : 'empty' },
-          { server_name: 'KKPhim', server_data: [], status: isFetchingTmdbSeason ? 'loading' : 'empty' },
-          { server_name: 'NguonC', server_data: [], status: isFetchingTmdbSeason ? 'loading' : 'empty' }
+          { server_name: 'KKPhim', server_data: [], status: isFetchingTmdbSeason ? 'loading' : 'empty' }
         ];
       }
       
@@ -912,8 +911,18 @@ export const MovieDetail = ({
                   className="w-full aspect-video rounded-2xl overflow-hidden bg-black shadow-2xl relative z-[110]"
                 >
                   <NetflixPlayer
+                    key={isTv ? `player-${currentSeason}-${activeEp?.name || '1'}` : 'player-movie'}
                     url={activeStream?.type === 'hls' ? activeStream.url : undefined}
-                    embedUrl={activeStream?.type === 'embed' ? activeStream.url : undefined}
+                    embedUrl={
+                      activeStream?.type === 'embed' 
+                        ? activeStream.url 
+                        : (finalTmdbData?.id 
+                            ? (isTv 
+                                ? `https://cinemaos.tech/player/${finalTmdbData.id}/${currentSeason}/${activeEp?.name || 1}?theme=ffffff&autoPlay=true`
+                                : `https://cinemaos.tech/player/${finalTmdbData.id}?theme=ffffff&autoPlay=true`
+                              )
+                            : undefined)
+                    }
                     headers={activeStream?.headers}
                     subtitleUrl={bestSubUrl}
                     externalSubtitles={subData?.tracks || []}

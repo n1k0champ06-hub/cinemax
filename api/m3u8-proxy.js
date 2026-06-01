@@ -66,16 +66,62 @@ export default async function handler(req) {
   if (rangeHeader) fetchHeaders['Range'] = rangeHeader;
 
   let res;
-  try {
-    res = await fetch(targetUrl, {
-      headers: fetchHeaders,
-      redirect: 'follow',
-    });
-  } catch (err) {
-    return new Response(JSON.stringify({ error: `Fetch failed: ${err.message}` }), {
-      status: 502,
-      headers: { ...CORS, 'Content-Type': 'application/json' },
-    });
+  const referersToTry = [referer];
+  const isOPhimTarget = targetUrl.includes('opstream') || targetUrl.includes('ophim') || targetUrl.includes('phimimg') || referer.includes('ophim') || referer.includes('opstream');
+  const isKKPhimTarget = targetUrl.includes('kkphim') || targetUrl.includes('phimapi') || referer.includes('kkphim') || referer.includes('phimapi');
+  
+  if (isOPhimTarget) {
+    const candidates = [
+      'https://ophim1.com/',
+      'https://ophim.tv/',
+      'https://ophim.cc/',
+      'https://ophim.live/',
+      'https://opstream.tv/'
+    ];
+    for (const c of candidates) {
+      if (c && c !== referer) referersToTry.push(c);
+    }
+  } else if (isKKPhimTarget) {
+    const candidates = [
+      'https://phimapi.com/',
+      'https://kkphim.com/',
+      'https://kkphim.link/',
+    ];
+    for (const c of candidates) {
+      if (c && c !== referer) referersToTry.push(c);
+    }
+  }
+
+  for (let i = 0; i < referersToTry.length; i++) {
+    const currentReferer = referersToTry[i];
+    const headers = { ...fetchHeaders };
+    if (currentReferer) {
+      headers['Referer'] = currentReferer;
+      try {
+        headers['Origin'] = new URL(currentReferer).origin;
+      } catch (e) {}
+    } else {
+      delete headers['Referer'];
+      delete headers['Origin'];
+    }
+
+    try {
+      res = await fetch(targetUrl, {
+        headers,
+        redirect: 'follow',
+      });
+      if (res.ok || res.status === 206 || res.status !== 403) {
+        break; // Stop retrying if successful or non-403 error
+      }
+      console.warn(`[m3u8-proxy] 403 Forbidden with referer ${currentReferer}, retrying next...`);
+    } catch (err) {
+      if (i === referersToTry.length - 1) {
+        return new Response(JSON.stringify({ error: `Fetch failed: ${err.message}` }), {
+          status: 502,
+          headers: { ...CORS, 'Content-Type': 'application/json' },
+        });
+      }
+    }
   }
 
   if (!res.ok && res.status !== 206) {

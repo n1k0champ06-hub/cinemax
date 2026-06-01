@@ -16,7 +16,7 @@ export async function getProxyAgent() {
     return cachedAgent;
   }
 
-  const proxyKey = process.env.PROXY_KEY || 'T3eiArLnka8MFwctPEgP';
+  const proxyKey = process.env.PROXY_KEY || 'Icat5S0eQRqXLfIz5Txh';
   try {
     const res = await fetch(`https://api.proxyxoay.org/api/key_xoay.php?key=${proxyKey}&live=5`);
     const data = await res.json();

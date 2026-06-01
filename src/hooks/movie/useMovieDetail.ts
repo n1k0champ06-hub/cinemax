@@ -235,7 +235,7 @@ export const useMovieDetail = (rawSlug: string) => {
     if (!data?.movie) return [];
     let rawServers = Array.isArray(data.episodes) ? data.episodes : [];
     
-    const mainNames = ['OPhim', 'KKPhim', 'NguonC'];
+    const mainNames = ['OPhim', 'KKPhim'];
     let processedServers = mainNames.map(name => {
       const found = rawServers.find((s: any) => s.server_name?.startsWith(name) || s.name === name);
       if (found) {

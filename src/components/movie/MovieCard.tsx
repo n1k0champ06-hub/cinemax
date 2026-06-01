@@ -54,6 +54,10 @@ export const MovieCard = React.memo(({ movie, onSelect, isTop10, idx, progressDa
     queryFn: async () => {
       const { tmdbGetMovieDetails, tmdbGetTvDetails, tmdbSearchMovie, tmdbSearchTv, tmdbSearchMulti } = await import('../../api/tmdbApi');
       let targetId = tmdbId;
+      
+      if (targetId === 'undefined' || targetId === 'null' || targetId === 0 || targetId === '0') {
+        targetId = null;
+      }
 
       if (!targetId && displayName) {
         const cleaned = cleanSearchName(displayName);

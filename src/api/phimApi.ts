@@ -1,6 +1,3 @@
-const getNguonCUrl = (url: string) => {
-  return url;
-};
 
 export const fetchMultiSource = async (type: string, page: number = 1) => {
   const isNew = type === 'phim-moi-cap-nhat';
@@ -19,24 +16,10 @@ export const fetchMultiSource = async (type: string, page: number = 1) => {
     path2 = `v1/api/danh-sach/${type}?limit=24&page=${page * 2}`;
   }
   
-  let nguonCUrl = '';
-  if (isNew) {
-    nguonCUrl = `https://phim.nguonc.com/api/films/phim-moi-cap-nhat?page=${page}`;
-  } else if (type.startsWith('the-loai/')) {
-    nguonCUrl = `https://phim.nguonc.com/api/films/the-loai/${type.split('/').pop()}?page=${page}`;
-  } else if (type.startsWith('quoc-gia/')) {
-    nguonCUrl = `https://phim.nguonc.com/api/films/quoc-gia/${type.split('/').pop()}?page=${page}`;
-  } else if (type === 'hoat-hinh') {
-    nguonCUrl = `https://phim.nguonc.com/api/films/the-loai/hoat-hinh?page=${page}`;
-  } else {
-    nguonCUrl = `https://phim.nguonc.com/api/films/danh-sach/${type}?page=${page}`;
-  }
-
   const sources = [
     { name: 'KKPhim1', url: `https://phimapi.com/${path1}` },
     { name: 'KKPhim2', url: `https://phimapi.com/${path2}` },
-    { name: 'OPhim', url: `https://ophim1.com/${path1}` },
-    { name: 'NguonC', url: getNguonCUrl(nguonCUrl) }
+    { name: 'OPhim', url: `https://ophim1.com/${path1}` }
   ];
 
   const results = await Promise.allSettled(sources.map(s => fetch(s.url).then(r => r.json()).then(data => ({ sourceName: s.name, data }))));
@@ -45,37 +28,23 @@ export const fetchMultiSource = async (type: string, page: number = 1) => {
   results.forEach(res => {
     if (res.status === 'fulfilled' && res.value?.data) {
       const v = res.value.data;
-      const sourceName = res.value.sourceName;
+      const pathImage = v?.pathImage || v?.data?.APP_DOMAIN_CDN_IMAGE || 'https://phimimg.com/';
+      const rawItems = v?.items || v?.data?.items || [];
       
-      if (sourceName === 'NguonC') {
-        const rawItems = v?.items || [];
-        rawItems.forEach((item: any) => {
-          merged.push({
-            ...item,
-            origin_name: item.original_name || item.origin_name || '',
-            poster_url: item.poster_url || '',
-            thumb_url: item.thumb_url || ''
-          });
-        });
-      } else {
-        const pathImage = v?.pathImage || v?.data?.APP_DOMAIN_CDN_IMAGE || 'https://phimimg.com/';
-        const rawItems = v?.items || v?.data?.items || [];
+      const items = rawItems.map((item: any) => {
+        let poster = typeof item?.poster_url === 'string' ? item.poster_url : '';
+        let thumb = typeof item?.thumb_url === 'string' ? item.thumb_url : '';
         
-        const items = rawItems.map((item: any) => {
-          let poster = typeof item?.poster_url === 'string' ? item.poster_url : '';
-          let thumb = typeof item?.thumb_url === 'string' ? item.thumb_url : '';
-          
-          if (poster && !poster.startsWith('http')) {
-            poster = pathImage.endsWith('/') ? `${pathImage}${poster}` : `${pathImage}/${poster}`;
-          }
-          if (thumb && !thumb.startsWith('http')) {
-            thumb = pathImage.endsWith('/') ? `${pathImage}${thumb}` : `${pathImage}/${thumb}`;
-          }
-          return { ...item, poster_url: poster, thumb_url: thumb };
-        });
+        if (poster && !poster.startsWith('http')) {
+          poster = pathImage.endsWith('/') ? `${pathImage}${poster}` : `${pathImage}/${poster}`;
+        }
+        if (thumb && !thumb.startsWith('http')) {
+          thumb = pathImage.endsWith('/') ? `${pathImage}${thumb}` : `${pathImage}/${thumb}`;
+        }
+        return { ...item, poster_url: poster, thumb_url: thumb };
+      });
 
-        merged.push(...items);
-      }
+      merged.push(...items);
     }
   });
 
@@ -94,8 +63,7 @@ export const fetchSearch = async (keyword: string) => {
   const encodedKw = encodeURIComponent(keyword);
   const sources = [
     { name: 'KKPhim', url: `https://phimapi.com/v1/api/tim-kiem?keyword=${encodedKw}&limit=30` },
-    { name: 'OPhim', url: `https://ophim1.com/v1/api/tim-kiem?keyword=${encodedKw}&limit=30` },
-    { name: 'NguonC', url: getNguonCUrl(`https://phim.nguonc.com/api/films/search?keyword=${encodedKw}`) }
+    { name: 'OPhim', url: `https://ophim1.com/v1/api/tim-kiem?keyword=${encodedKw}&limit=30` }
   ];
 
   const results = await Promise.allSettled(
@@ -110,29 +78,15 @@ export const fetchSearch = async (keyword: string) => {
   results.forEach(res => {
     if (res.status === 'fulfilled') {
       const v = res.value.data;
-      const sourceName = res.value.sourceName;
-      
-      if (sourceName === 'NguonC') {
-        const rawItems = v?.items || [];
-        rawItems.forEach((item: any) => {
-          merged.push({
-            ...item,
-            origin_name: item.original_name || item.origin_name || '',
-            poster_url: item.poster_url || '',
-            thumb_url: item.thumb_url || ''
-          });
-        });
-      } else {
-        const pathImage = v?.data?.APP_DOMAIN_CDN_IMAGE || v?.pathImage || 'https://phimimg.com/';
-        const rawItems = v?.data?.items || v?.items || [];
-        rawItems.forEach((item: any) => {
-          let poster = typeof item.poster_url === 'string' ? item.poster_url : '';
-          let thumb = typeof item.thumb_url === 'string' ? item.thumb_url : '';
-          if (poster && !poster.startsWith('http')) poster = pathImage.endsWith('/') ? `${pathImage}${poster}` : `${pathImage}/${poster}`;
-          if (thumb && !thumb.startsWith('http')) thumb = pathImage.endsWith('/') ? `${pathImage}${thumb}` : `${pathImage}/${thumb}`;
-          merged.push({ ...item, poster_url: poster, thumb_url: thumb });
-        });
-      }
+      const pathImage = v?.data?.APP_DOMAIN_CDN_IMAGE || v?.pathImage || 'https://phimimg.com/';
+      const rawItems = v?.data?.items || v?.items || [];
+      rawItems.forEach((item: any) => {
+        let poster = typeof item.poster_url === 'string' ? item.poster_url : '';
+        let thumb = typeof item.thumb_url === 'string' ? item.thumb_url : '';
+        if (poster && !poster.startsWith('http')) poster = pathImage.endsWith('/') ? `${pathImage}${poster}` : `${pathImage}/${poster}`;
+        if (thumb && !thumb.startsWith('http')) thumb = pathImage.endsWith('/') ? `${pathImage}${thumb}` : `${pathImage}/${thumb}`;
+        merged.push({ ...item, poster_url: poster, thumb_url: thumb });
+      });
     }
   });
 
@@ -175,9 +129,7 @@ const findAlternativeSlug = async (sourceName: string, title: string, originTitl
     if (!keyword) return null;
     const encodedKw = encodeURIComponent(keyword);
 
-    if (sourceName === 'NguonC') {
-      searchUrl = getNguonCUrl(`https://phim.nguonc.com/api/films/search?keyword=${encodedKw}`);
-    } else if (sourceName === 'OPhim') {
+    if (sourceName === 'OPhim') {
       searchUrl = `https://ophim1.com/v1/api/tim-kiem?keyword=${encodedKw}&limit=10`;
     } else {
       searchUrl = `https://phimapi.com/v1/api/tim-kiem?keyword=${encodedKw}&limit=10`;
@@ -187,11 +139,7 @@ const findAlternativeSlug = async (sourceName: string, title: string, originTitl
     const v = await res.json();
     
     let items: any[] = [];
-    if (sourceName === 'NguonC') {
-      items = v?.items || [];
-    } else {
-      items = v?.data?.items || v?.items || [];
-    }
+    items = v?.data?.items || v?.items || [];
 
     if (!items || items.length === 0) return null;
 
@@ -233,8 +181,7 @@ const findAlternativeSlug = async (sourceName: string, title: string, originTitl
 export const fetchDetail = async (slug: string) => {
   const sources = [
     { name: 'OPhim', url: `https://ophim1.com/phim/${slug}` },
-    { name: 'KKPhim', url: `https://phimapi.com/phim/${slug}` },
-    { name: 'NguonC', url: getNguonCUrl(`https://phim.nguonc.com/api/film/${slug}`) }
+    { name: 'KKPhim', url: `https://phimapi.com/phim/${slug}` }
   ];
   
   const results = await Promise.allSettled(
@@ -249,7 +196,7 @@ export const fetchDetail = async (slug: string) => {
   const serverResultsMap: Record<string, any> = {};
   
   results.forEach(res => {
-    const sourceName = (res as any).value?.sourceName || ['OPhim', 'KKPhim', 'NguonC'][results.indexOf(res)];
+    const sourceName = (res as any).value?.sourceName || ['OPhim', 'KKPhim'][results.indexOf(res)];
     if (res.status === 'fulfilled' && res.value?.data) {
       const v = res.value.data;
       const movieObj = v.movie || v.film || v.data?.item;
@@ -287,7 +234,6 @@ export const fetchDetail = async (slug: string) => {
         let altUrl = '';
         if (sourceName === 'OPhim') altUrl = `https://ophim1.com/phim/${altSlug}`;
         else if (sourceName === 'KKPhim') altUrl = `https://phimapi.com/phim/${altSlug}`;
-        else altUrl = getNguonCUrl(`https://phim.nguonc.com/api/film/${altSlug}`);
 
         const res = await fetchWithTimeout(altUrl, {}, 2500);
         const data = await res.json();
@@ -315,15 +261,7 @@ export const fetchDetail = async (slug: string) => {
       if (Array.isArray(eps) && eps.length > 0) {
         eps.forEach((ep: any) => {
           let server_data = ep.server_data;
-          if (s.name === 'NguonC' && ep.items) {
-            server_data = ep.items.map((item: any) => ({
-              name: item.name,
-              slug: item.slug,
-              filename: item.filename || `Tập ${item.name}`,
-              link_embed: item.embed || item.link_embed || '',
-              link_m3u8: item.m3u8 || item.link_m3u8 || '',
-            }));
-          }
+          // NguonC is removed
           allEpisodes.push({
             server_name: `${s.name} - ${ep.server_name || 'VIP'}`,
             server_data: server_data,
