@@ -47,7 +47,7 @@ const ANIME_SCORES = [
   { id: '5', label: 'Từ 5.0⭐ trở lên' },
 ];
 
-export const AnimeRankingRow = ({ onSelect }: { onSelect: (slug: string) => void }) => {
+export const AnimeRankingRow = ({ onSelect, showFilters = false }: { onSelect: (slug: string) => void; showFilters?: boolean }) => {
   const [activeTab, setActiveTab] = React.useState<'ranking' | 'airing' | 'upcoming'>('ranking');
 
   // Filter States
@@ -66,12 +66,13 @@ export const AnimeRankingRow = ({ onSelect }: { onSelect: (slug: string) => void
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  const hasSearchFilters = 
+  const hasSearchFilters = showFilters && (
     searchQuery.trim() !== "" || 
     selectedGenre !== "" || 
     selectedType !== "" || 
     selectedStatus !== "" || 
-    selectedMinScore !== "";
+    selectedMinScore !== ""
+  );
 
   const handleClearFilters = () => {
     setSearchInput("");
@@ -209,116 +210,118 @@ export const AnimeRankingRow = ({ onSelect }: { onSelect: (slug: string) => void
         )}
       </div>
 
-      {/* Advanced Jikan Filters Row matching user screenshot */}
-      <div className="flex flex-wrap items-center gap-3 px-4 sm:px-8 md:px-12 py-3.5 mb-2 bg-[#0c0c0c]/40 border border-white/[0.03] rounded-2xl mx-4 sm:mx-8 md:mx-12 z-20">
-        
-        {/* Search Field */}
-        <div className="relative flex-grow min-w-[160px] sm:max-w-xs">
-          <input 
-            type="text" 
-            placeholder="Search an Anime..." 
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="w-full px-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] focus:bg-white/[0.07] border border-white/10 focus:border-white/20 rounded-xl text-xs sm:text-sm font-semibold tracking-wide text-white outline-none placeholder:text-neutral-500 transition-all shadow-sm"
-          />
+      {/* Advanced Jikan Filters Row matching user screenshot - only rendered if showFilters is enabled */}
+      {showFilters && (
+        <div className="flex flex-wrap items-center gap-3 px-4 sm:px-8 md:px-12 py-3.5 mb-2 bg-[#0c0c0c]/40 border border-white/[0.03] rounded-2xl mx-4 sm:mx-8 md:mx-12 z-20">
+          
+          {/* Search Field */}
+          <div className="relative flex-grow min-w-[160px] sm:max-w-xs">
+            <input 
+              type="text" 
+              placeholder="Search an Anime..." 
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-full px-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] focus:bg-white/[0.07] border border-white/10 focus:border-white/20 rounded-xl text-xs sm:text-sm font-semibold tracking-wide text-white outline-none placeholder:text-neutral-500 transition-all shadow-sm"
+            />
+          </div>
+
+          {/* Genres Dropdown */}
+          <div className="relative shrink-0">
+            <select
+              value={selectedGenre}
+              onChange={(e) => setSelectedGenre(e.target.value)}
+              className="appearance-none pr-8 pl-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 rounded-xl text-xs font-semibold tracking-wide text-neutral-400 hover:text-white outline-none cursor-pointer transition-all shadow-sm bg-[#090909]"
+              style={{
+                backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+                backgroundPosition: 'right 10px center',
+                backgroundSize: '12px',
+                backgroundRepeat: 'no-repeat'
+              }}
+            >
+              {ANIME_GENRES.map(g => (
+                <option key={g.id} value={g.id}>
+                  {g.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Type Dropdown */}
+          <div className="relative shrink-0">
+            <select
+              value={selectedType}
+              onChange={(e) => setSelectedType(e.target.value)}
+              className="appearance-none pr-8 pl-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 rounded-xl text-xs font-semibold tracking-wide text-neutral-400 hover:text-white outline-none cursor-pointer transition-all shadow-sm bg-[#090909]"
+              style={{
+                backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+                backgroundPosition: 'right 10px center',
+                backgroundSize: '12px',
+                backgroundRepeat: 'no-repeat'
+              }}
+            >
+              {ANIME_TYPES.map(t => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Status Dropdown */}
+          <div className="relative shrink-0">
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="appearance-none pr-8 pl-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 rounded-xl text-xs font-semibold tracking-wide text-neutral-400 hover:text-white outline-none cursor-pointer transition-all shadow-sm bg-[#090909]"
+              style={{
+                backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+                backgroundPosition: 'right 10px center',
+                backgroundSize: '12px',
+                backgroundRepeat: 'no-repeat'
+              }}
+            >
+              {ANIME_STATUS.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Min Score Dropdown */}
+          <div className="relative shrink-0">
+            <select
+              value={selectedMinScore}
+              onChange={(e) => setSelectedMinScore(e.target.value)}
+              className="appearance-none pr-8 pl-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 rounded-xl text-xs font-semibold tracking-wide text-neutral-400 hover:text-white outline-none cursor-pointer transition-all shadow-sm bg-[#090909]"
+              style={{
+                backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+                backgroundPosition: 'right 10px center',
+                backgroundSize: '12px',
+                backgroundRepeat: 'no-repeat'
+              }}
+            >
+              {ANIME_SCORES.map(sc => (
+                <option key={sc.id} value={sc.id}>
+                  {sc.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Reset Trash Bin Button */}
+          {hasSearchFilters && (
+            <button 
+              onClick={handleClearFilters}
+              className="p-2.5 bg-red-650/10 hover:bg-red-650/20 text-red-500 border border-red-500/20 rounded-xl cursor-pointer hover:scale-105 active:scale-95 transition-all shadow-sm flex items-center justify-center shrink-0 ml-auto"
+              title="Reset Filters"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+
         </div>
-
-        {/* Genres Dropdown */}
-        <div className="relative shrink-0">
-          <select
-            value={selectedGenre}
-            onChange={(e) => setSelectedGenre(e.target.value)}
-            className="appearance-none pr-8 pl-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 rounded-xl text-xs font-semibold tracking-wide text-neutral-400 hover:text-white outline-none cursor-pointer transition-all shadow-sm bg-[#090909]"
-            style={{
-              backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-              backgroundPosition: 'right 10px center',
-              backgroundSize: '12px',
-              backgroundRepeat: 'no-repeat'
-            }}
-          >
-            {ANIME_GENRES.map(g => (
-              <option key={g.id} value={g.id}>
-                {g.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Type Dropdown */}
-        <div className="relative shrink-0">
-          <select
-            value={selectedType}
-            onChange={(e) => setSelectedType(e.target.value)}
-            className="appearance-none pr-8 pl-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 rounded-xl text-xs font-semibold tracking-wide text-neutral-400 hover:text-white outline-none cursor-pointer transition-all shadow-sm bg-[#090909]"
-            style={{
-              backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-              backgroundPosition: 'right 10px center',
-              backgroundSize: '12px',
-              backgroundRepeat: 'no-repeat'
-            }}
-          >
-            {ANIME_TYPES.map(t => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Status Dropdown */}
-        <div className="relative shrink-0">
-          <select
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="appearance-none pr-8 pl-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 rounded-xl text-xs font-semibold tracking-wide text-neutral-400 hover:text-white outline-none cursor-pointer transition-all shadow-sm bg-[#090909]"
-            style={{
-              backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-              backgroundPosition: 'right 10px center',
-              backgroundSize: '12px',
-              backgroundRepeat: 'no-repeat'
-            }}
-          >
-            {ANIME_STATUS.map(s => (
-              <option key={s.id} value={s.id}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Min Score Dropdown */}
-        <div className="relative shrink-0">
-          <select
-            value={selectedMinScore}
-            onChange={(e) => setSelectedMinScore(e.target.value)}
-            className="appearance-none pr-8 pl-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 rounded-xl text-xs font-semibold tracking-wide text-neutral-400 hover:text-white outline-none cursor-pointer transition-all shadow-sm bg-[#090909]"
-            style={{
-              backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-              backgroundPosition: 'right 10px center',
-              backgroundSize: '12px',
-              backgroundRepeat: 'no-repeat'
-            }}
-          >
-            {ANIME_SCORES.map(sc => (
-              <option key={sc.id} value={sc.id}>
-                {sc.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Reset Trash Bin Button */}
-        {hasSearchFilters && (
-          <button 
-            onClick={handleClearFilters}
-            className="p-2.5 bg-red-650/10 hover:bg-red-650/20 text-red-500 border border-red-500/20 rounded-xl cursor-pointer hover:scale-105 active:scale-95 transition-all shadow-sm flex items-center justify-center shrink-0 ml-auto"
-            title="Reset Filters"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        )}
-
-      </div>
+      )}
 
       {/* Main List Display */}
       <div className="group relative mt-2 min-h-[200px] flex items-center">

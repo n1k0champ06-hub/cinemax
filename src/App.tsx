@@ -372,7 +372,7 @@ export default function App() {
                 id="movie-lists"
                 className="pb-32 mt-4 sm:mt-12 relative z-20 flex flex-col gap-0"
               >
-                <AnimeRankingRow onSelect={setSelectedMovieSlug} />
+                <AnimeRankingRow onSelect={setSelectedMovieSlug} showFilters={true} />
                 <AnimeRow
                   title="Anime Mới Mùa Này"
                   type="season-now"
