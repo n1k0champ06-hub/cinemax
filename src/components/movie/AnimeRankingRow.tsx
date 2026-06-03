@@ -1,12 +1,32 @@
 import React from 'react';
-import { useAnimeDbRanking } from '../../hooks/useAnimeDb';
+import { useAnimeDbRanking, useAnimeDbSeasonNow, useAnimeDbUpcoming } from '../../hooks/useAnimeDb';
 import { RankingCard } from './RankingCard';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
+const TABS = [
+  { id: 'ranking', label: 'Bảng Xếp Hạng' },
+  { id: 'airing', label: 'Mùa Hiện Tại' },
+  { id: 'upcoming', label: 'Sắp Ra Mắt' }
+] as const;
+
 export const AnimeRankingRow = ({ onSelect }: { onSelect: (slug: string) => void }) => {
-  const { data: animeData, isLoading } = useAnimeDbRanking(1, 15);
-  
+  const [activeTab, setActiveTab] = React.useState<'ranking' | 'airing' | 'upcoming'>('ranking');
+
+  const { data: rankingData, isLoading: isRankingLoading } = useAnimeDbRanking(1, 15, activeTab === 'ranking');
+  const { data: seasonNowData, isLoading: isSeasonNowLoading } = useAnimeDbSeasonNow(1, 15, activeTab === 'airing');
+  const { data: upcomingData, isLoading: isUpcomingLoading } = useAnimeDbUpcoming(1, 15, activeTab === 'upcoming');
+
   const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  const isLoading = 
+    activeTab === 'ranking' ? isRankingLoading :
+    activeTab === 'airing' ? isSeasonNowLoading :
+    isUpcomingLoading;
+
+  const animeData = 
+    activeTab === 'ranking' ? rankingData :
+    activeTab === 'airing' ? seasonNowData :
+    upcomingData;
 
   const handleSelect = async (anime: any) => {
     try {
@@ -62,63 +82,107 @@ export const AnimeRankingRow = ({ onSelect }: { onSelect: (slug: string) => void
 
   const animes = animeData?.data || animeData?.results || animeData || [];
 
-  if (isLoading || animes.length === 0) return null;
-
   return (
-    <div className="py-6 md:py-8 relative group/row">
-      <div className="flex items-center gap-3 px-4 sm:px-8 md:px-12 mb-3">
-        <div className="w-[3px] h-5 sm:h-6 bg-[#E50914] rounded-full" />
-        <h2 className="text-white text-xl sm:text-2xl md:text-[28px] font-bold tracking-tight">
-          Bảng Xếp Hạng Anime
-        </h2>
-      </div>
-      <div className="group relative mt-6">
-        {/* Left Button */}
-        <button 
-          onClick={() => scroll('left')}
-          className="hidden md:flex absolute left-4 top-[42%] -translate-y-1/2 z-20 w-10 h-10 bg-[#111111]/85 hover:bg-black opacity-0 group-hover:opacity-100 transition-all items-center justify-center hover:scale-105 border border-white/10 rounded-full shadow-2xl active:scale-95 cursor-pointer"
-        >
-          <ChevronLeft size={20} className="text-white" />
-        </button>
-
-        {/* Right Button */}
-        <button 
-          onClick={() => scroll('right')}
-          className="hidden md:flex absolute right-4 top-[42%] -translate-y-1/2 z-20 w-10 h-10 bg-[#111111]/85 hover:bg-black opacity-0 group-hover:opacity-100 transition-all items-center justify-center hover:scale-105 border border-white/10 rounded-full shadow-2xl active:scale-95 cursor-pointer"
-        >
-          <ChevronRight size={20} className="text-white" />
-        </button>
-
-        <div
-          ref={scrollRef}
-          className="flex gap-4 sm:gap-6 overflow-x-auto py-8 sm:py-12 -my-8 sm:-my-12 pl-[4%] pr-[4%] scrollbar-hide items-center relative z-10"
-          style={{ scrollbarWidth: "none" }}
-        >
-          {animes.map((anime: any, index: number) => {
-            // map anime to Ophim format to reuse RankingCard
-            const mappedMovie = {
-              name: anime.title_english || anime.title || anime.title_japanese,
-              origin_name: anime.title || anime.title_japanese,
-              poster_url: anime.images?.webp?.large_image_url || anime.images?.jpg?.large_image_url || null,
-              thumb_url: anime.images?.webp?.large_image_url || anime.images?.jpg?.large_image_url || null,
-              slug: anime.mal_id ? anime.mal_id.toString() : '',
-              year: anime.year?.toString() || anime.aired?.prop?.from?.year?.toString() || "",
-              quality: "HD", // Remove "Finished Airing" status
-              type: anime.type?.toLowerCase() === "movie" ? "single" : "series",
-              category: [],
-              duration: anime.episodes ? `${anime.episodes} tập` : "",
-              tmdb: {
-                vote_average: anime.score
-              }
-            };
-            
+    <div className="py-6 md:py-8 relative group/row min-h-[320px]">
+      {/* Header & Tabs Toolbar row */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-4 sm:px-8 md:px-12 mb-3">
+        <div className="flex items-center gap-3">
+          <div className="w-[3px] h-5 sm:h-6 bg-[#E50914] rounded-full" />
+          <h2 className="text-white text-xl sm:text-2xl md:text-[28px] font-bold tracking-tight">
+            {activeTab === 'ranking' ? 'Bảng Xếp Hạng Anime' : 
+             activeTab === 'airing' ? 'Anime Đang Phát Sóng' : 
+             'Anime Sắp Ra Mắt'}
+          </h2>
+        </div>
+        
+        {/* Sleek pill tab group */}
+        <div className="flex items-center gap-1.5 bg-white/[0.03] border border-white/[0.08] p-1 rounded-xl self-start md:self-auto">
+          {TABS.map(tab => {
+            const isActive = activeTab === tab.id;
             return (
-              <div key={index} className="flex-none snap-start">
-                <RankingCard movie={mappedMovie} onSelect={() => handleSelect(anime)} idx={index} />
-              </div>
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  // Reset scroll when switching tabs
+                  if (scrollRef.current) {
+                    scrollRef.current.scrollTo({ left: 0, behavior: 'auto' });
+                  }
+                }}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all select-none cursor-pointer ${
+                  isActive 
+                    ? 'bg-white text-black shadow-md' 
+                    : 'text-neutral-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                {tab.label}
+              </button>
             );
           })}
         </div>
+      </div>
+
+      <div className="group relative mt-6 min-h-[200px] flex items-center">
+        {isLoading ? (
+          <div className="flex gap-4 sm:gap-6 overflow-x-hidden pl-[4%] pr-[4%] w-full">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="w-[140px] sm:w-[180px] h-[200px] sm:h-[260px] bg-neutral-900/50 rounded-2xl animate-pulse border border-white/5 shrink-0" />
+            ))}
+          </div>
+        ) : animes.length === 0 ? (
+          <div className="w-full text-center py-12 text-neutral-500 text-sm">
+            Không có dữ liệu hiển thị.
+          </div>
+        ) : (
+          <>
+            {/* Left Button */}
+            <button 
+              onClick={() => scroll('left')}
+              className="hidden md:flex absolute left-4 top-[42%] -translate-y-1/2 z-20 w-10 h-10 bg-[#111111]/85 hover:bg-black opacity-0 group-hover:opacity-100 transition-all items-center justify-center hover:scale-105 border border-white/10 rounded-full shadow-2xl active:scale-95 cursor-pointer"
+            >
+              <ChevronLeft size={20} className="text-white" />
+            </button>
+
+            {/* Right Button */}
+            <button 
+              onClick={() => scroll('right')}
+              className="hidden md:flex absolute right-4 top-[42%] -translate-y-1/2 z-20 w-10 h-10 bg-[#111111]/85 hover:bg-black opacity-0 group-hover:opacity-100 transition-all items-center justify-center hover:scale-105 border border-white/10 rounded-full shadow-2xl active:scale-95 cursor-pointer"
+            >
+              <ChevronRight size={20} className="text-white" />
+            </button>
+
+            <div
+              ref={scrollRef}
+              className="flex gap-4 sm:gap-6 overflow-x-auto py-8 sm:py-12 -my-8 sm:-my-12 pl-[4%] pr-[4%] scrollbar-hide items-center relative z-10 w-full"
+              style={{ scrollbarWidth: "none" }}
+            >
+              {animes.map((anime: any, index: number) => {
+                // map anime to Ophim format to reuse RankingCard
+                const mappedMovie = {
+                  name: anime.title_english || anime.title || anime.title_japanese,
+                  origin_name: anime.title || anime.title_japanese,
+                  poster_url: anime.images?.webp?.large_image_url || anime.images?.jpg?.large_image_url || null,
+                  thumb_url: anime.images?.webp?.large_image_url || anime.images?.jpg?.large_image_url || null,
+                  slug: anime.mal_id ? anime.mal_id.toString() : '',
+                  year: anime.year?.toString() || anime.aired?.prop?.from?.year?.toString() || "",
+                  quality: "HD", // Remove "Finished Airing" status
+                  type: anime.type?.toLowerCase() === "movie" ? "single" : "series",
+                  category: [],
+                  duration: anime.episodes ? `${anime.episodes} tập` : "",
+                  tmdb: {
+                    vote_average: anime.score
+                  }
+                };
+                
+                return (
+                  <div key={index} className="flex-none snap-start">
+                    <RankingCard movie={mappedMovie} onSelect={() => handleSelect(anime)} idx={index} />
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

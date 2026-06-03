@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 
-export const useAnimeDbRanking = (page = 1, size = 15) => {
+export const useAnimeDbRanking = (page = 1, size = 15, enabled = true) => {
   return useQuery({
     queryKey: ['animeDb', 'ranking', page, size],
     queryFn: async () => {
@@ -10,10 +10,11 @@ export const useAnimeDbRanking = (page = 1, size = 15) => {
       return res.json();
     },
     staleTime: 1000 * 60 * 60 * 24, // 24 hours
+    enabled,
   });
 };
 
-export const useAnimeDbSeasonNow = (page = 1, size = 20) => {
+export const useAnimeDbSeasonNow = (page = 1, size = 20, enabled = true) => {
   return useQuery({
     queryKey: ['animeDb', 'season-now', page, size],
     queryFn: async () => {
@@ -22,10 +23,11 @@ export const useAnimeDbSeasonNow = (page = 1, size = 20) => {
       return res.json();
     },
     staleTime: 1000 * 60 * 60 * 12, // 12 hours
+    enabled,
   });
 };
 
-export const useAnimeDbUpcoming = (page = 1, size = 20) => {
+export const useAnimeDbUpcoming = (page = 1, size = 20, enabled = true) => {
   return useQuery({
     queryKey: ['animeDb', 'upcoming', page, size],
     queryFn: async () => {
@@ -34,6 +36,7 @@ export const useAnimeDbUpcoming = (page = 1, size = 20) => {
       return res.json();
     },
     staleTime: 1000 * 60 * 60 * 12, // 12 hours
+    enabled,
   });
 };
 
