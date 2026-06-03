@@ -1,7 +1,8 @@
 import React from 'react';
 import { useAnimeDbRanking, useAnimeDbSeasonNow, useAnimeDbUpcoming, useAnimeDbSearch } from '../../hooks/useAnimeDb';
 import { RankingCard } from './RankingCard';
-import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Trash2, ChevronDown, Check } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 const TABS = [
   { id: 'ranking', label: 'Bảng Xếp Hạng' },
@@ -10,36 +11,36 @@ const TABS = [
 ] as const;
 
 const ANIME_GENRES = [
-  { id: '', label: 'Genres (Thể loại)' },
-  { id: '1', label: 'Action (Hành động)' },
-  { id: '2', label: 'Adventure (Phiêu lưu)' },
-  { id: '4', label: 'Comedy (Hài hước)' },
-  { id: '8', label: 'Drama (Chính kịch)' },
-  { id: '10', label: 'Fantasy (Kỳ ảo)' },
-  { id: '22', label: 'Romance (Tình cảm)' },
-  { id: '24', label: 'Sci-Fi (Viễn tưởng)' },
-  { id: '36', label: 'Slice of Life (Đời thường)' },
-  { id: '37', label: 'Supernatural (Siêu nhiên)' },
+  { id: '', label: 'Tất cả thể loại' },
+  { id: '1', label: 'Hành động (Action)' },
+  { id: '2', label: 'Phiêu lưu (Adventure)' },
+  { id: '4', label: 'Hài hước (Comedy)' },
+  { id: '8', label: 'Chính kịch (Drama)' },
+  { id: '10', label: 'Kỳ ảo (Fantasy)' },
+  { id: '22', label: 'Tình cảm (Romance)' },
+  { id: '24', label: 'Viễn tưởng (Sci-Fi)' },
+  { id: '36', label: 'Đời thường (Slice of Life)' },
+  { id: '37', label: 'Siêu nhiên (Supernatural)' },
 ];
 
 const ANIME_TYPES = [
-  { id: '', label: 'Type (Loại)' },
-  { id: 'tv', label: 'TV Series' },
-  { id: 'movie', label: 'Movie (Phim lẻ)' },
+  { id: '', label: 'Tất cả định dạng' },
+  { id: 'tv', label: 'Phim bộ (TV Series)' },
+  { id: 'movie', label: 'Phim lẻ (Movie)' },
   { id: 'ova', label: 'OVA' },
-  { id: 'special', label: 'Special' },
+  { id: 'special', label: 'Đặc biệt (Special)' },
   { id: 'ona', label: 'ONA' },
 ];
 
 const ANIME_STATUS = [
-  { id: '', label: 'Status (Trạng thái)' },
-  { id: 'airing', label: 'Airing (Đang chiếu)' },
-  { id: 'complete', label: 'Complete (Trọn bộ)' },
-  { id: 'upcoming', label: 'Upcoming (Sắp chiếu)' },
+  { id: '', label: 'Tất cả trạng thái' },
+  { id: 'airing', label: 'Đang chiếu (Airing)' },
+  { id: 'complete', label: 'Trọn bộ (Complete)' },
+  { id: 'upcoming', label: 'Sắp chiếu (Upcoming)' },
 ];
 
 const ANIME_SCORES = [
-  { id: '', label: 'Min Score (Điểm tối thiểu)' },
+  { id: '', label: 'Mọi điểm số' },
   { id: '9', label: 'Từ 9.0⭐ trở lên' },
   { id: '8', label: 'Từ 8.0⭐ trở lên' },
   { id: '7', label: 'Từ 7.0⭐ trở lên' },
@@ -57,6 +58,9 @@ export const AnimeRankingRow = ({ onSelect, showFilters = false }: { onSelect: (
   const [selectedType, setSelectedType] = React.useState("");
   const [selectedStatus, setSelectedStatus] = React.useState("");
   const [selectedMinScore, setSelectedMinScore] = React.useState("");
+
+  // Active Dropdown state (genre, type, status, score)
+  const [activeDropdown, setActiveDropdown] = React.useState<string | null>(null);
 
   // Debounce search query input (500ms) to prevent Jikan rate limit errors
   React.useEffect(() => {
@@ -81,6 +85,24 @@ export const AnimeRankingRow = ({ onSelect, showFilters = false }: { onSelect: (
     setSelectedType("");
     setSelectedStatus("");
     setSelectedMinScore("");
+    setActiveDropdown(null);
+  };
+
+  const filterPanelRef = React.useRef<HTMLDivElement>(null);
+
+  // Close custom drop-downs when clicking outside
+  React.useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (filterPanelRef.current && !filterPanelRef.current.contains(e.target as Node)) {
+        setActiveDropdown(null);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  const toggleDropdown = (name: string) => {
+    setActiveDropdown(prev => prev === name ? null : name);
   };
 
   // Queries
@@ -212,109 +234,204 @@ export const AnimeRankingRow = ({ onSelect, showFilters = false }: { onSelect: (
 
       {/* Advanced Jikan Filters Row matching user screenshot - only rendered if showFilters is enabled */}
       {showFilters && (
-        <div className="flex flex-wrap items-center gap-3 px-4 sm:px-8 md:px-12 py-3.5 mb-2 bg-[#0c0c0c]/40 border border-white/[0.03] rounded-2xl mx-4 sm:mx-8 md:mx-12 z-20">
+        <div 
+          ref={filterPanelRef}
+          className="flex flex-wrap items-center gap-3 px-4 sm:px-8 md:px-12 py-3.5 mb-2 bg-[#090909]/95 border border-white/[0.06] rounded-2xl mx-4 sm:mx-8 md:mx-12 z-30 relative shadow-[0_8px_32px_rgba(0,0,0,0.5)]"
+        >
           
           {/* Search Field */}
-          <div className="relative flex-grow min-w-[160px] sm:max-w-xs">
+          <div className="relative flex-grow min-w-[160px] sm:max-w-xs z-10">
             <input 
               type="text" 
-              placeholder="Search an Anime..." 
+              placeholder="Tìm kiếm Anime..." 
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full px-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] focus:bg-white/[0.07] border border-white/10 focus:border-white/20 rounded-xl text-xs sm:text-sm font-semibold tracking-wide text-white outline-none placeholder:text-neutral-500 transition-all shadow-sm"
+              className="w-full px-4 py-3 bg-[#121212]/90 hover:bg-[#181818] focus:bg-[#1a1a1a] border border-white/10 focus:border-white/20 rounded-2xl text-xs sm:text-sm font-semibold tracking-wide text-white outline-none placeholder:text-neutral-500 transition-all shadow-sm"
             />
           </div>
 
-          {/* Genres Dropdown */}
-          <div className="relative shrink-0">
-            <select
-              value={selectedGenre}
-              onChange={(e) => setSelectedGenre(e.target.value)}
-              className="appearance-none pr-8 pl-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 rounded-xl text-xs font-semibold tracking-wide text-neutral-400 hover:text-white outline-none cursor-pointer transition-all shadow-sm bg-[#090909]"
-              style={{
-                backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-                backgroundPosition: 'right 10px center',
-                backgroundSize: '12px',
-                backgroundRepeat: 'no-repeat'
-              }}
+          {/* Dropdown 1: Thể loại */}
+          <div className="relative z-20">
+            <button
+              type="button"
+              onClick={() => toggleDropdown('genre')}
+              className={`flex items-center justify-between gap-2 px-4 py-3 bg-[#121212]/90 hover:bg-[#181818] border rounded-2xl text-xs sm:text-sm font-semibold tracking-wide transition-all cursor-pointer text-left ${
+                selectedGenre ? "border-white/30 text-white shadow-white/5" : "border-white/10 text-neutral-300"
+              }`}
             >
-              {ANIME_GENRES.map(g => (
-                <option key={g.id} value={g.id}>
-                  {g.label}
-                </option>
-              ))}
-            </select>
+              <span>
+                {ANIME_GENRES.find(g => g.id === selectedGenre)?.label || 'Thể loại'}
+              </span>
+              <ChevronDown className={`w-3.5 h-3.5 text-neutral-500 transition-transform duration-200 ${activeDropdown === 'genre' && "rotate-180"}`} />
+            </button>
+            <AnimatePresence>
+              {activeDropdown === 'genre' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -4, scale: 0.96 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute top-full left-0 mt-2 min-w-[200px] bg-[#0e0e0e]/98 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 shadow-[0_20px_40px_rgba(0,0,0,0.85)] z-50 max-h-[280px] overflow-y-auto custom-scrollbar flex flex-col gap-0.5"
+                >
+                  {ANIME_GENRES.map(g => {
+                    const isSelected = selectedGenre === g.id;
+                    return (
+                      <button
+                        key={g.id}
+                        type="button"
+                        onClick={() => { setSelectedGenre(g.id); setActiveDropdown(null); }}
+                        className={`w-full text-left px-3.5 py-2 text-[13px] font-medium hover:bg-white/10 transition-all flex items-center justify-between rounded-xl cursor-pointer ${
+                          isSelected ? "text-white bg-white/5 font-semibold" : "text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        <span>{g.label}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+                      </button>
+                    );
+                  })}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
-          {/* Type Dropdown */}
-          <div className="relative shrink-0">
-            <select
-              value={selectedType}
-              onChange={(e) => setSelectedType(e.target.value)}
-              className="appearance-none pr-8 pl-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 rounded-xl text-xs font-semibold tracking-wide text-neutral-400 hover:text-white outline-none cursor-pointer transition-all shadow-sm bg-[#090909]"
-              style={{
-                backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-                backgroundPosition: 'right 10px center',
-                backgroundSize: '12px',
-                backgroundRepeat: 'no-repeat'
-              }}
+          {/* Dropdown 2: Định dạng (Type) */}
+          <div className="relative z-20">
+            <button
+              type="button"
+              onClick={() => toggleDropdown('type')}
+              className={`flex items-center justify-between gap-2 px-4 py-3 bg-[#121212]/90 hover:bg-[#181818] border rounded-2xl text-xs sm:text-sm font-semibold tracking-wide transition-all cursor-pointer text-left ${
+                selectedType ? "border-white/30 text-white shadow-white/5" : "border-white/10 text-neutral-300"
+              }`}
             >
-              {ANIME_TYPES.map(t => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
+              <span>
+                {ANIME_TYPES.find(t => t.id === selectedType)?.label || 'Định dạng'}
+              </span>
+              <ChevronDown className={`w-3.5 h-3.5 text-neutral-500 transition-transform duration-200 ${activeDropdown === 'type' && "rotate-180"}`} />
+            </button>
+            <AnimatePresence>
+              {activeDropdown === 'type' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -4, scale: 0.96 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute top-full left-0 mt-2 min-w-[180px] bg-[#0e0e0e]/98 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 shadow-[0_20px_40px_rgba(0,0,0,0.85)] z-50 flex flex-col gap-0.5"
+                >
+                  {ANIME_TYPES.map(t => {
+                    const isSelected = selectedType === t.id;
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => { setSelectedType(t.id); setActiveDropdown(null); }}
+                        className={`w-full text-left px-3.5 py-2 text-[13px] font-medium hover:bg-white/10 transition-all flex items-center justify-between rounded-xl cursor-pointer ${
+                          isSelected ? "text-white bg-white/5 font-semibold" : "text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        <span>{t.label}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+                      </button>
+                    );
+                  })}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
-          {/* Status Dropdown */}
-          <div className="relative shrink-0">
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="appearance-none pr-8 pl-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 rounded-xl text-xs font-semibold tracking-wide text-neutral-400 hover:text-white outline-none cursor-pointer transition-all shadow-sm bg-[#090909]"
-              style={{
-                backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-                backgroundPosition: 'right 10px center',
-                backgroundSize: '12px',
-                backgroundRepeat: 'no-repeat'
-              }}
+          {/* Dropdown 3: Trạng thái (Status) */}
+          <div className="relative z-20">
+            <button
+              type="button"
+              onClick={() => toggleDropdown('status')}
+              className={`flex items-center justify-between gap-2 px-4 py-3 bg-[#121212]/90 hover:bg-[#181818] border rounded-2xl text-xs sm:text-sm font-semibold tracking-wide transition-all cursor-pointer text-left ${
+                selectedStatus ? "border-white/30 text-white shadow-white/5" : "border-white/10 text-neutral-300"
+              }`}
             >
-              {ANIME_STATUS.map(s => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
+              <span>
+                {ANIME_STATUS.find(s => s.id === selectedStatus)?.label || 'Trạng thái'}
+              </span>
+              <ChevronDown className={`w-3.5 h-3.5 text-neutral-500 transition-transform duration-200 ${activeDropdown === 'status' && "rotate-180"}`} />
+            </button>
+            <AnimatePresence>
+              {activeDropdown === 'status' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -4, scale: 0.96 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute top-full left-0 mt-2 min-w-[180px] bg-[#0e0e0e]/98 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 shadow-[0_20px_40px_rgba(0,0,0,0.85)] z-50 flex flex-col gap-0.5"
+                >
+                  {ANIME_STATUS.map(s => {
+                    const isSelected = selectedStatus === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => { setSelectedStatus(s.id); setActiveDropdown(null); }}
+                        className={`w-full text-left px-3.5 py-2 text-[13px] font-medium hover:bg-white/10 transition-all flex items-center justify-between rounded-xl cursor-pointer ${
+                          isSelected ? "text-white bg-white/5 font-semibold" : "text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        <span>{s.label}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+                      </button>
+                    );
+                  })}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
-          {/* Min Score Dropdown */}
-          <div className="relative shrink-0">
-            <select
-              value={selectedMinScore}
-              onChange={(e) => setSelectedMinScore(e.target.value)}
-              className="appearance-none pr-8 pl-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 rounded-xl text-xs font-semibold tracking-wide text-neutral-400 hover:text-white outline-none cursor-pointer transition-all shadow-sm bg-[#090909]"
-              style={{
-                backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-                backgroundPosition: 'right 10px center',
-                backgroundSize: '12px',
-                backgroundRepeat: 'no-repeat'
-              }}
+          {/* Dropdown 4: Điểm số (Min Score) */}
+          <div className="relative z-20">
+            <button
+              type="button"
+              onClick={() => toggleDropdown('score')}
+              className={`flex items-center justify-between gap-2 px-4 py-3 bg-[#121212]/90 hover:bg-[#181818] border rounded-2xl text-xs sm:text-sm font-semibold tracking-wide transition-all cursor-pointer text-left ${
+                selectedMinScore ? "border-white/30 text-white shadow-white/5" : "border-white/10 text-neutral-300"
+              }`}
             >
-              {ANIME_SCORES.map(sc => (
-                <option key={sc.id} value={sc.id}>
-                  {sc.label}
-                </option>
-              ))}
-            </select>
+              <span>
+                {ANIME_SCORES.find(sc => sc.id === selectedMinScore)?.label || 'Điểm số'}
+              </span>
+              <ChevronDown className={`w-3.5 h-3.5 text-neutral-500 transition-transform duration-200 ${activeDropdown === 'score' && "rotate-180"}`} />
+            </button>
+            <AnimatePresence>
+              {activeDropdown === 'score' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -4, scale: 0.96 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute top-full left-0 mt-2 min-w-[160px] bg-[#0e0e0e]/98 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 shadow-[0_20px_40px_rgba(0,0,0,0.85)] z-50 flex flex-col gap-0.5"
+                >
+                  {ANIME_SCORES.map(sc => {
+                    const isSelected = selectedMinScore === sc.id;
+                    return (
+                      <button
+                        key={sc.id}
+                        type="button"
+                        onClick={() => { setSelectedMinScore(sc.id); setActiveDropdown(null); }}
+                        className={`w-full text-left px-3.5 py-2 text-[13px] font-medium hover:bg-white/10 transition-all flex items-center justify-between rounded-xl cursor-pointer ${
+                          isSelected ? "text-white bg-white/5 font-semibold" : "text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        <span>{sc.label}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+                      </button>
+                    );
+                  })}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Reset Trash Bin Button */}
           {hasSearchFilters && (
             <button 
               onClick={handleClearFilters}
-              className="p-2.5 bg-red-650/10 hover:bg-red-650/20 text-red-500 border border-red-500/20 rounded-xl cursor-pointer hover:scale-105 active:scale-95 transition-all shadow-sm flex items-center justify-center shrink-0 ml-auto"
-              title="Reset Filters"
+              className="p-3 bg-red-650/10 hover:bg-red-650/20 text-red-500 border border-red-500/20 rounded-2xl cursor-pointer hover:scale-105 active:scale-95 transition-all shadow-sm flex items-center justify-center shrink-0 ml-auto z-10"
+              title="Đặt lại bộ lọc"
             >
               <Trash2 className="w-4 h-4" />
             </button>
