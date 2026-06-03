@@ -431,7 +431,7 @@ export const useMovieDetail = (rawSlug: string) => {
 
   return {
     data, isLoading, isFetching,
-    actorsData, imdbRating, metacriticScore, trailerYoutubeId, finalTmdbData,
+    actorsData, imdbRating, metacriticScore, trailerYoutubeId, finalTmdbData, imdbApiData,
     tmdbBackdropUrl, tmdbPosterUrl,
     tab, setTab,
     selectedServerId, setSelectedServerId,

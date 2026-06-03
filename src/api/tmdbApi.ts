@@ -107,13 +107,13 @@ export const tmdbSearchTv = (query: string, page = 1) =>
 
 export const tmdbGetMovieDetails = (movieId: number | string) => 
   fetchTmdb(`/movie/${movieId}`, { 
-    append_to_response: 'credits,videos,recommendations,similar,images',
+    append_to_response: 'credits,videos,recommendations,similar,images,release_dates',
     include_image_language: 'en,null'
   });
 
 export const tmdbGetTvDetails = (tvId: number | string) => 
   fetchTmdb(`/tv/${tvId}`, { 
-    append_to_response: 'credits,videos,recommendations,similar,images',
+    append_to_response: 'credits,videos,recommendations,similar,images,content_ratings',
     include_image_language: 'en,null'
   });
 

@@ -68,6 +68,42 @@ const isSameEpisode = (epAName: string | number | undefined | null, epBName: str
   return epAName.toString().toLowerCase().trim() === epBName.toString().toLowerCase().trim();
 };
 
+const getCertification = (tmdbData: any, isTv: boolean): string => {
+  if (!tmdbData) return "";
+  if (isTv) {
+    const ratings = tmdbData.content_ratings?.results || [];
+    const usRating = ratings.find((r: any) => r.iso_3166_1 === 'US')?.rating;
+    if (usRating) return usRating;
+    const vnRating = ratings.find((r: any) => r.iso_3166_1 === 'VN')?.rating;
+    if (vnRating) return vnRating;
+    return ratings[0]?.rating || "";
+  } else {
+    const results = tmdbData.release_dates?.results || [];
+    const usResult = results.find((r: any) => r.iso_3166_1 === 'US');
+    if (usResult) {
+      const cert = usResult.release_dates?.find((d: any) => d.certification)?.certification;
+      if (cert) return cert;
+    }
+    const vnResult = results.find((r: any) => r.iso_3166_1 === 'VN');
+    if (vnResult) {
+      const cert = vnResult.release_dates?.find((d: any) => d.certification)?.certification;
+      if (cert) return cert;
+    }
+    for (const res of results) {
+      const cert = res.release_dates?.find((d: any) => d.certification)?.certification;
+      if (cert) return cert;
+    }
+    return "";
+  }
+};
+
+const formatCurrency = (amount: number | null | undefined): string => {
+  if (!amount || amount === 0) return "";
+  if (amount >= 1e9) return `$${(amount / 1e9).toFixed(2)} tỷ USD`;
+  if (amount >= 1e6) return `$${(amount / 1e6).toFixed(1)} triệu USD`;
+  return `$${amount.toLocaleString()}`;
+};
+
 export const MovieDetail = ({
   slug,
   onClose,
@@ -79,7 +115,7 @@ export const MovieDetail = ({
 }) => {
   const {
     data, isLoading, isFetching,
-    actorsData, imdbRating, metacriticScore, trailerYoutubeId, finalTmdbData,
+    actorsData, imdbRating, metacriticScore, trailerYoutubeId, finalTmdbData, imdbApiData,
     tmdbBackdropUrl: cleanBackdrop, tmdbPosterUrl: cleanPoster,
     activeEp, setActiveEp,
     isPlaying, setIsPlaying,
@@ -142,6 +178,49 @@ export const MovieDetail = ({
       }
     }
   };
+
+  // Console logging to help developer check IMDb API Status and details
+  useEffect(() => {
+    if (isLoading || isFetching) return;
+    
+    console.log("%c[Cinemax Debugger] Movie Detail Load Information", "background: #111; color: #00ffd0; font-weight: bold; font-size: 13px; padding: 4px 8px; border-radius: 4px;");
+    
+    // TMDB Info
+    if (finalTmdbData) {
+      const cert = getCertification(finalTmdbData, isTv);
+      console.log(`%cTMDB API Details:`, "color: #ff9900; font-weight: bold;");
+      console.log(`  - Title: ${finalTmdbData.title || finalTmdbData.name}`);
+      console.log(`  - Original Title: ${finalTmdbData.original_title || finalTmdbData.original_name}`);
+      console.log(`  - Media Type: ${tmdbMediaTypeLocal}`);
+      console.log(`  - TMDB ID: ${finalTmdbData.id}`);
+      if (tmdbMediaTypeLocal === 'movie') {
+        console.log(`  - Kinh phí (Budget): ${formatCurrency(finalTmdbData.budget) || 'Không rõ'}`);
+        console.log(`  - Doanh thu (Revenue): ${formatCurrency(finalTmdbData.revenue) || 'Không rõ'}`);
+      }
+      console.log(`  - Giới hạn độ tuổi (Certification): ${cert || 'Chưa phân loại (N/A)'}`);
+    } else {
+      console.log("%cTMDB API Details: Not Loaded / Unavailable", "color: #ea4335;");
+    }
+
+    // IMDb Info
+    if (resolvedImdbId) {
+      console.log(`%cIMDb API Connection:`, "color: #f5c518; font-weight: bold;");
+      console.log(`  - Resolved IMDb ID: ${resolvedImdbId}`);
+      if (imdbApiData) {
+        console.log("%c  - IMDb API Status: ACTIVE (Successfully fetched)", "color: #34a853;");
+        console.log(`  - IMDb Rating: ${imdbApiData.rating?.aggregateRating || 'N/A'} (Lượt đánh giá: ${imdbApiData.rating?.voteCount?.toLocaleString() || 0})`);
+        console.log(`  - Metascore: ${imdbApiData.metacritic?.score || 'N/A'} (Lượt đánh giá: ${imdbApiData.metacritic?.reviewCount || 0})`);
+        console.log(`  - Genres: ${imdbApiData.genres?.join(', ') || 'N/A'}`);
+        console.log(`  - Spoken Languages: ${imdbApiData.spokenLanguages?.map((l: any) => l.name).join(', ') || 'N/A'}`);
+        console.log(`  - Plot summary: ${imdbApiData.plot || 'N/A'}`);
+        console.log("  - Full IMDb API JSON Response:", imdbApiData);
+      } else {
+        console.log("%c  - IMDb API Status: LOADING / FAILED / PENDING PROXY RESOLVE", "color: #ea4335;");
+      }
+    } else {
+      console.log("%cIMDb API Connection: Offline (No IMDb ID resolved for this title)", "color: #9e9e9e;");
+    }
+  }, [finalTmdbData, imdbApiData, resolvedImdbId, isLoading, isFetching, isTv, tmdbMediaTypeLocal]);
 
   const [activeSeasonNumber, setActiveSeasonNumber] = useState<number | null>(() => {
     const params = new URLSearchParams(window.location.search);
@@ -1144,6 +1223,16 @@ export const MovieDetail = ({
                         </span>
                       )}
 
+                      {(() => {
+                        const cert = getCertification(finalTmdbData, isTv);
+                        if (!cert) return null;
+                        return (
+                          <span className="bg-red-600/10 border border-red-500/25 px-2.5 py-0.5 rounded text-[11px] font-black text-red-500 select-none">
+                            {cert}
+                          </span>
+                        );
+                      })()}
+
                       <span className="flex items-center gap-1.5 text-gray-300">
                         <Star size={15} className="text-yellow-500 fill-yellow-500/10 shrink-0" />
                         {imdbRating && imdbRating !== "?" ? imdbRating : "8.0"}
@@ -1193,6 +1282,23 @@ export const MovieDetail = ({
                        <h3 className="text-xl font-bold text-white mb-4">Nội Dung</h3>
                        <p className="text-base sm:text-lg text-gray-400 leading-relaxed font-semibold text-justify" dangerouslySetInnerHTML={{ __html: finalTmdbData?.overview || movie.content || "Chúng tôi đang cập nhật nội dung chi tiết cho bộ phim này. Vui lòng quay lại sau." }} />
                     </div>
+
+                    {finalTmdbData && (finalTmdbData.budget > 0 || finalTmdbData.revenue > 0) && (
+                      <div className="grid grid-cols-2 gap-4 mb-8 w-full max-w-4xl border border-white/10 rounded-2xl p-6 bg-black/20 backdrop-blur-sm">
+                        {finalTmdbData.budget > 0 && (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs text-neutral-500 font-bold uppercase tracking-wider">Kinh phí</span>
+                            <span className="text-base font-bold text-gray-300">{formatCurrency(finalTmdbData.budget)}</span>
+                          </div>
+                        )}
+                        {finalTmdbData.revenue > 0 && (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs text-neutral-500 font-bold uppercase tracking-wider">Doanh thu</span>
+                            <span className="text-base font-bold text-green-400">{formatCurrency(finalTmdbData.revenue)}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {actorsData && actorsData.length > 0 && (
                       <div className="flex flex-col gap-6 text-sm font-medium w-full max-w-4xl border-t border-white/10 py-8">
@@ -1304,6 +1410,16 @@ export const MovieDetail = ({
                       <Film size={13} className="text-gray-500 shrink-0" />
                       {(movie.type === "single" || movie.type === "phimle") ? "Phim Lẻ" : "Phim Bộ"}
                     </span>
+
+                    {(() => {
+                      const cert = getCertification(finalTmdbData, isTv);
+                      if (!cert) return null;
+                      return (
+                        <span className="bg-red-600/10 border border-red-500/25 px-1.5 py-0.5 rounded text-[10px] font-black text-red-500 select-none">
+                          {cert}
+                        </span>
+                      );
+                    })()}
 
                     {/* Tv Seasons */}
                     {isTv && finalTmdbData?.number_of_seasons && (
