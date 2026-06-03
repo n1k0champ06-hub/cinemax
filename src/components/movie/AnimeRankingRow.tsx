@@ -1,7 +1,7 @@
 import React from 'react';
-import { useAnimeDbRanking, useAnimeDbSeasonNow, useAnimeDbUpcoming } from '../../hooks/useAnimeDb';
+import { useAnimeDbRanking, useAnimeDbSeasonNow, useAnimeDbUpcoming, useAnimeDbSearch } from '../../hooks/useAnimeDb';
 import { RankingCard } from './RankingCard';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 
 const TABS = [
   { id: 'ranking', label: 'Bảng Xếp Hạng' },
@@ -9,34 +9,117 @@ const TABS = [
   { id: 'upcoming', label: 'Sắp Ra Mắt' }
 ] as const;
 
+const ANIME_GENRES = [
+  { id: '', label: 'Genres (Thể loại)' },
+  { id: '1', label: 'Action (Hành động)' },
+  { id: '2', label: 'Adventure (Phiêu lưu)' },
+  { id: '4', label: 'Comedy (Hài hước)' },
+  { id: '8', label: 'Drama (Chính kịch)' },
+  { id: '10', label: 'Fantasy (Kỳ ảo)' },
+  { id: '22', label: 'Romance (Tình cảm)' },
+  { id: '24', label: 'Sci-Fi (Viễn tưởng)' },
+  { id: '36', label: 'Slice of Life (Đời thường)' },
+  { id: '37', label: 'Supernatural (Siêu nhiên)' },
+];
+
+const ANIME_TYPES = [
+  { id: '', label: 'Type (Loại)' },
+  { id: 'tv', label: 'TV Series' },
+  { id: 'movie', label: 'Movie (Phim lẻ)' },
+  { id: 'ova', label: 'OVA' },
+  { id: 'special', label: 'Special' },
+  { id: 'ona', label: 'ONA' },
+];
+
+const ANIME_STATUS = [
+  { id: '', label: 'Status (Trạng thái)' },
+  { id: 'airing', label: 'Airing (Đang chiếu)' },
+  { id: 'complete', label: 'Complete (Trọn bộ)' },
+  { id: 'upcoming', label: 'Upcoming (Sắp chiếu)' },
+];
+
+const ANIME_SCORES = [
+  { id: '', label: 'Min Score (Điểm tối thiểu)' },
+  { id: '9', label: 'Từ 9.0⭐ trở lên' },
+  { id: '8', label: 'Từ 8.0⭐ trở lên' },
+  { id: '7', label: 'Từ 7.0⭐ trở lên' },
+  { id: '6', label: 'Từ 6.0⭐ trở lên' },
+  { id: '5', label: 'Từ 5.0⭐ trở lên' },
+];
+
 export const AnimeRankingRow = ({ onSelect }: { onSelect: (slug: string) => void }) => {
   const [activeTab, setActiveTab] = React.useState<'ranking' | 'airing' | 'upcoming'>('ranking');
 
-  const { data: rankingData, isLoading: isRankingLoading } = useAnimeDbRanking(1, 15, activeTab === 'ranking');
-  const { data: seasonNowData, isLoading: isSeasonNowLoading } = useAnimeDbSeasonNow(1, 15, activeTab === 'airing');
-  const { data: upcomingData, isLoading: isUpcomingLoading } = useAnimeDbUpcoming(1, 15, activeTab === 'upcoming');
+  // Filter States
+  const [searchInput, setSearchInput] = React.useState("");
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [selectedGenre, setSelectedGenre] = React.useState("");
+  const [selectedType, setSelectedType] = React.useState("");
+  const [selectedStatus, setSelectedStatus] = React.useState("");
+  const [selectedMinScore, setSelectedMinScore] = React.useState("");
+
+  // Debounce search query input (500ms) to prevent Jikan rate limit errors
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const hasSearchFilters = 
+    searchQuery.trim() !== "" || 
+    selectedGenre !== "" || 
+    selectedType !== "" || 
+    selectedStatus !== "" || 
+    selectedMinScore !== "";
+
+  const handleClearFilters = () => {
+    setSearchInput("");
+    setSearchQuery("");
+    setSelectedGenre("");
+    setSelectedType("");
+    setSelectedStatus("");
+    setSelectedMinScore("");
+  };
+
+  // Queries
+  const { data: rankingData, isLoading: isRankingLoading } = useAnimeDbRanking(1, 15, activeTab === 'ranking' && !hasSearchFilters);
+  const { data: seasonNowData, isLoading: isSeasonNowLoading } = useAnimeDbSeasonNow(1, 15, activeTab === 'airing' && !hasSearchFilters);
+  const { data: upcomingData, isLoading: isUpcomingLoading } = useAnimeDbUpcoming(1, 15, activeTab === 'upcoming' && !hasSearchFilters);
+  const { data: searchResultsData, isLoading: isSearchLoading } = useAnimeDbSearch(
+    {
+      q: searchQuery,
+      genres: selectedGenre,
+      type: selectedType,
+      status: selectedStatus,
+      min_score: selectedMinScore
+    },
+    hasSearchFilters
+  );
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
-  const isLoading = 
-    activeTab === 'ranking' ? isRankingLoading :
-    activeTab === 'airing' ? isSeasonNowLoading :
-    isUpcomingLoading;
+  const isLoading = hasSearchFilters
+    ? isSearchLoading
+    : (activeTab === 'ranking' ? isRankingLoading :
+       activeTab === 'airing' ? isSeasonNowLoading :
+       isUpcomingLoading);
 
-  const animeData = 
-    activeTab === 'ranking' ? rankingData :
-    activeTab === 'airing' ? seasonNowData :
-    upcomingData;
+  const animeData = hasSearchFilters
+    ? searchResultsData
+    : (activeTab === 'ranking' ? rankingData :
+       activeTab === 'airing' ? seasonNowData :
+       upcomingData);
 
   const handleSelect = async (anime: any) => {
     try {
       const { tmdbSearchTv, tmdbSearchMovie } = await import('../../api/tmdbApi');
-      const searchQuery = anime.title || anime.title_english || anime.title_japanese || "";
+      const searchQueryText = anime.title || anime.title_english || anime.title_japanese || "";
       
       const isMovie = anime.type?.toLowerCase() === 'movie';
       
       // Search specific to type
-      const res = await (isMovie ? tmdbSearchMovie(searchQuery) : tmdbSearchTv(searchQuery));
+      const res = await (isMovie ? tmdbSearchMovie(searchQueryText) : tmdbSearchTv(searchQueryText));
       
       if (res && res.results && res.results.length > 0) {
         // Find best match: Japanese language and Animation genre (16)
@@ -62,7 +145,7 @@ export const AnimeRankingRow = ({ onSelect }: { onSelect: (slug: string) => void
         const slug = `tmdb-${tmdbItem.id}-${mediaType}`;
         onSelect(slug);
       } else {
-        alert(`Không tìm thấy thông tin chi tiết trên máy chủ cho: ${searchQuery}`);
+        alert(`Không tìm thấy thông tin chi tiết trên máy chủ cho: ${searchQueryText}`);
       }
     } catch (e) {
       console.error(e);
@@ -83,46 +166,162 @@ export const AnimeRankingRow = ({ onSelect }: { onSelect: (slug: string) => void
   const animes = animeData?.data || animeData?.results || animeData || [];
 
   return (
-    <div className="py-6 md:py-8 relative group/row min-h-[320px]">
+    <div className="py-6 md:py-8 relative group/row min-h-[380px]">
+      
       {/* Header & Tabs Toolbar row */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-4 sm:px-8 md:px-12 mb-3">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-4 sm:px-8 md:px-12 mb-5">
         <div className="flex items-center gap-3">
           <div className="w-[3px] h-5 sm:h-6 bg-[#E50914] rounded-full" />
           <h2 className="text-white text-xl sm:text-2xl md:text-[28px] font-bold tracking-tight">
-            {activeTab === 'ranking' ? 'Bảng Xếp Hạng Anime' : 
+            {hasSearchFilters ? 'Kết Quả Tìm Kiếm Anime' :
+             activeTab === 'ranking' ? 'Bảng Xếp Hạng Anime' : 
              activeTab === 'airing' ? 'Anime Đang Phát Sóng' : 
              'Anime Sắp Ra Mắt'}
           </h2>
         </div>
         
         {/* Sleek pill tab group */}
-        <div className="flex items-center gap-1.5 bg-white/[0.03] border border-white/[0.08] p-1 rounded-xl self-start md:self-auto">
-          {TABS.map(tab => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  // Reset scroll when switching tabs
-                  if (scrollRef.current) {
-                    scrollRef.current.scrollTo({ left: 0, behavior: 'auto' });
-                  }
-                }}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all select-none cursor-pointer ${
-                  isActive 
-                    ? 'bg-white text-black shadow-md' 
-                    : 'text-neutral-400 hover:text-white hover:bg-white/5'
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
+        {!hasSearchFilters && (
+          <div className="flex items-center gap-1.5 bg-white/[0.03] border border-white/[0.08] p-1 rounded-xl self-start md:self-auto">
+            {TABS.map(tab => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    // Reset scroll when switching tabs
+                    if (scrollRef.current) {
+                      scrollRef.current.scrollTo({ left: 0, behavior: 'auto' });
+                    }
+                  }}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all select-none cursor-pointer ${
+                    isActive 
+                      ? 'bg-white text-black shadow-md' 
+                      : 'text-neutral-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      <div className="group relative mt-6 min-h-[200px] flex items-center">
+      {/* Advanced Jikan Filters Row matching user screenshot */}
+      <div className="flex flex-wrap items-center gap-3 px-4 sm:px-8 md:px-12 py-3.5 mb-2 bg-[#0c0c0c]/40 border border-white/[0.03] rounded-2xl mx-4 sm:mx-8 md:mx-12 z-20">
+        
+        {/* Search Field */}
+        <div className="relative flex-grow min-w-[160px] sm:max-w-xs">
+          <input 
+            type="text" 
+            placeholder="Search an Anime..." 
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="w-full px-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] focus:bg-white/[0.07] border border-white/10 focus:border-white/20 rounded-xl text-xs sm:text-sm font-semibold tracking-wide text-white outline-none placeholder:text-neutral-500 transition-all shadow-sm"
+          />
+        </div>
+
+        {/* Genres Dropdown */}
+        <div className="relative shrink-0">
+          <select
+            value={selectedGenre}
+            onChange={(e) => setSelectedGenre(e.target.value)}
+            className="appearance-none pr-8 pl-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 rounded-xl text-xs font-semibold tracking-wide text-neutral-400 hover:text-white outline-none cursor-pointer transition-all shadow-sm bg-[#090909]"
+            style={{
+              backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+              backgroundPosition: 'right 10px center',
+              backgroundSize: '12px',
+              backgroundRepeat: 'no-repeat'
+            }}
+          >
+            {ANIME_GENRES.map(g => (
+              <option key={g.id} value={g.id}>
+                {g.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Type Dropdown */}
+        <div className="relative shrink-0">
+          <select
+            value={selectedType}
+            onChange={(e) => setSelectedType(e.target.value)}
+            className="appearance-none pr-8 pl-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 rounded-xl text-xs font-semibold tracking-wide text-neutral-400 hover:text-white outline-none cursor-pointer transition-all shadow-sm bg-[#090909]"
+            style={{
+              backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+              backgroundPosition: 'right 10px center',
+              backgroundSize: '12px',
+              backgroundRepeat: 'no-repeat'
+            }}
+          >
+            {ANIME_TYPES.map(t => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Status Dropdown */}
+        <div className="relative shrink-0">
+          <select
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+            className="appearance-none pr-8 pl-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 rounded-xl text-xs font-semibold tracking-wide text-neutral-400 hover:text-white outline-none cursor-pointer transition-all shadow-sm bg-[#090909]"
+            style={{
+              backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+              backgroundPosition: 'right 10px center',
+              backgroundSize: '12px',
+              backgroundRepeat: 'no-repeat'
+            }}
+          >
+            {ANIME_STATUS.map(s => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Min Score Dropdown */}
+        <div className="relative shrink-0">
+          <select
+            value={selectedMinScore}
+            onChange={(e) => setSelectedMinScore(e.target.value)}
+            className="appearance-none pr-8 pl-4 py-2 bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 rounded-xl text-xs font-semibold tracking-wide text-neutral-400 hover:text-white outline-none cursor-pointer transition-all shadow-sm bg-[#090909]"
+            style={{
+              backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+              backgroundPosition: 'right 10px center',
+              backgroundSize: '12px',
+              backgroundRepeat: 'no-repeat'
+            }}
+          >
+            {ANIME_SCORES.map(sc => (
+              <option key={sc.id} value={sc.id}>
+                {sc.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Reset Trash Bin Button */}
+        {hasSearchFilters && (
+          <button 
+            onClick={handleClearFilters}
+            className="p-2.5 bg-red-650/10 hover:bg-red-650/20 text-red-500 border border-red-500/20 rounded-xl cursor-pointer hover:scale-105 active:scale-95 transition-all shadow-sm flex items-center justify-center shrink-0 ml-auto"
+            title="Reset Filters"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+
+      </div>
+
+      {/* Main List Display */}
+      <div className="group relative mt-2 min-h-[200px] flex items-center">
         {isLoading ? (
           <div className="flex gap-4 sm:gap-6 overflow-x-hidden pl-[4%] pr-[4%] w-full">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -130,8 +329,8 @@ export const AnimeRankingRow = ({ onSelect }: { onSelect: (slug: string) => void
             ))}
           </div>
         ) : animes.length === 0 ? (
-          <div className="w-full text-center py-12 text-neutral-500 text-sm">
-            Không có dữ liệu hiển thị.
+          <div className="w-full text-center py-16 text-neutral-500 text-sm font-semibold">
+            Không tìm thấy bộ Anime nào phù hợp với bộ lọc bạn chọn.
           </div>
         ) : (
           <>
