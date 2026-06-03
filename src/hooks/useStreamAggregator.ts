@@ -15,6 +15,7 @@ import type { AggregatorState, StreamQuery, StreamItem } from '../api/streamAggr
 import { VI_PROVIDERS } from '../api/streamProviders/viProviders';
 import { cineproProvider } from '../api/streamProviders/cineproProvider';
 import { EMBED_PROVIDERS } from '../api/streamProviders/embedProviders';
+import { allmangaProvider } from '../api/streamProviders/allmangaProvider';
 import type { StreamProvider } from '../api/streamProviders/types';
 import { computeScore } from '../api/streamProviders/types';
 
@@ -144,6 +145,9 @@ export function useStreamAggregator({
 
     // 3. CinemaOS VIP Embed (Backup embed source)
     allProviders.push(cinemaosProvider);
+
+    // 3.5. AllManga Anime Provider (only queries for Anime)
+    allProviders.push(allmangaProvider);
 
     // 4. International Embed providers (VidSrc, VidSrc Embed, etc.)
     allProviders.push(...EMBED_PROVIDERS);

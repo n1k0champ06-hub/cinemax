@@ -20,6 +20,8 @@ export interface StreamQuery {
   season?: number | null;
   episode?: number | null;
   viSlug?: string | null;
+  /** Whether the query is for an Anime */
+  isAnime?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +137,7 @@ export function computeScore(item: Omit<StreamItem, 'score'>): number {
 
   // Base by provider
   if (item.provider === 'cinepro') score = SCORE.HLS_CINEPRO;
+  else if (item.provider === 'allmanga') score = 92; // Dedicated anime stream provider
   else if (['ophim', 'kkphim', 'nguonc'].includes(item.provider) && item.type === 'hls') score = SCORE.HLS_VIETSUB;
   else if (['vidlink', 'autoembed'].includes(item.provider)) score = SCORE.EMBED_GOOD;
   else if (['vidsrc', '2embed'].includes(item.provider)) score = SCORE.EMBED_OK;

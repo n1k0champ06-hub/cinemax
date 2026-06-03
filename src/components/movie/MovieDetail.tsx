@@ -461,16 +461,25 @@ export const MovieDetail = ({
     }
   }, [currentServers, selectedServerId]);
 
-  const streamQuery = useMemo(() => ({
-    tmdbId: finalTmdbData?.id,
-    imdbId: resolvedImdbId,
-    title: finalTmdbData?.original_title || finalTmdbData?.original_name || data?.movie?.origin_name || '',
-    titleVi: finalTmdbData?.title || finalTmdbData?.name || data?.movie?.name || '',
-    type: isTv ? 'tv' as const : 'movie' as const,
-    season: isTv ? (currentSeason || 1) : undefined,
-    episode: isTv ? (getEpisodeNumber(activeEp?.name) || 1) : undefined,
-    viSlug: slug,
-  }), [finalTmdbData, resolvedImdbId, data?.movie, isTv, currentSeason, activeEp?.name, slug]);
+  const streamQuery = useMemo(() => {
+    const isAnime = !!(
+      (finalTmdbData?.original_language === 'ja' &&
+        finalTmdbData?.genres?.some((g: any) => g.id === 16 || g.name?.toLowerCase() === 'animation' || g.name?.toLowerCase() === 'hoạt hình')) ||
+      data?.movie?.category?.some((c: any) => c.name?.toLowerCase() === 'hoạt hình' || c.name?.toLowerCase() === 'anime')
+    );
+
+    return {
+      tmdbId: finalTmdbData?.id,
+      imdbId: resolvedImdbId,
+      title: finalTmdbData?.original_title || finalTmdbData?.original_name || data?.movie?.origin_name || '',
+      titleVi: finalTmdbData?.title || finalTmdbData?.name || data?.movie?.name || '',
+      type: isTv ? 'tv' as const : 'movie' as const,
+      season: isTv ? (currentSeason || 1) : undefined,
+      episode: isTv ? (getEpisodeNumber(activeEp?.name) || 1) : undefined,
+      viSlug: slug,
+      isAnime,
+    };
+  }, [finalTmdbData, resolvedImdbId, data?.movie, isTv, currentSeason, activeEp?.name, slug]);
 
   const {
     streams,
