@@ -54,6 +54,17 @@ const YEARS = [
   { id: '2000s', label: 'Thập niên 2000' },
 ];
 
+const COUNTRIES = [
+  { id: 'all', label: 'Tất cả quốc gia' },
+  { id: 'en', label: 'Âu Mỹ' },
+  { id: 'ko', label: 'Hàn Quốc' },
+  { id: 'zh', label: 'Trung Quốc' },
+  { id: 'ja', label: 'Nhật Bản' },
+  { id: 'th', label: 'Thái Lan' },
+  { id: 'vi', label: 'Việt Nam' },
+  { id: 'hi', label: 'Ấn Độ' },
+];
+
 const RATINGS = [
   { id: 'all', label: 'Mọi điểm số' },
   { id: '8', label: 'Từ 8.0⭐ trở lên' },
@@ -73,6 +84,10 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
   const [selectedGenre, setSelectedGenre] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("genre") || "all";
+  });
+  const [selectedCountry, setSelectedCountry] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("country") || "all";
   });
   const [selectedYear, setSelectedYear] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -95,6 +110,8 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
     else params.delete("sort");
     if (selectedGenre !== "all") params.set("genre", selectedGenre);
     else params.delete("genre");
+    if (selectedCountry !== "all") params.set("country", selectedCountry);
+    else params.delete("country");
     if (selectedYear !== "all") params.set("year", selectedYear);
     else params.delete("year");
     if (selectedRating !== "all") params.set("rating", selectedRating);
@@ -105,7 +122,7 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
     if (window.location.search !== (queryString ? `?${queryString}` : "")) {
       window.history.replaceState({}, "", newUrl);
     }
-  }, [selectedMediaType, selectedSort, selectedGenre, selectedYear, selectedRating]);
+  }, [selectedMediaType, selectedSort, selectedGenre, selectedCountry, selectedYear, selectedRating]);
 
   // Handle popstate for filters
   useEffect(() => {
@@ -114,6 +131,7 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
       setSelectedMediaType(params.get("media") || "all");
       setSelectedSort(params.get("sort") || "popularity.desc");
       setSelectedGenre(params.get("genre") || "all");
+      setSelectedCountry(params.get("country") || "all");
       setSelectedYear(params.get("year") || "all");
       setSelectedRating(params.get("rating") || "all");
     };
@@ -138,6 +156,7 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
     setSelectedMediaType('all');
     setSelectedSort('popularity.desc');
     setSelectedGenre('all');
+    setSelectedCountry('all');
     setSelectedYear('all');
     setSelectedRating('all');
     setActiveDropdown(null);
@@ -147,6 +166,7 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
     selectedMediaType !== 'all' ||
     selectedSort !== 'popularity.desc' ||
     selectedGenre !== 'all' ||
+    selectedCountry !== 'all' ||
     selectedYear !== 'all' ||
     selectedRating !== 'all';
 
@@ -158,6 +178,11 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
 
     if (type === 'tv' && selectedSort.startsWith('release_date')) {
       params.sort_by = selectedSort.replace('release_date', 'first_air_date');
+    }
+
+    // Country/Original language mapping
+    if (selectedCountry !== 'all') {
+      params.with_original_language = selectedCountry;
     }
 
     // Genres mapping
@@ -208,7 +233,7 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
     hasNextPage,
     isFetchingNextPage
   } = useInfiniteQuery({
-    queryKey: ['discover_list', selectedMediaType, selectedSort, selectedGenre, selectedYear, selectedRating],
+    queryKey: ['discover_list', selectedMediaType, selectedSort, selectedGenre, selectedCountry, selectedYear, selectedRating],
     queryFn: async ({ pageParam = 1 }) => {
       let activeType: 'movie' | 'tv' = 'movie';
       if (selectedMediaType === 'tv') {
@@ -286,7 +311,7 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
         </div>
 
         {/* Filters Selectors Row - Exact match layout with 2 columns on mobile */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
           
           {/* Selector 1: Category / Phân loại */}
           <div className={cn("relative", activeDropdown === 'category' ? "z-50" : "z-10")}>
@@ -429,7 +454,54 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
             </AnimatePresence>
           </div>
 
-          {/* Selector 4: Release Years Option */}
+          {/* Selector 4: Country Selection */}
+          <div className={cn("relative", activeDropdown === 'country' ? "z-50" : "z-10")}>
+            <button 
+              type="button"
+              onClick={() => toggleDropdown('country')}
+              className={cn(
+                "flex items-center justify-between w-full px-4 py-3 bg-transparent hover:bg-white/5 border rounded-2xl text-sm font-semibold tracking-wide transition-all duration-200 cursor-pointer text-left shadow-sm",
+                selectedCountry !== 'all' ? "border-white/30 text-white shadow-white/5" : "border-white/10 text-gray-300"
+              )}
+            >
+              <span className="truncate">
+                {COUNTRIES.find(c => c.id === selectedCountry)?.label || 'Quốc gia'}
+              </span>
+              <ChevronDown className={cn("w-3.5 h-3.5 text-neutral-600 transition-transform duration-300", activeDropdown === 'country' && "rotate-180")} />
+            </button>
+            <AnimatePresence>
+              {activeDropdown === 'country' && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -4, scale: 0.96 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute top-full left-0 right-0 mt-2 bg-[#0e0e0e]/98 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 shadow-[0_20px_40px_rgba(0,0,0,0.85)] z-50 max-h-[300px] overflow-y-auto custom-scrollbar origin-top flex flex-col gap-0.5"
+                >
+                  {COUNTRIES.map((c, idx) => {
+                    const isSelected = selectedCountry === c.id;
+                    return (
+                      <React.Fragment key={c.id}>
+                        <button 
+                          onClick={() => { setSelectedCountry(c.id); setActiveDropdown(null); }}
+                          className={cn(
+                            "w-full text-left px-3.5 py-2 text-[13px] font-medium hover:bg-white/10 transition-all duration-150 flex items-center justify-between rounded-xl",
+                            isSelected ? "text-white bg-white/5 font-semibold" : "text-gray-400 hover:text-white"
+                          )}
+                        >
+                          <span>{c.label}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+                        </button>
+                        {idx === 0 && <div className="h-px bg-white/5 my-1 mx-1.5" />}
+                      </React.Fragment>
+                    );
+                  })}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Selector 5: Release Years Option */}
           <div className={cn("relative", activeDropdown === 'years' ? "z-50" : "z-10")}>
             <button 
               type="button"

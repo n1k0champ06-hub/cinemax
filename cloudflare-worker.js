@@ -487,6 +487,49 @@ export default {
       }
     }
 
+    // 5.5 Proxy IMDb API -> /api/imdb-proxy
+    if (url.pathname.startsWith("/api/imdb-proxy")) {
+      const imdbId = url.searchParams.get('imdbId');
+      if (!imdbId) {
+        return json({ error: 'Missing imdbId' }, 400);
+      }
+      if (!/^tt\d+$/.test(imdbId)) {
+        return json({ error: 'Invalid imdbId format' }, 400);
+      }
+      try {
+        const targetUrl = `https://api.imdbapi.dev/titles/${imdbId}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
+
+        const res = await fetch(targetUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+          },
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => 'Unknown error');
+          console.error(`[imdb-proxy CF] IMDb API returned ${res.status}: ${errorText.slice(0, 200)}`);
+          return json({ error: `IMDb API returned ${res.status}` }, res.status);
+        }
+
+        const data = await res.json();
+        return json(data, 200, {
+          'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=172800'
+        });
+
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          return json({ error: 'IMDb API request timed out (12s)' }, 504);
+        }
+        return json({ error: err.message }, 500);
+      }
+    }
+
 
     // 6. Proxy cho img-proxy -> /api/img-proxy
     if (url.pathname.startsWith("/api/img-proxy")) {

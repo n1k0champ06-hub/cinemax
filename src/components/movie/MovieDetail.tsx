@@ -79,7 +79,7 @@ export const MovieDetail = ({
 }) => {
   const {
     data, isLoading, isFetching,
-    actorsData, imdbRating, trailerYoutubeId, finalTmdbData,
+    actorsData, imdbRating, metacriticScore, trailerYoutubeId, finalTmdbData,
     tmdbBackdropUrl: cleanBackdrop, tmdbPosterUrl: cleanPoster,
     activeEp, setActiveEp,
     isPlaying, setIsPlaying,
@@ -1151,6 +1151,17 @@ export const MovieDetail = ({
                           <span className="text-xs text-gray-500 font-normal">({finalTmdbData.vote_count} bình chọn)</span>
                         ) : null}
                       </span>
+
+                      {metacriticScore && (
+                        <span className={cn(
+                          "px-2 py-0.5 rounded text-xs font-black select-none tracking-wider",
+                          metacriticScore >= 61 ? "bg-green-600 text-white border border-green-500/20" :
+                          metacriticScore >= 40 ? "bg-yellow-500 text-black border border-yellow-400/20" :
+                          "bg-red-600 text-white border border-red-500/20"
+                        )}>
+                          {metacriticScore} Metascore
+                        </span>
+                      )}
                       
                       {(finalTmdbData?.status || movie.status) && (
                         <span className="bg-white/5 border border-white/15 px-3 py-1 rounded-xl text-xs font-bold text-gray-200 select-none ml-auto whitespace-nowrap">
@@ -1266,6 +1277,17 @@ export const MovieDetail = ({
                       <Star size={13} className="text-yellow-500 fill-yellow-500/10 shrink-0" />
                       {imdbRating && imdbRating !== "?" ? imdbRating : "8.0"}
                     </span>
+
+                    {metacriticScore && (
+                      <span className={cn(
+                        "px-1.5 py-0.5 rounded text-[10px] font-black select-none tracking-wider",
+                        metacriticScore >= 61 ? "bg-green-600 text-white border border-green-500/20" :
+                        metacriticScore >= 40 ? "bg-yellow-500 text-black border border-yellow-400/20" :
+                        "bg-red-600 text-white border border-red-500/20"
+                      )}>
+                        {metacriticScore} MC
+                      </span>
+                    )}
                     
                     {/* Year */}
                     <span className="flex items-center gap-1">

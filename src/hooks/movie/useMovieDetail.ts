@@ -114,6 +114,32 @@ export const useMovieDetail = (rawSlug: string) => {
 
   const finalTmdbData = tmdbDetails || tmdbDetailsFallback;
 
+  // Fetch external IDs to resolve IMDb ID
+  const { data: externalIdsData } = useQuery({
+    queryKey: ['tmdb', 'external_ids', mediaType, resolvedTmdbId],
+    queryFn: async () => {
+      if (!resolvedTmdbId) return null;
+      const { tmdbGetExternalIds } = await import('../../api/tmdbApi');
+      return tmdbGetExternalIds(mediaType, resolvedTmdbId);
+    },
+    enabled: !!resolvedTmdbId,
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+  const resolvedImdbId = externalIdsData?.imdb_id || null;
+
+  // Fetch IMDb detailed metadata from proxy
+  const { data: imdbApiData } = useQuery({
+    queryKey: ['imdbapi', resolvedImdbId],
+    queryFn: async () => {
+      if (!resolvedImdbId) return null;
+      const res = await fetch(`/api/imdb-proxy?imdbId=${resolvedImdbId}`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!resolvedImdbId,
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+
   const tmdbBackdropUrl = useMemo(() => {
     if (!finalTmdbData) return null;
     const path = finalTmdbData.backdrop_path || finalTmdbData.images?.backdrops?.[0]?.file_path;
@@ -187,7 +213,11 @@ export const useMovieDetail = (rawSlug: string) => {
   }, [finalTmdbData, detailData?.movie]);
 
   const tmdbRating = finalTmdbData?.vote_average ? finalTmdbData.vote_average.toFixed(1) : null;
-  const imdbRating = tmdbRating || (data?.movie?.tmdb?.vote_average ? parseFloat(data.movie.tmdb.vote_average).toFixed(1) : "?");
+  const imdbRating = imdbApiData?.rating?.aggregateRating
+    ? imdbApiData.rating.aggregateRating.toFixed(1)
+    : (tmdbRating || (data?.movie?.tmdb?.vote_average ? parseFloat(data.movie.tmdb.vote_average).toFixed(1) : "?"));
+
+  const metacriticScore = imdbApiData?.metacritic?.score || null;
 
   const tmdbTrailer = finalTmdbData?.videos?.results?.find((v: any) => v.site === "YouTube" && v.type === "Trailer");
   const trailerYoutubeId = tmdbTrailer?.key;
@@ -401,7 +431,7 @@ export const useMovieDetail = (rawSlug: string) => {
 
   return {
     data, isLoading, isFetching,
-    actorsData, imdbRating, trailerYoutubeId, finalTmdbData,
+    actorsData, imdbRating, metacriticScore, trailerYoutubeId, finalTmdbData,
     tmdbBackdropUrl, tmdbPosterUrl,
     tab, setTab,
     selectedServerId, setSelectedServerId,
