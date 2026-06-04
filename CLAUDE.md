@@ -1,51 +1,61 @@
 # CLAUDE.md - Developer Guide & Project Blueprint
 
-This file outlines the codebase architecture, development workflows, core application flows, and rules for future AI agents working on the Cinemax project.
+This file outlines the codebase architecture, development workflows, core application flows, and guidelines for future AI agents working on Cinemax.
 
 ---
 
 ## 🛠️ Architecture & Deployment Setup
 
-Cinemax is built as a split stack architecture:
-- **Frontend App**: Hosted on **Vercel** (project `netflix-clone`, custom production domain: `focusflow.id.vn`). Deploys automatically on git push to the `main` branch, or manually using the Vercel CLI.
-- **Backend Edge Proxies**: Hosted on **Cloudflare Workers** (`cinemax-backend-proxy` at `cloudflare-worker.js` and `cinepro-core`). Handles serverless backend scripts, AniList lookups, subtitles, and request proxying to bypass CORS.
-- **Local Emulation**: For local development, an Express server emulates Vercel Edge Serverless functions on port `3001` (`scripts/dev-api.cjs`), loading proxy endpoints dynamically from `api/*.js`.
+Cinemax operates on a split serverless architecture:
+- **Frontend App**: Built in React 19 (TypeScript) + Vite + Tailwind CSS. Deployed directly to **Vercel** (`focusflow.id.vn`, project `netflix-clone`) via the Vercel CLI. *Note: Git-based auto-deployment is not utilized.*
+- **Backend edge Proxies**: Deployed to **Cloudflare Workers** (`cinemax-backend-proxy` at `cloudflare-worker.js` and `cinepro-core`). It acts as a gateway proxy for subtitles, AniList, and streaming APIs to resolve CORS restrictions.
+- **Python Movie Scraper Bot**: Located in the `scraper/` folder. Crawls external stream providers (OPhim/KKPhim), extracts stream links, checks differences, and pushes updates to the Cloudflare KV database namespace `MOVIE_CACHE`. Runs automatically via GitHub Actions `.github/workflows/scraper.yml`.
+- **Local Emulation**: For local development, Express emulates the Edge Serverless runtime on port `3001` (`scripts/dev-api.cjs`), loading proxy scripts dynamically from `api/*.js`.
 
 ---
 
 ## 🚀 Key Commands
 
 - **Start Frontend Dev Server**: `npm run dev` (Runs Vite on port `3000`)
-- **Start Backend Dev Server**: `npm run api` (Runs the Node dev-api proxy server on port `3001`)
+- **Start Backend Dev Server**: `npm run api` (Runs the Express API emulator on port `3001`)
 - **Lint / Type Check**: `npm run lint` (`tsc --noEmit`)
-- **Deploy Frontend (Vercel)**: `vercel --prod` (or push commits to the `main` branch)
+- **Deploy Frontend (Vercel)**: `npx vercel --prod`
 - **Deploy Backend (Cloudflare Worker)**: `npx wrangler deploy`
+- **Run Python Scraper CLI**:
+  - `python -m scraper.main --tier all --pages 3`
+  - `python -m scraper.main --tier a --dry-run`
 
 ---
 
-## 📍 Key Directory & Component Map
+## 📍 Key Directory & File Map
 
 ### 1. Frontend Core (`src/`)
-- [App.tsx](file:///c:/Users/cykab/Downloads/cinemax/src/App.tsx): App router, initializes selected movie states and syncs query params (`tab`, `movie`, `play`, `ep`, `season`).
-- [src/components/movie/](file:///c:/Users/cykab/Downloads/cinemax/src/components/movie/): Contains rows, grids, details drawer, and card renders.
-  - [MovieDetail.tsx](file:///c:/Users/cykab/Downloads/cinemax/src/components/movie/MovieDetail.tsx): Details layout. Renders metadata, seasons, episode lists, and integrates the player.
-  - [MovieCard.tsx](file:///c:/Users/cykab/Downloads/cinemax/src/components/movie/MovieCard.tsx): Landscape or poster cards. Always calls TMDB details in the background if `tmdbId` is resolved to display high-quality posters.
-  - [RankingCard.tsx](file:///c:/Users/cykab/Downloads/cinemax/src/components/movie/RankingCard.tsx): Standard carousel/ranking card with giant position numbers.
-- [src/components/player/NetflixPlayer.tsx](file:///c:/Users/cykab/Downloads/cinemax/src/components/player/NetflixPlayer.tsx): Premium HTML5 custom video player supporting HLS, embed iframes, keyboard controls, subtitle tracks, and audio boost.
+- [App.tsx](file:///c:/Users/cykab/Downloads/cinemax/src/App.tsx): Main router, manages search visibility and active selections.
+- [src/components/movie/](file:///c:/Users/cykab/Downloads/cinemax/src/components/movie/): Renders rows, grids, details drawer, and card layouts.
+  - [MovieDetail.tsx](file:///c:/Users/cykab/Downloads/cinemax/src/components/movie/MovieDetail.tsx): Details view. Renders metadata, seasons, episode lists, and integrates the player.
+  - [MovieCard.tsx](file:///c:/Users/cykab/Downloads/cinemax/src/components/movie/MovieCard.tsx): Landscape/poster card. Always queries TMDB details in the background when a valid `tmdbId` is resolved to render high-quality posters.
+  - [RankingCard.tsx](file:///c:/Users/cykab/Downloads/cinemax/src/components/movie/RankingCard.tsx): Horizontal card containing giant carousel ranking numbers.
+- [src/components/player/NetflixPlayer.tsx](file:///c:/Users/cykab/Downloads/cinemax/src/components/player/NetflixPlayer.tsx): Premium custom HTML5 player supporting HLS, iframe embeds, audio boost, subtitles, and keyboard bindings.
 
-### 2. Hooks & Utilities
-- [src/hooks/movie/useMovieDetail.ts](file:///c:/Users/cykab/Downloads/cinemax/src/hooks/movie/useMovieDetail.ts): Resolves movie data structures, details fallback, actors list, and validates active states.
-- [src/hooks/movie/usePrefetchMovie.ts](file:///c:/Users/cykab/Downloads/cinemax/src/hooks/movie/usePrefetchMovie.ts): Pre-caches queries on hover/touch without triggering state or selection callbacks.
-- [src/hooks/useStorage.ts](file:///c:/Users/cykab/Downloads/cinemax/src/hooks/useStorage.ts): Standard wrapper for `localStorage` collections (`cinemax_mylist` and `cinemax_progress`).
+### 2. Edge Backends & Proxies
+- [cloudflare-worker.js](file:///c:/Users/cykab/Downloads/cinemax/cloudflare-worker.js): Production entrypoint. Maps `/api/*` endpoint routes.
+- [wrangler.json](file:///c:/Users/cykab/Downloads/cinemax/wrangler.json): Cloudflare Worker config. Defines the `MOVIE_CACHE` KV namespace binding (`26fa9d0570f0473181207439732645d4`) and environment variables (`CINEPRO_URL`, `TMDB_ACCESS_TOKEN`, etc.).
+- [api/](file:///c:/Users/cykab/Downloads/cinemax/api): Directory of backend serverless endpoints.
+- [scripts/dev-api.cjs](file:///c:/Users/cykab/Downloads/cinemax/scripts/dev-api.cjs): Emulates serverless routing locally on port `3001`.
+
+### 3. Movie Scraper Python Module (`scraper/`)
+- [scraper/main.py](file:///c:/Users/cykab/Downloads/cinemax/scraper/main.py): Main entry point orchestrator.
+- [scraper/sources.yaml](file:///c:/Users/cykab/Downloads/cinemax/scraper/sources.yaml): Configuration file defining external provider endpoints and crawl selectors.
+- [scraper/kv_client.py](file:///c:/Users/cykab/Downloads/cinemax/scraper/kv_client.py): Direct API client to read/write from Cloudflare KV database.
 
 ---
 
-## 🔄 Core Flows & AI Rules
+## 🔄 Core Flows & AI Constraints
 
-### 1. Direct TMDB Selection Flow (No Intermediate Redirection Modals)
-- **Selection**: Cards call `onSelect` with the native TMDB slug structure: `tmdb-${id}-tv` or `tmdb-${id}-movie`.
-- **App State**: [App.tsx](file:///c:/Users/cykab/Downloads/cinemax/src/App.tsx) immediately sets the selection state to the TMDB slug and passes it to `<MovieDetail key={selectedMovieSlug} slug={selectedMovieSlug} ... />`. Remounting via the `key` is required to clean transition state leaks.
-- **Details Resolving**: `useMovieDetail` disabled KKPhim/OPhim base fetches for TMDB slugs and queries the TMDB API. If the series is a TV show, [MovieDetail.tsx](file:///c:/Users/cykab/Downloads/cinemax/src/components/movie/MovieDetail.tsx) runs the `season-servers` query in parallel, performing search lookups dynamically on KKPhim/OPhim using the show name and season index, matching episodes asynchronously.
+### 1. Direct TMDB Selection (No Redirection Modals)
+- Cards call `onSelect` with TMDB slugs (`tmdb-${id}-tv` or `tmdb-${id}-movie`).
+- [App.tsx](file:///c:/Users/cykab/Downloads/cinemax/src/App.tsx) updates selection state directly and remounts `<MovieDetail key={selectedMovieSlug} slug={selectedMovieSlug} ... />` to ensure a clean state slate.
+- `useMovieDetail` fetches details from the TMDB API. If the series is a TV show, the `season-servers` query in [MovieDetail.tsx](file:///c:/Users/cykab/Downloads/cinemax/src/components/movie/MovieDetail.tsx) resolves the episode list by dynamically querying search terms on KKPhim/OPhim in the background.
 
 ### 2. Search Results Consolidation
 - To prevent separate season listings (such as Season 1, 2, and 3 of "From") from cluttering search grids, search results in [phimApi.ts](file:///c:/Users/cykab/Downloads/cinemax/src/api/phimApi.ts) are grouped by `tmdb_id`.
@@ -59,5 +69,5 @@ Cinemax is built as a split stack architecture:
 - If in iframe mode, progress is saved immediately on player load (with `currentTime: 0, duration: 100`) so the title appears in the home page's **"Tiếp tục xem"** row.
 
 ### 5. ESM Guidelines & Types
-- The project runs as type `"module"` in Node. Always use ES modules (`import`/`export`) rather than CommonJS (`require`).
-- Keep files typed and verify all TS/lint rules pass with `npm run lint` before deployments.
+- Node scripts utilize ES modules (`import`/`export`) instead of CommonJS (`require`).
+- Ensure all TS types compile cleanly with `npm run lint` before production deployments.
