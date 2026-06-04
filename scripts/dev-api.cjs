@@ -152,122 +152,52 @@ global.Response = class Response {
 // Route handler — loads api/*.js files dynamically
 // ---------------------------------------------------------------------------
 async function routeRequest(pathname, searchParams, method, incomingHeaders) {
-  const handler = pathname.replace(/^\/api\//, '').replace(/\.js$/, '');
-  const reqUrl = `http://localhost:${PORT}${pathname}?${searchParams.toString()}`;
-
-  // Build minimal request object mirroring Vercel's Request
-  const req = {
-    url: reqUrl,
-    method,
-    headers: {
-      get: (h) => incomingHeaders[h.toLowerCase()] || null,
-    },
-  };
-
-  const handlerPath = path.join(__dirname, '..', 'api', `${handler}.js`);
-  if (!fs.existsSync(handlerPath)) {
-    return {
-      status: 404,
-      body: Buffer.from(JSON.stringify({ error: `Handler not found: ${handler}` })),
-      contentType: 'application/json',
-      isBinary: false,
-    };
-  }
-
+  const targetUrl = `https://cinemax-backend-proxy.cykablyatt1505.workers.dev${pathname}?${searchParams.toString()}`;
+  
   try {
-    // Dynamically import the handler file using the ESM loader (using file:// URL format)
-    const fileUrl = urlModule.pathToFileURL(handlerPath).href;
-    const mod = await import(fileUrl);
-    const handlerFn = mod.default;
+    const headers = { ...incomingHeaders };
+    // Override host header to match the Cloudflare Worker domain
+    headers['host'] = 'cinemax-backend-proxy.cykablyatt1505.workers.dev';
+    
+    // Remove headers that might cause decompression or agent issues
+    delete headers['connection'];
+    delete headers['accept-encoding'];
 
-    if (typeof handlerFn !== 'function') {
-      throw new Error('Handler export is not a function');
-    }
-
-    // Detect if this is a standard Node.js serverless function handler(req, res)
-    const isNodeServerless = mod.config?.runtime !== 'edge' && handlerFn.length >= 2;
-
-    if (isNodeServerless) {
-      // Mock Vercel Node.js req and res objects
-      const mockReq = {
-        method,
-        url: reqUrl,
-        headers: incomingHeaders,
-        query: Object.fromEntries(searchParams.entries()),
-      };
-
-      let resStatus = 200;
-      let resHeaders = { 'Content-Type': 'application/json' };
-      let resBody = Buffer.alloc(0);
-
-      const mockRes = {
-        status(code) {
-          resStatus = code;
-          return this;
-        },
-        setHeader(name, value) {
-          resHeaders[name] = value;
-          return this;
-        },
-        json(data) {
-          resHeaders['Content-Type'] = 'application/json';
-          resBody = Buffer.from(JSON.stringify(data));
-          return this;
-        },
-        send(data) {
-          if (typeof data === 'object' && !Buffer.isBuffer(data)) {
-            resBody = Buffer.from(JSON.stringify(data));
-            resHeaders['Content-Type'] = 'application/json';
-          } else {
-            resBody = Buffer.isBuffer(data) ? data : Buffer.from(String(data));
-          }
-          return this;
-        },
-        end(data) {
-          if (data) {
-            resBody = Buffer.isBuffer(data) ? data : Buffer.from(String(data));
-          }
-          return this;
-        }
-      };
-
-      await handlerFn(mockReq, mockRes);
-
-      const isBinary = Buffer.isBuffer(resBody);
-      const contentType = resHeaders['Content-Type'] || resHeaders['content-type'] || 'application/json';
-
-      return {
-        status: resStatus,
-        body: resBody,
-        contentType,
-        isBinary,
-        resHeaders,
-      };
-    }
-
-    // Edge Function (Request/Response) execution path
-    const response = await handlerFn(req);
-    const resHeaders = response.headers || {};
-    const contentType = resHeaders['Content-Type'] || 'application/json';
-    const status = response.status || 200;
-
-    // Determine if body is binary
-    const rawBody = response._body !== undefined ? response._body : response.body;
-    const isBinary = rawBody instanceof ArrayBuffer || Buffer.isBuffer(rawBody) || rawBody instanceof Uint8Array;
-
+    const res = await fetch(targetUrl, {
+      method,
+      headers,
+    });
+    
+    const contentType = res.headers.get('Content-Type') || 'application/json';
+    const status = res.status;
+    
+    // Determine if the content is binary (m3u8-proxy, image, segment etc.)
+    const isBinary = contentType.includes('video/') || contentType.includes('image/') || pathname.includes('m3u8-proxy') || pathname.includes('img');
+    
     let body;
     if (isBinary) {
-      body = Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(rawBody);
-    } else if (rawBody === null || rawBody === undefined) {
-      body = Buffer.alloc(0);
+      const arrayBuffer = await res.arrayBuffer();
+      body = Buffer.from(arrayBuffer);
     } else {
-      body = Buffer.from(String(rawBody), 'utf-8');
+      const text = await res.text();
+      body = Buffer.from(text, 'utf-8');
     }
-
-    return { status, body, contentType, isBinary, resHeaders };
-
+    
+    // Capture headers
+    const resHeaders = {};
+    for (const [key, val] of res.headers.entries()) {
+      resHeaders[key] = val;
+    }
+    
+    return {
+      status,
+      body,
+      contentType,
+      isBinary,
+      resHeaders,
+    };
   } catch (err) {
-    console.error(`[dev-api] Error in /${handler}:`, err.stack || err.message);
+    console.error(`[dev-api proxy] Error routing ${pathname} to Cloudflare:`, err.message);
     return {
       status: 500,
       body: Buffer.from(JSON.stringify({ error: err.message })),
@@ -296,9 +226,9 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (!pathname.startsWith('/api/')) {
+  if (!pathname.startsWith('/api/') && !pathname.startsWith('/tmdb/') && !pathname.startsWith('/img/')) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not an API path' }));
+    res.end(JSON.stringify({ error: 'Not an allowed path' }));
     return;
   }
 

@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://cinemax-backend-proxy.cykablyatt1505.workers.dev/api/:path*"
+    },
+    {
+      "source": "/tmdb/:path*",
+      "destination": "https://cinemax-backend-proxy.cykablyatt1505.workers.dev/tmdb/:path*"
+    },
+    {
+      "source": "/img/:path*",
+      "destination": "https://cinemax-backend-proxy.cykablyatt1505.workers.dev/img/:path*"
+    }
+  ]
+}

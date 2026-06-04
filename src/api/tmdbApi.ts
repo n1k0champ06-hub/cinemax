@@ -1,8 +1,8 @@
 /// <reference types="vite/client" />
 
 // Có thể dùng Vercel Proxy (hoặc Cloudflare) để giấu API
-const USE_PROXY = false;
-const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+const USE_PROXY = true;
+const TMDB_BASE_URL = typeof window !== 'undefined' ? '/tmdb' : 'https://cinemax-backend-proxy.cykablyatt1505.workers.dev/tmdb';
 
 // Nếu dùng PROXY thì client sẽ KHÔNG truyền token nữa (để ẩn token)
 // Hãy cấu hình biến môi trường VITE_TMDB_ACCESS_TOKEN (hoặc TMDB_ACCESS_TOKEN) trên Vercel Dashboard
@@ -40,38 +40,39 @@ const isV3ApiKey = (token: string) => {
 };
 
 export const fetchTmdb = async (endpoint: string, params: Record<string, string | number | boolean> = {}) => {
-  const token = getTmdbToken();
   const defaultParams: Record<string, string> = { language: 'vi' };
   
-  let finalApiKey = 'e80d8d102241ee9e4f72e4bb1209ab6a'; // Standard fallback
-  
-  if (token) {
-    if (isV3ApiKey(token)) {
-      finalApiKey = token;
-    } else {
-      // Decode JWT token "aud" claim (it contains the v3 api_key) to bypass CORS preflight checks in the browser!
-      try {
-        const parts = token.split('.');
-        if (parts.length === 3) {
-          let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-          while (base64.length % 4) {
-            base64 += '=';
+  // If proxy is enabled, we let the backend attach authorization headers to hide the token
+  if (!USE_PROXY) {
+    const token = getTmdbToken();
+    let finalApiKey = 'e80d8d102241ee9e4f72e4bb1209ab6a'; // Standard fallback
+    if (token) {
+      if (isV3ApiKey(token)) {
+        finalApiKey = token;
+      } else {
+        // Decode JWT token "aud" claim (it contains the v3 api_key) to bypass CORS preflight checks in the browser!
+        try {
+          const parts = token.split('.');
+          if (parts.length === 3) {
+            let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+            while (base64.length % 4) {
+              base64 += '=';
+            }
+            const decodedPayload = typeof window !== 'undefined' 
+              ? window.atob(base64) 
+              : Buffer.from(base64, 'base64').toString('utf-8');
+            const payload = JSON.parse(decodedPayload);
+            if (payload.aud && payload.aud.length === 32) {
+              finalApiKey = payload.aud;
+            }
           }
-          const decodedPayload = typeof window !== 'undefined' 
-            ? window.atob(base64) 
-            : Buffer.from(base64, 'base64').toString('utf-8');
-          const payload = JSON.parse(decodedPayload);
-          if (payload.aud && payload.aud.length === 32) {
-            finalApiKey = payload.aud;
-          }
+        } catch (e) {
+          console.warn('Failed to parse TMDB JWT aud claim. Will fallback to default API key.', e);
         }
-      } catch (e) {
-        console.warn('Failed to parse TMDB JWT aud claim. Will fallback to default API key.', e);
       }
     }
+    defaultParams['api_key'] = finalApiKey;
   }
-
-  defaultParams['api_key'] = finalApiKey;
   
   const queryParamsObj: Record<string, string> = {
     ...defaultParams,
