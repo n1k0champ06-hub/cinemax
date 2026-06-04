@@ -75,7 +75,7 @@ export const CustomMovieRowContainer = ({
               {movies.map((movie, idx) => (
                 <div key={`${movie.slug}-${idx}`} className="shrink-0 pt-4 pb-12">
                   {isTop10 ? (
-                    <RankingCard movie={movie} onSelect={onSelect} idx={idx} />
+                    <RankingCard movie={movie} onSelect={onSelect} idx={idx} rowTitle={`Bảng xếp hạng: ${title}`} />
                   ) : (
                     <MovieCard
                       movie={movie}
@@ -83,6 +83,7 @@ export const CustomMovieRowContainer = ({
                       isTop10={!!isTop10}
                       idx={idx}
                       progressData={progressStore?.[movie.slug as string]}
+                      rowTitle={title}
                     />
                   )}
                 </div>
@@ -163,7 +164,7 @@ export const MovieRow = ({
   const movieParams: any = {
     sort_by: type === 'phim-moi-cap-nhat' ? 'primary_release_date.desc' : 'popularity.desc',
     'vote_count.gte': type === 'phim-moi-cap-nhat' ? 0 : minVotesMovie,
-    'primary_release_date.gte': '2024-01-01', // Fetch only movies from 2024 onwards to ensure fresh and modern results
+    'primary_release_date.gte': isAnime ? '1990-01-01' : '2024-01-01', // Fetch only movies from 2024 onwards to ensure fresh and modern results (lifted for Anime)
     page: 1,
   };
   const movieGenre = GENRE_MAP_MOVIE[type];
@@ -192,7 +193,7 @@ export const MovieRow = ({
   const tvParams: any = {
     sort_by: type === 'phim-moi-cap-nhat' ? 'first_air_date.desc' : 'popularity.desc',
     'vote_count.gte': type === 'phim-moi-cap-nhat' ? 0 : minVotesTv,
-    'first_air_date.gte': '2024-01-01', // Fetch only series from 2024 onwards to ensure fresh and modern results
+    'first_air_date.gte': isAnime ? '1990-01-01' : '2024-01-01', // Fetch only series from 2024 onwards to ensure fresh and modern results (lifted for Anime)
     page: 1,
   };
   const tvGenre = GENRE_MAP_TV[type];
@@ -236,8 +237,14 @@ export const MovieRow = ({
   // Sort dynamically by popularity descending across both types
   const sortedResults = combinedResults.sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0));
 
+  const seenTmdbIds = new Set();
   const moviesToDisplay = sortedResults
     .filter((m: any) => m.poster_path || m.backdrop_path)
+    .filter((item: any) => {
+      if (!item.id || seenTmdbIds.has(item.id)) return false;
+      seenTmdbIds.add(item.id);
+      return true;
+    })
     .map((item: any) => {
       const actualMediaType = item._mediaType;
       return {

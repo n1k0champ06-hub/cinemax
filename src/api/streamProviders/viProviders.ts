@@ -53,23 +53,37 @@ function getBestSlugMatch(
   items: any[],
   queryTitle: string,
   queryTitleVi: string,
-  queryYear?: number
+  queryYear?: number,
+  querySlug?: string | null
 ): string | null {
   if (!items || items.length === 0) return null;
 
   const qTitle = cleanSearchQuery(queryTitle).toLowerCase();
   const qTitleVi = cleanSearchQuery(queryTitleVi).toLowerCase();
+  const qSlug = querySlug ? querySlug.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
 
   const scored = items.map((item: any) => {
     const title = cleanSearchQuery(item.name || '').toLowerCase();
     const origin = cleanSearchQuery(item.origin_name || item.original_name || '').toLowerCase();
     const year = parseInt(item.year) || 0;
+    const itemSlug = item.slug ? item.slug.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
 
     let score = 0;
+    
+    // Title match
     if (title === qTitleVi || origin === qTitle || title === qTitle) {
       score += 80;
     } else if (title.includes(qTitleVi) || origin.includes(qTitle) || title.includes(qTitle)) {
       score += 50;
+    }
+
+    // Slug substring match
+    if (qSlug && itemSlug) {
+      if (itemSlug === qSlug) {
+        score += 90;
+      } else if (qSlug.includes(itemSlug) || itemSlug.includes(qSlug)) {
+        score += 70;
+      }
     }
 
     if (queryYear && year) {
@@ -97,20 +111,57 @@ async function fetchFromVietnameseApi(
     const isTv = query.type === 'tv';
     const targetEpisode = isTv ? (query.episode || 1) : 1;
     let slug = query.viSlug;
+    let detailData: any = null;
+    let detailFetched = false;
 
-    // 1. If viSlug starts with tmdb- or is null, search by title to find the slug
-    if (!slug || slug.startsWith('tmdb-')) {
-      const year = query.season && query.season > 1 ? undefined : undefined; // we match title first
-      
-      // Build search keywords
-      const searchKeywords: string[] = [];
-      const baseTitle = query.titleVi || query.title;
-      
-      if (isTv && query.season && query.season > 1) {
-        searchKeywords.push(`${baseTitle} Phần ${query.season}`);
-        searchKeywords.push(`${baseTitle} Season ${query.season}`);
+    // 1. Try direct slug fetch first if it exists and is not tmdb-
+    if (slug && !slug.startsWith('tmdb-')) {
+      let detailUrl = '';
+      if (providerId === 'ophim') {
+        detailUrl = `https://ophim1.com/phim/${slug}`;
       } else {
-        searchKeywords.push(baseTitle);
+        detailUrl = `https://phimapi.com/phim/${slug}`;
+      }
+      try {
+        const res = await fetchWithTimeout(detailUrl, 6000);
+        if (res.ok) {
+          detailData = await res.json();
+          if (detailData && (detailData.status === true || detailData.status === 'success' || detailData.movie || detailData.film || detailData.data)) {
+            detailFetched = true;
+          }
+        }
+      } catch (e) {
+        console.warn(`[${providerLabel}] Direct slug fetch failed for ${slug}, will search fallback:`, e);
+      }
+    }
+
+    // 2. If direct slug fetch failed or was skipped, search by title or slug to resolve slug
+    if (!detailFetched) {
+      const searchKeywords: string[] = [];
+
+      // Extract high-probability search keywords from the viSlug if available
+      if (slug && !slug.startsWith('tmdb-')) {
+        const slugCleaned = slug.replace(/-/g, ' ').trim();
+        const slugWords = slugCleaned.split(' ').filter(w => w.length > 1);
+        if (slugWords.length > 0) {
+          if (slugWords.length > 4) {
+            searchKeywords.push(slugWords.slice(0, 4).join(' '));
+          }
+          if (slugWords.length > 3) {
+            searchKeywords.push(slugWords.slice(0, 3).join(' '));
+          }
+          searchKeywords.push(slugCleaned);
+        }
+      }
+
+      const baseTitle = query.titleVi || query.title;
+      if (baseTitle) {
+        if (isTv && query.season && query.season > 1) {
+          searchKeywords.push(`${baseTitle} Phần ${query.season}`);
+          searchKeywords.push(`${baseTitle} Season ${query.season}`);
+        } else {
+          searchKeywords.push(baseTitle);
+        }
       }
 
       let matchedSlug: string | null = null;
@@ -121,38 +172,47 @@ async function fetchFromVietnameseApi(
         if (providerId === 'ophim') {
           searchUrl = `https://ophim1.com/v1/api/tim-kiem?keyword=${encodedKw}&limit=10`;
         } else {
-          // kkphim
           searchUrl = `https://phimapi.com/v1/api/tim-kiem?keyword=${encodedKw}&limit=10`;
         }
 
         try {
           const res = await fetchWithTimeout(searchUrl, 5000);
-          const data = await res.json();
-          let items: any[] = [];
-          
-          items = data?.data?.items || data?.items || [];
-
-          matchedSlug = getBestSlugMatch(items, query.title, query.titleVi || '');
-          if (matchedSlug) break;
+          if (res.ok) {
+            const data = await res.json();
+            const items = data?.data?.items || data?.items || [];
+            matchedSlug = getBestSlugMatch(items, query.title, query.titleVi || '', undefined, query.viSlug);
+            if (matchedSlug) {
+              console.log(`[${providerLabel}] Found fallback slug "${matchedSlug}" via keyword search "${kw}"`);
+              break;
+            }
+          }
         } catch (e) {
           console.warn(`[${providerLabel}] Search failed for keyword: ${kw}`, e);
         }
       }
 
-      if (!matchedSlug) return [];
-      slug = matchedSlug;
+      if (matchedSlug) {
+        slug = matchedSlug;
+        let detailUrl = '';
+        if (providerId === 'ophim') {
+          detailUrl = `https://ophim1.com/phim/${slug}`;
+        } else {
+          detailUrl = `https://phimapi.com/phim/${slug}`;
+        }
+        
+        try {
+          const res = await fetchWithTimeout(detailUrl, 6000);
+          if (res.ok) {
+            detailData = await res.json();
+            detailFetched = true;
+          }
+        } catch (e) {
+          console.error(`[${providerLabel}] Failed to fetch details for resolved fallback slug ${slug}:`, e);
+        }
+      }
     }
 
-    // 2. Fetch movie details
-    let detailUrl = '';
-    if (providerId === 'ophim') {
-      detailUrl = `https://ophim1.com/phim/${slug}`;
-    } else {
-      detailUrl = `https://phimapi.com/phim/${slug}`;
-    }
-
-    const res = await fetchWithTimeout(detailUrl, 6000);
-    const detailData = await res.json();
+    if (!detailFetched || !detailData) return [];
 
     // 3. Extract episodes list
     let serversList: any[] = [];
@@ -174,7 +234,16 @@ async function fetchFromVietnameseApi(
         else return; // skip if episode not found on this server
       }
 
-      const labelPrefix = `${providerLabel} · ${server.server_name || 'Server'}`;
+      const serverName = server.server_name || 'Server';
+      let subType = 'Vietsub';
+      const normServerName = serverName.toLowerCase();
+      if (normServerName.includes('thuyết minh') || normServerName.includes('thuyet minh')) {
+        subType = 'Thuyết minh';
+      } else if (normServerName.includes('lồng tiếng') || normServerName.includes('long tieng')) {
+        subType = 'Lồng tiếng';
+      }
+
+      const labelPrefix = `${providerLabel} · ${serverName}`;
 
       // Add HLS stream if available
       if (activeEp.link_m3u8 && String(activeEp.link_m3u8).startsWith('http')) {
@@ -186,14 +255,14 @@ async function fetchFromVietnameseApi(
         const url = buildProxiedM3u8Url(rawUrl, referer);
 
         const item: Omit<StreamItem, 'score'> = {
-          id: `${providerId}:hls:${server.server_name || 'vip'}:${rawUrl}`,
+          id: `${providerId}:hls:${serverName}:${rawUrl}`,
           provider: providerId,
-          providerLabel: `${providerLabel.toUpperCase()} - Vietsub`,
+          providerLabel: `${providerLabel.toUpperCase()} - ${subType}`,
           type: 'hls',
           url,
           quality: rawUrl.toLowerCase().includes('1080') ? '1080p' : 'auto',
           lang: 'vi',
-          label: `${labelPrefix} · Vietsub · HLS`,
+          label: `${labelPrefix} · HLS`,
           episodeName: activeEp.name || String(targetEpisode),
           category: 'vi',
         };

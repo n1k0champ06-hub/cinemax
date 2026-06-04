@@ -89,8 +89,42 @@ export const MovieCollection = ({
             return (
               <div
                 key={idx}
-                onClick={() => {
-                  onSelectMovie(`tmdb-${movie.id}-movie`);
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const targetSlug = `tmdb-${movie.id}-movie`;
+                  const clickDetails = {
+                    component: "MovieCollectionPart",
+                    title: movie.title,
+                    slug: targetSlug,
+                    type: "movie",
+                    tmdbId: movie.id,
+                    positionIndex: idx,
+                    collectionName: collectionData.name || "unknown",
+                    clickCoordinates: {
+                      clientX: e.clientX,
+                      clientY: e.clientY,
+                      relativeX: Math.round(e.clientX - rect.left),
+                      relativeY: Math.round(e.clientY - rect.top),
+                      elementWidth: Math.round(rect.width),
+                      elementHeight: Math.round(rect.height)
+                    },
+                    scrollState: {
+                      windowScrollX: window.scrollX,
+                      windowScrollY: window.scrollY
+                    },
+                    viewport: {
+                      width: window.innerWidth,
+                      height: window.innerHeight
+                    },
+                    timestamp: new Date().toISOString()
+                  };
+                  console.log(
+                    `%c[USER ACTION: CLICK]%c Collection Part Card: "${movie.title}" inside collection "${collectionData.name || 'unknown'}"`,
+                    'background: #800080; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+                    'color: #ffffff; font-weight: bold;',
+                    clickDetails
+                  );
+                  onSelectMovie(targetSlug);
                 }}
                 className="flex-none w-[170px] lg:w-[190px] snap-start relative group cursor-pointer rounded-2xl overflow-hidden shadow-lg border border-white/5 hover:border-white/20 transition-all duration-300 bg-[#111]"
               >

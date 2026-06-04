@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from "motion/react";
 import { ChevronLeft, Search, X } from "lucide-react";
 import { MovieCard } from "../movie/MovieCard";
 import { GridShimmer } from "../ui/ImageShimmer";
-import { useTmdbSearchAdvanced } from "../../hooks/useTmdb";
+import { useQuery } from "@tanstack/react-query";
+import { fetchSearch } from "../../api/phimApi";
 
 export const SearchPage = ({
   onClose,
@@ -18,6 +19,14 @@ export const SearchPage = ({
     return params.get("q") || "";
   });
   const [debouncedKeyword, setDebouncedKeyword] = useState(keyword);
+  const [history, setHistory] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("search_history");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedKeyword(keyword), 400);
@@ -49,25 +58,44 @@ export const SearchPage = ({
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
-  const { data: advancedData, isLoading } = useTmdbSearchAdvanced(debouncedKeyword);
+  const { data: searchResults, isLoading } = useQuery({
+    queryKey: ["local_search", debouncedKeyword],
+    queryFn: () => fetchSearch(debouncedKeyword),
+    enabled: !!debouncedKeyword.trim(),
+    staleTime: 5 * 60 * 1000,
+  });
 
-  // Remap TMDB data to generic standard
-  const activeData = advancedData?.results && advancedData.results.length > 0
-    ? advancedData.results
-        .filter((item: any) => item.media_type !== 'person' && (item.poster_path || item.backdrop_path))
-        .map((item: any) => {
-          const type = item.media_type || 'movie';
-          return {
-            id: `tmdb-${item.id}-${type}`,
-            slug: `tmdb-${item.id}-${type}`,
-            name: item.title || item.name,
-            origin_name: item.original_title || item.original_name,
-            poster_url: item.poster_path ? (item.poster_path?.startsWith('http') ? item.poster_path : `https://image.tmdb.org/t/p/w342/${item.poster_path?.split('/').pop()}`) : null,
-            tmdb: { vote_average: item.vote_average },
-            year: (item.release_date || item.first_air_date || '').substring(0, 4),
-          };
-        })
-    : [];
+  const activeData = searchResults || [];
+
+  // Save successful searches to history
+  useEffect(() => {
+    const term = debouncedKeyword.trim();
+    if (term && searchResults && searchResults.length > 0) {
+      setHistory((prev) => {
+        const filtered = prev.filter((item) => item.toLowerCase() !== term.toLowerCase());
+        const next = [term, ...filtered].slice(0, 10);
+        localStorage.setItem("search_history", JSON.stringify(next));
+        return next;
+      });
+    }
+  }, [debouncedKeyword, searchResults]);
+
+  // Log search keyword changes and results count
+  useEffect(() => {
+    const term = debouncedKeyword.trim();
+    if (!term) return;
+
+    console.log(
+      `%c[USER ACTION: SEARCH]%c Keyword: "${term}"`,
+      'background: #E50914; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+      'color: #ffffff; font-weight: bold;',
+      {
+        keyword: term,
+        resultsCount: activeData?.length || 0,
+        timestamp: new Date().toISOString()
+      }
+    );
+  }, [debouncedKeyword, activeData]);
 
   return (
     <motion.div
@@ -98,7 +126,18 @@ export const SearchPage = ({
         {/* Top Controls Bar */}
         <div className="flex justify-between items-center mb-6">
           <button
-            onClick={onClose}
+            onClick={() => {
+              console.log(
+                `%c[USER ACTION: CLICK]%c Back to Home from Search Page`,
+                'background: #6B7280; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+                'color: #ffffff; font-weight: bold;',
+                {
+                  keyword,
+                  timestamp: new Date().toISOString()
+                }
+              );
+              onClose();
+            }}
             className="flex items-center gap-1.5 text-[10px] text-gray-400 hover:text-white bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] px-3.5 py-1.5 rounded-full transition-all uppercase tracking-wider font-extrabold cursor-pointer"
           >
             <ChevronLeft size={12} /> Quay lại trang chủ
@@ -136,7 +175,18 @@ export const SearchPage = ({
           />
           {keyword && (
             <button
-              onClick={() => setKeyword("")}
+              onClick={() => {
+                console.log(
+                  `%c[USER ACTION: CLICK]%c Clear Search Input`,
+                  'background: #EF4444; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+                  'color: #ffffff; font-weight: bold;',
+                  {
+                    previousKeyword: keyword,
+                    timestamp: new Date().toISOString()
+                  }
+                );
+                setKeyword("");
+              }}
               className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white p-1.5 rounded-full hover:bg-white/5 transition-colors cursor-pointer"
             >
               <X size={12} />
@@ -144,19 +194,92 @@ export const SearchPage = ({
           )}
         </div>
 
+        {/* Search History Section */}
+        {keyword === "" && history.length > 0 && (
+          <div className="mt-4 mb-8">
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-gray-400 text-[10px] uppercase font-extrabold tracking-widest">
+                Tìm kiếm gần đây
+              </span>
+              <button
+                onClick={() => {
+                  console.log(
+                    `%c[USER ACTION: CLICK]%c Clear All Search History`,
+                    'background: #EF4444; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+                    'color: #ffffff; font-weight: bold;',
+                    {
+                      historyCount: history.length,
+                      timestamp: new Date().toISOString()
+                    }
+                  );
+                  setHistory([]);
+                  localStorage.removeItem("search_history");
+                }}
+                className="text-[10px] text-gray-500 hover:text-white transition-colors cursor-pointer"
+              >
+                Xóa tất cả
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {history.map((term, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center gap-1.5 bg-[#111] hover:bg-[#181818] border border-white/[0.05] hover:border-white/[0.1] px-3.5 py-1.5 rounded-full transition-all text-xs font-semibold cursor-pointer group text-gray-300 hover:text-white"
+                  onClick={() => {
+                    console.log(
+                      `%c[USER ACTION: CLICK]%c Search History Item: "${term}"`,
+                      'background: #10B981; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+                      'color: #ffffff; font-weight: bold;',
+                      {
+                        term,
+                        index: idx,
+                        timestamp: new Date().toISOString()
+                      }
+                    );
+                    setKeyword(term);
+                  }}
+                >
+                  <span>{term}</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      console.log(
+                        `%c[USER ACTION: CLICK]%c Delete Search History Item: "${term}"`,
+                        'background: #EF4444; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+                        'color: #ffffff; font-weight: bold;',
+                        {
+                          term,
+                          index: idx,
+                          timestamp: new Date().toISOString()
+                        }
+                      );
+                      const next = history.filter((h) => h !== term);
+                      setHistory(next);
+                      localStorage.setItem("search_history", JSON.stringify(next));
+                    }}
+                    className="text-gray-500 hover:text-red-500 p-0.5 rounded-full cursor-pointer transition-colors"
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {isLoading && (
           <div className="mt-8">
             <GridShimmer />
           </div>
         )}
 
-        {!isLoading && activeData && activeData.length === 0 && debouncedKeyword && (
+        {!isLoading && activeData.length === 0 && debouncedKeyword.trim() && (
           <div className="text-center mt-32 text-gray-500 text-xs font-semibold">
-            Không tìm thấy phim nào trùng khớp. Vui lòng kiểm tra lại từ khóa.
+            Không tìm thấy phim nào trùng khớp trên máy chủ.
           </div>
         )}
 
-        {!isLoading && activeData && activeData.length > 0 && (
+        {!isLoading && activeData.length > 0 && (
           <div className="mt-6">
             <h2 className="text-gray-400 text-[10px] uppercase font-extrabold mb-5 tracking-widest">Kết quả tìm kiếm</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
@@ -167,10 +290,8 @@ export const SearchPage = ({
                   idx={idx}
                   isTop10={false}
                   className="w-full"
-                  onSelect={(slug) => {
-                    onSelect(slug);
-                    onClose();
-                  }}
+                  onSelect={onSelect}
+                  rowTitle="Kết quả Tìm Kiếm"
                 />
               ))}
             </div>

@@ -1,0 +1,86 @@
+name: 🕷️ Movie Scraper Bot
+
+on:
+  schedule:
+    # Run every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: 'Source tier to scrape (a/b/c/all)'
+        required: false
+        default: 'all'
+      pages:
+        description: 'Number of pages to scrape per source'
+        required: false
+        default: '3'
+      dry_run:
+        description: 'Dry run (fetch but do not write to KV)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+          key: scraper-pip-${{ hashFiles('scraper/requirements.txt') }}
+          restore-keys: |
+            scraper-pip-
+
+      - name: 📦 Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+          key: scraper-playwright-${{ runner.os }}-v1
+          restore-keys: |
+            scraper-playwright-
+
+      - name: 🔧 Install dependencies
+        run: |
+          pip install -r scraper/requirements.txt
+          # Install Chromium only if not cached
+          if [ ! -d ~/.cache/ms-playwright ]; then
+            python -m playwright install chromium --with-deps
+          else
+            # Ensure system deps are installed even if browser is cached
+            sudo npx playwright install-deps chromium 2>/dev/null || true
+          fi
+
+      - name: 🕷️ Run Scraper (Tier A — API sources)
+        run: |
+          python -m scraper.main \
+            --tier ${{ github.event.inputs.tier || 'all' }} \
+            --pages ${{ github.event.inputs.pages || '3' }} \
+            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }} \
+            --verbose
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
+
+      - name: 📊 Upload scraper logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraper-logs-${{ github.run_number }}
+          path: scraper/logs/
+          retention-days: 7
+          if-no-files-found: ignore

@@ -4,7 +4,7 @@ import { Play } from 'lucide-react';
 import { SafeImage } from '../ui/ImageShimmer';
 import { usePrefetchMovie } from '../../hooks/movie/usePrefetchMovie';
 
-export const SearchResultCard = ({ movie, onSelect, idx }: { key?: React.Key, movie: any, onSelect: (slug: string) => void, idx: number }) => {
+export const SearchResultCard = ({ movie, onSelect, idx }: { key?: React.Key, movie: any, onSelect: (slug: string, autoPlay?: boolean) => void, idx: number }) => {
   const prefetch = usePrefetchMovie();
   const rawPoster = movie.poster_url;
   const safePoster = typeof rawPoster === 'string' && !rawPoster.startsWith('http') ? `https://phimimg.com/${rawPoster}` : rawPoster;
@@ -20,7 +20,40 @@ export const SearchResultCard = ({ movie, onSelect, idx }: { key?: React.Key, mo
       whileHover={{ scale: 1.05, y: -4, zIndex: 10 }}
       onMouseEnter={() => prefetch(movie)}
       onTouchStart={() => prefetch(movie)}
-      onClick={() => {
+      onClick={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const clickDetails = {
+          component: "SearchResultCard",
+          title: displayName,
+          slug: movie.slug || movie.id,
+          type: movie.type || 'unknown',
+          tmdbId: movie.tmdb_id || movie.tmdb?.id || 'none',
+          positionIndex: idx,
+          rowTitle: 'Search Results Grid',
+          clickCoordinates: {
+            clientX: e.clientX,
+            clientY: e.clientY,
+            relativeX: Math.round(e.clientX - rect.left),
+            relativeY: Math.round(e.clientY - rect.top),
+            elementWidth: Math.round(rect.width),
+            elementHeight: Math.round(rect.height)
+          },
+          scrollState: {
+            windowScrollX: window.scrollX,
+            windowScrollY: window.scrollY
+          },
+          viewport: {
+            width: window.innerWidth,
+            height: window.innerHeight
+          },
+          timestamp: new Date().toISOString()
+        };
+        console.log(
+          `%c[USER ACTION: CLICK]%c Search Result Card: "${displayName}" at grid position ${idx}`,
+          'background: #0080FF; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+          'color: #ffffff; font-weight: bold;',
+          clickDetails
+        );
         if (typeof movie.slug === 'string') {
           onSelect(movie.slug);
         }
@@ -42,7 +75,48 @@ export const SearchResultCard = ({ movie, onSelect, idx }: { key?: React.Key, mo
             </div>
 
             <div className="flex items-center gap-2 mt-1 sm:mt-2">
-              <button className="w-full bg-white text-black py-1.5 sm:py-2 rounded-md font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 hover:bg-gray-200 transition-colors shadow-lg">
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation(); // prevent outer card onClick
+                  if (typeof movie.slug === 'string') {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const clickDetails = {
+                      component: "SearchResultCardPlayButton",
+                      title: displayName,
+                      slug: movie.slug || movie.id,
+                      type: movie.type || 'unknown',
+                      tmdbId: movie.tmdb_id || movie.tmdb?.id || 'none',
+                      positionIndex: idx,
+                      rowTitle: 'Search Results Grid',
+                      clickCoordinates: {
+                        clientX: e.clientX,
+                        clientY: e.clientY,
+                        relativeX: Math.round(e.clientX - rect.left),
+                        relativeY: Math.round(e.clientY - rect.top),
+                        elementWidth: Math.round(rect.width),
+                        elementHeight: Math.round(rect.height)
+                      },
+                      scrollState: {
+                        windowScrollX: window.scrollX,
+                        windowScrollY: window.scrollY
+                      },
+                      viewport: {
+                        width: window.innerWidth,
+                        height: window.innerHeight
+                      },
+                      timestamp: new Date().toISOString()
+                    };
+                    console.log(
+                      `%c[USER ACTION: CLICK]%c Search Result Play Now Button: "${displayName}"`,
+                      'background: #E50914; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+                      'color: #ffffff; font-weight: bold;',
+                      clickDetails
+                    );
+                    onSelect(movie.slug, true);
+                  }
+                }}
+                className="w-full bg-white text-black py-1.5 sm:py-2 rounded-md font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 hover:bg-gray-200 transition-colors shadow-lg"
+              >
                 <Play className="w-3 h-3 sm:w-4 sm:h-4" fill="currentColor" /> Phát
               </button>
             </div>

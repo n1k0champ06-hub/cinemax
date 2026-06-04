@@ -27,8 +27,7 @@ export const useMovieDetail = (rawSlug: string) => {
   const { data: detailData, isLoading: detailLoading, isFetching } = useQuery({
     queryKey: ["detail", slug],
     queryFn: () => fetchDetail(slug),
-    enabled: !isTmdbSlug, // Don't fetch from phimApi if it's explicitly a tmdb slug we know we don't have
-    placeholderData: keepPreviousData
+    enabled: !isTmdbSlug && !slug.startsWith('mal-'), // Don't fetch from phimApi if it's explicitly a tmdb/mal slug we know we don't have
   });
 
   const originName = detailData?.movie?.origin_name || detailData?.movie?.name;
@@ -112,7 +111,32 @@ export const useMovieDetail = (rawSlug: string) => {
   const resolvedTmdbId = tmdbId || bestSearchMatchId;
   const { data: tmdbDetailsFallback } = useTmdbDetails(resolvedTmdbId && !tmdbId ? resolvedTmdbId : 0, mediaType);
 
-  const finalTmdbData = tmdbDetails || tmdbDetailsFallback;
+  const rawTmdbData = tmdbDetails || tmdbDetailsFallback;
+
+  const finalTmdbData = useMemo(() => {
+    if (!rawTmdbData) return null;
+    const translations = rawTmdbData.translations?.translations || [];
+    const vi = translations.find((t: any) => t.iso_639_1 === 'vi')?.data;
+    const en = translations.find((t: any) => t.iso_639_1 === 'en')?.data;
+
+    // Check if Vietnamese translation is present and not empty
+    const hasVi = vi && (vi.title || vi.name);
+
+    const title = hasVi
+      ? (vi.title || vi.name)
+      : (en?.title || en?.name || rawTmdbData.title || rawTmdbData.name);
+
+    const overview = hasVi
+      ? vi.overview
+      : (en?.overview || rawTmdbData.overview);
+
+    return {
+      ...rawTmdbData,
+      title: title || rawTmdbData.title,
+      name: title || rawTmdbData.name,
+      overview: overview || rawTmdbData.overview
+    };
+  }, [rawTmdbData]);
 
   // Fetch external IDs to resolve IMDb ID
   const { data: externalIdsData } = useQuery({
@@ -142,39 +166,73 @@ export const useMovieDetail = (rawSlug: string) => {
 
   const tmdbBackdropUrl = useMemo(() => {
     if (!finalTmdbData) return null;
-    const path = finalTmdbData.backdrop_path || finalTmdbData.images?.backdrops?.[0]?.file_path;
+    // Prioritize English or textless backdrops from tmdb images list
+    const path = finalTmdbData.images?.backdrops?.[0]?.file_path || finalTmdbData.backdrop_path;
     if (!path) return null;
     return path.startsWith('http') ? path : `https://image.tmdb.org/t/p/original/${path.split('/').pop()}`;
   }, [finalTmdbData]);
 
   const tmdbPosterUrl = useMemo(() => {
     if (!finalTmdbData) return null;
-    const path = finalTmdbData.poster_path || finalTmdbData.images?.posters?.[0]?.file_path;
+    // Prioritize English or textless posters from tmdb images list
+    const path = finalTmdbData.images?.posters?.[0]?.file_path || finalTmdbData.poster_path;
     if (!path) return null;
     return path.startsWith('http') ? path : `https://image.tmdb.org/t/p/w780/${path.split('/').pop()}`;
   }, [finalTmdbData]);
 
-  // Synthesize common data structure if we only have TMDB data
-  const data = detailData || (finalTmdbData ? {
-    movie: {
-      name: finalTmdbData.title || finalTmdbData.name,
-      origin_name: finalTmdbData.original_title || finalTmdbData.original_name,
-      content: finalTmdbData.overview,
-      poster_url: tmdbPosterUrl || '',
-      thumb_url: tmdbBackdropUrl || '',
-      year: (finalTmdbData.release_date || finalTmdbData.first_air_date || '').substring(0, 4),
-      time: finalTmdbData.runtime ? `${finalTmdbData.runtime} phút` : '',
-      quality: "HD",
-      episode_current: "Full",
-      category: finalTmdbData.genres || [],
-    },
-    episodes: []
-  } : null);
+  // Synthesize common data structure and merge TMDB metadata for consistent fallback across OPhim/KKPhim APIs
+  const data = useMemo(() => {
+    if (!detailData && !finalTmdbData) return null;
 
-  const isLoading = detailLoading || (isTmdbSlug && tmdbLoading);
+    const base = detailData ? { ...detailData } : {
+      movie: {
+        name: finalTmdbData.title || finalTmdbData.name,
+        origin_name: finalTmdbData.original_title || finalTmdbData.original_name,
+        content: finalTmdbData.overview,
+        poster_url: tmdbPosterUrl || '',
+        thumb_url: tmdbBackdropUrl || '',
+        year: (finalTmdbData.release_date || finalTmdbData.first_air_date || '').substring(0, 4),
+        time: finalTmdbData.runtime ? `${finalTmdbData.runtime} phút` : '',
+        quality: "HD",
+        episode_current: "Full",
+        category: finalTmdbData.genres || [],
+      },
+      episodes: []
+    };
+
+    if (base.movie && finalTmdbData) {
+      base.movie = {
+        ...base.movie,
+        name: finalTmdbData.title || finalTmdbData.name || base.movie.name,
+        content: finalTmdbData.overview || base.movie.content,
+      };
+    }
+
+    return base;
+  }, [detailData, finalTmdbData, tmdbPosterUrl, tmdbBackdropUrl]);
+
+  const isDataValid = useMemo(() => {
+    if (isTmdbSlug) {
+      if (!finalTmdbData) return false;
+      const expectedId = String(slugTmdbId);
+      const actualId = String(finalTmdbData.id);
+      return actualId === expectedId;
+    } else {
+      if (!detailData?.movie) return false;
+      return detailData.movie.slug === slug;
+    }
+  }, [detailData, finalTmdbData, slug, isTmdbSlug, slugTmdbId]);
+
+  const validatedData = useMemo(() => {
+    if (!isDataValid) return null;
+    return data;
+  }, [isDataValid, data]);
+
+  const isLoading = detailLoading || (!!tmdbId && tmdbLoading);
 
   // Cast using TMDB with fallback to movie.actor
   const actorsData = useMemo(() => {
+    if (!isDataValid) return [];
     if (finalTmdbData?.credits?.cast?.length > 0) {
       return finalTmdbData.credits.cast.slice(0, 15).map((c: any) => ({
         id: `tmdb-${c.id}`,
@@ -184,8 +242,8 @@ export const useMovieDetail = (rawSlug: string) => {
       }));
     }
 
-    if (detailData?.movie) {
-      const rawActor = detailData.movie.actor;
+    if (validatedData?.movie) {
+      const rawActor = validatedData.movie.actor;
       let parsedActors: string[] = [];
       if (Array.isArray(rawActor)) {
         if (rawActor.length === 1 && typeof rawActor[0] === 'string' && rawActor[0].includes(',')) {
@@ -210,12 +268,12 @@ export const useMovieDetail = (rawSlug: string) => {
     }
 
     return [];
-  }, [finalTmdbData, detailData?.movie]);
+  }, [finalTmdbData, validatedData, isDataValid]);
 
   const tmdbRating = finalTmdbData?.vote_average ? finalTmdbData.vote_average.toFixed(1) : null;
   const imdbRating = imdbApiData?.rating?.aggregateRating
     ? imdbApiData.rating.aggregateRating.toFixed(1)
-    : (tmdbRating || (data?.movie?.tmdb?.vote_average ? parseFloat(data.movie.tmdb.vote_average).toFixed(1) : "?"));
+    : (tmdbRating || (validatedData?.movie?.tmdb?.vote_average ? parseFloat(validatedData.movie.tmdb.vote_average).toFixed(1) : "?"));
 
   const metacriticScore = imdbApiData?.metacritic?.score || null;
 
@@ -242,15 +300,15 @@ export const useMovieDetail = (rawSlug: string) => {
   const inList = isInList(slug);
 
   const handleToggleList = useCallback(() => {
-    if (data?.movie) {
+    if (validatedData?.movie) {
       if (inList) {
         removeFromList(slug);
       } else {
-        const finalPoster = tmdbPosterUrl || data.movie.poster_url || "";
-        const finalThumb = tmdbBackdropUrl || data.movie.thumb_url || "";
+        const finalPoster = tmdbPosterUrl || validatedData.movie.poster_url || "";
+        const finalThumb = tmdbBackdropUrl || validatedData.movie.thumb_url || "";
         addToList({ 
           slug, 
-          name: data.movie.name, 
+          name: validatedData.movie.name, 
           poster_url: finalPoster, 
           thumb_url: finalThumb,
           tmdb_id: resolvedTmdbId || undefined,
@@ -259,11 +317,11 @@ export const useMovieDetail = (rawSlug: string) => {
       }
       queryClient.invalidateQueries({ queryKey: ["movies", "my-list"] });
     }
-  }, [data?.movie, inList, slug, addToList, removeFromList, queryClient, tmdbPosterUrl, tmdbBackdropUrl, resolvedTmdbId, mediaType]);
+  }, [validatedData?.movie, inList, slug, addToList, removeFromList, queryClient, tmdbPosterUrl, tmdbBackdropUrl, resolvedTmdbId, mediaType]);
 
   const servers = useMemo(() => {
-    if (!data?.movie) return [];
-    let rawServers = Array.isArray(data.episodes) ? data.episodes : [];
+    if (!validatedData?.movie) return [];
+    let rawServers = Array.isArray(validatedData.episodes) ? validatedData.episodes : [];
     
     const mainNames = ['OPhim', 'KKPhim'];
     let processedServers = mainNames.map(name => {
@@ -341,16 +399,36 @@ export const useMovieDetail = (rawSlug: string) => {
     }
 
     return processedServers;
-  }, [data, finalTmdbData?.id, mediaType]);
+  }, [validatedData, finalTmdbData?.id, mediaType]);
+
+  const isEpValid = useMemo(() => {
+    if (!activeEp) return false;
+    return servers.some(srv => 
+      srv.server_data?.some((e: any) => e.name === activeEp.name || e.link_embed === activeEp.link_embed || e.link_m3u8 === activeEp.link_m3u8)
+    );
+  }, [activeEp, servers]);
+
+  const validatedActiveEp = isEpValid ? activeEp : null;
+
+  useEffect(() => {
+    if (activeEp && !isEpValid) {
+      setActiveEp(null);
+    }
+  }, [activeEp, isEpValid]);
+
+  const isServerIdValid = selectedServerId >= 0 && selectedServerId < servers.length && servers[selectedServerId]?.status !== 'empty';
+  const validatedSelectedServerId = isServerIdValid ? selectedServerId : 0;
+
+  useEffect(() => {
+    if (servers.length > 0 && !isServerIdValid) {
+      const firstValidIdx = servers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error');
+      setSelectedServerId(firstValidIdx !== -1 ? firstValidIdx : 0);
+    }
+  }, [servers, isServerIdValid]);
 
   const prevSlugRef = useRef<string | null>(null);
   useEffect(() => {
-    const expectedTmdbId = isTmdbSlug ? slugParts[1] : null;
-    const isDataMatching = isTmdbSlug 
-      ? (finalTmdbData && String(finalTmdbData.id) === String(expectedTmdbId))
-      : (detailData?.movie && detailData.movie.slug === slug);
-
-    if (!isDataMatching) return;
+    if (!isDataValid) return;
 
     if (servers && servers.length > 0) {
       const isNewSlug = slug !== prevSlugRef.current;
@@ -372,18 +450,13 @@ export const useMovieDetail = (rawSlug: string) => {
         }
       }
     }
-  }, [servers, slug, selectedServerId, finalTmdbData, detailData, isTmdbSlug, slugParts]);
+  }, [servers, slug, selectedServerId, isDataValid]);
 
   useEffect(() => {
-    const expectedTmdbId = isTmdbSlug ? slugParts[1] : null;
-    const isDataMatching = isTmdbSlug 
-      ? (finalTmdbData && String(finalTmdbData.id) === String(expectedTmdbId))
-      : (detailData?.movie && detailData.movie.slug === slug);
+    if (!isDataValid) return;
 
-    if (!isDataMatching) return;
-
-    const hasEpisodes = (data?.episodes?.length > 0) || (servers && servers.some((s: any) => s.server_data?.length > 0));
-    if (hasEpisodes && !activeEp) {
+    const hasEpisodes = (validatedData?.episodes?.length > 0) || (servers && servers.some((s: any) => s.server_data?.length > 0));
+    if (hasEpisodes && !validatedActiveEp) {
       // First try to restore from URL parameter 'ep'
       const params = new URLSearchParams(window.location.search);
       const urlEp = params.get("ep");
@@ -423,19 +496,19 @@ export const useMovieDetail = (rawSlug: string) => {
           }
         }
       } catch (e) {}
-      if (servers[selectedServerId]?.server_data?.[0]) {
-        setActiveEp(servers[selectedServerId].server_data[0]);
+      if (servers[validatedSelectedServerId]?.server_data?.[0]) {
+        setActiveEp(servers[validatedSelectedServerId].server_data[0]);
       }
     }
-  }, [data, slug, servers, selectedServerId, activeEp, finalTmdbData, detailData, isTmdbSlug, slugParts]);
+  }, [validatedData, slug, servers, validatedSelectedServerId, validatedActiveEp, isDataValid]);
 
   return {
-    data, isLoading, isFetching,
+    data: validatedData, isLoading, isFetching,
     actorsData, imdbRating, metacriticScore, trailerYoutubeId, finalTmdbData, imdbApiData,
     tmdbBackdropUrl, tmdbPosterUrl,
     tab, setTab,
-    selectedServerId, setSelectedServerId,
-    activeEp, setActiveEp,
+    selectedServerId: validatedSelectedServerId, setSelectedServerId,
+    activeEp: validatedActiveEp, setActiveEp,
     isPlaying, setIsPlaying,
     inList, handleToggleList,
     servers

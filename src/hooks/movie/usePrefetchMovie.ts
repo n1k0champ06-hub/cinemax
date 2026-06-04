@@ -73,7 +73,7 @@ export const usePrefetchMovie = () => {
           }
         }
       }
-    } else if (rawSlug && typeof rawSlug === 'string' && !rawSlug.startsWith('tmdb-')) {
+    } else if (rawSlug && typeof rawSlug === 'string' && !rawSlug.startsWith('tmdb-') && !rawSlug.startsWith('mal-')) {
       // If it is already a direct slug, just prefetch the phim api detail!
       queryClient.prefetchQuery({
         queryKey: ["detail", rawSlug],

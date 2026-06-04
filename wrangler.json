@@ -5,6 +5,12 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  "kv_namespaces": [
+    {
+      "binding": "MOVIE_CACHE",
+      "id": "26fa9d0570f0473181207439732645d4"
+    }
+  ],
   "vars": {
     "CINEPRO_URL": "https://cinepro-core.cykablyatt1505.workers.dev",
     "SUBDL_API_KEY": "subdl_GjDcZHi97s0f9hCa56ZuOurG0LRWwKKlWJoAs1Wrl4c",

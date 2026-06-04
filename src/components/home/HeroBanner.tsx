@@ -52,16 +52,38 @@ export const HeroBanner = ({ onSelect }: { onSelect: (slug: string) => void }) =
 
   const isDetailsForActiveMovie = tmdbDetails && tmdbMeta && String(tmdbDetails.id) === String(tmdbMeta.id);
 
-  // Prefer standard textless backdrops for the main background so that we can overlay the transparent logo cleanly
-  const englishBackdropFile = isDetailsForActiveMovie ? tmdbDetails?.images?.backdrops?.find((b: any) => b.iso_639_1 === 'en')?.file_path : null;
-  const englishBackdropUrl = englishBackdropFile ? `https://image.tmdb.org/t/p/original/${englishBackdropFile}` : null;
+  const localizedHero = React.useMemo(() => {
+    if (!tmdbDetails || !isDetailsForActiveMovie) return null;
+    const translations = tmdbDetails.translations?.translations || [];
+    const vi = translations.find((t: any) => t.iso_639_1 === 'vi')?.data;
+    const en = translations.find((t: any) => t.iso_639_1 === 'en')?.data;
 
-  const bgImage = (tmdbMeta?.backdrop_path ? (tmdbMeta.backdrop_path?.startsWith('http') ? tmdbMeta.backdrop_path : `https://image.tmdb.org/t/p/original/${tmdbMeta.backdrop_path?.split('/').pop()}`) : null) || englishBackdropUrl || heroMovie.thumb_url || heroMovie.poster_url;
+    const hasVi = vi && (vi.title || vi.name);
+    const title = hasVi
+      ? (vi.title || vi.name)
+      : (en?.title || en?.name || tmdbDetails.title || tmdbDetails.name);
+
+    const overview = hasVi
+      ? vi.overview
+      : (en?.overview || tmdbDetails.overview);
+
+    return { title, overview, hasVi: !!hasVi };
+  }, [tmdbDetails, isDetailsForActiveMovie]);
+
+  const displayName = localizedHero?.title || heroMovie.name;
+
+  // Prioritize English or textless backdrops from images list over the default backdrop_path
+  const bestBackdropFile = isDetailsForActiveMovie ? (tmdbDetails?.images?.backdrops?.[0]?.file_path || tmdbDetails?.backdrop_path) : null;
+  const bestBackdropUrl = bestBackdropFile 
+    ? (bestBackdropFile.startsWith('http') ? bestBackdropFile : `https://image.tmdb.org/t/p/original/${bestBackdropFile.split('/').pop()}`) 
+    : null;
+
+  const bgImage = bestBackdropUrl || (tmdbMeta?.backdrop_path ? (tmdbMeta.backdrop_path?.startsWith('http') ? tmdbMeta.backdrop_path : `https://image.tmdb.org/t/p/original/${tmdbMeta.backdrop_path?.split('/').pop()}`) : null) || heroMovie.thumb_url || heroMovie.poster_url;
   // Official transparent logo overlay
   const logoFile = isDetailsForActiveMovie ? tmdbDetails?.images?.logos?.find((l: any) => l.iso_639_1 === 'en' || l.iso_639_1 === 'vi' || !l.iso_639_1)?.file_path : null;
   const logoUrl = logoFile ? `https://image.tmdb.org/t/p/w500/${logoFile}` : null;
 
-  const description = (isDetailsForActiveMovie && tmdbDetails?.overview) || tmdbMeta?.overview || (typeof heroMovie.origin_name === 'string' && heroMovie.origin_name !== heroMovie.name ? heroMovie.origin_name : 'Trải nghiệm những bộ phim mới nhất và hấp dẫn nhất. Xem ngay hôm nay!');
+  const description = localizedHero?.overview || (isDetailsForActiveMovie && tmdbDetails?.overview) || tmdbMeta?.overview || (typeof heroMovie.origin_name === 'string' && heroMovie.origin_name !== heroMovie.name ? heroMovie.origin_name : 'Trải nghiệm những bộ phim mới nhất và hấp dẫn nhất. Xem ngay hôm nay!');
 
   const dateString = heroMovie?.year || '';
 
@@ -87,7 +109,7 @@ export const HeroBanner = ({ onSelect }: { onSelect: (slug: string) => void }) =
             else if (offset.x > 50) handlePrev();
           }}
         >
-          <SafeImage priority={true} src={bgImage || ''} alt={heroMovie.name} className="w-full h-full object-cover opacity-100 lg:opacity-90 pointer-events-none fade-in" />
+          <SafeImage priority={true} src={bgImage || ''} alt={displayName} className="w-full h-full object-cover opacity-100 lg:opacity-90 pointer-events-none fade-in" />
         </motion.div>
       </AnimatePresence>
 
@@ -127,11 +149,11 @@ export const HeroBanner = ({ onSelect }: { onSelect: (slug: string) => void }) =
               {/* Official Logo or Fallback Plain Text Title */}
               {logoUrl ? (
                 <div className="max-w-[75%] sm:max-w-[65%] md:max-w-[420px] aspect-[16/7] relative flex items-center justify-center md:justify-start mx-auto md:mx-0 pointer-events-none drop-shadow-[0_4px_12px_rgba(0,0,0,0.85)] filter brightness-110">
-                  <SafeImage src={logoUrl} alt={heroMovie.name} className="max-h-full max-w-full object-contain object-center md:object-left scale-95 origin-center md:origin-left" />
+                  <SafeImage src={logoUrl} alt={displayName} className="max-h-full max-w-full object-contain object-center md:object-left scale-95 origin-center md:origin-left" />
                 </div>
               ) : (
                 <h1 className="text-3xl sm:text-5xl lg:text-3xl xl:text-5xl font-sans font-black text-white leading-tight drop-shadow-2xl tracking-tighter uppercase line-clamp-2 text-center md:text-left mx-auto md:mx-0">
-                  {heroMovie.name}
+                  {displayName}
                 </h1>
               )}
 

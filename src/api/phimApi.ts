@@ -49,10 +49,26 @@ export const fetchMultiSource = async (type: string, page: number = 1) => {
   });
 
   const unique = new Map();
+  const seenKeys = new Set<string>();
+
   merged.forEach(item => {
-    if (typeof item?.slug === 'string' && !unique.has(item.slug)) {
-      unique.set(item.slug, item);
-    }
+    const slug = typeof item?.slug === 'string' ? item.slug : '';
+    if (!slug) return;
+
+    const normOrigin = typeof item.origin_name === 'string' ? item.origin_name.toLowerCase().replace(/[^a-z0-9]/g, '').trim() : '';
+    const normName = typeof item.name === 'string' ? item.name.toLowerCase().replace(/[^a-z0-9]/g, '').trim() : '';
+    const year = item.year || '';
+
+    const originKey = normOrigin && normOrigin.length > 2 ? `origin_${normOrigin}_${year}` : '';
+    const nameKey = normName && normName.length > 2 ? `name_${normName}_${year}` : '';
+
+    if (unique.has(slug)) return;
+    if (originKey && seenKeys.has(originKey)) return;
+    if (nameKey && seenKeys.has(nameKey)) return;
+
+    unique.set(slug, item);
+    if (originKey) seenKeys.add(originKey);
+    if (nameKey) seenKeys.add(nameKey);
   });
 
   return Array.from(unique.values());
@@ -90,11 +106,46 @@ export const fetchSearch = async (keyword: string) => {
     }
   });
 
-  const unique = new Map();
+  const unique = new Map<string, any>();
+  const seenKeys = new Set<string>();
+
   merged.forEach(item => {
-    const key = typeof item?.slug === 'string' ? item.slug : null;
-    if (key && !unique.has(key)) {
-      unique.set(key, item);
+    const rawTmdbId = item.tmdb_id || item.tmdb?.id;
+    const tmdbId = (rawTmdbId && rawTmdbId !== 0 && rawTmdbId !== '0' && rawTmdbId !== 'undefined' && rawTmdbId !== 'null') ? String(rawTmdbId).trim() : '';
+
+    if (tmdbId) {
+      const isTv = item.type === 'series' || item.type === 'hoathinh' || item.type === 'tvshows' || item.tmdb?.type === 'tv' || item.tmdb?.media_type === 'tv';
+      const key = `tmdb_${tmdbId}`;
+      item.slug = `tmdb-${tmdbId}-${isTv ? 'tv' : 'movie'}`;
+
+      const existing = unique.get(key);
+      if (!existing) {
+        unique.set(key, item);
+      } else {
+        const existingYear = parseInt(existing.year) || 0;
+        const currentYear = parseInt(item.year) || 0;
+        if (currentYear > existingYear) {
+          unique.set(key, item);
+        }
+      }
+    } else {
+      const slug = typeof item?.slug === 'string' ? item.slug : '';
+      if (!slug) return;
+
+      const normOrigin = typeof item.origin_name === 'string' ? item.origin_name.toLowerCase().replace(/[^a-z0-9]/g, '').trim() : '';
+      const normName = typeof item.name === 'string' ? item.name.toLowerCase().replace(/[^a-z0-9]/g, '').trim() : '';
+      const year = item.year || '';
+
+      const originKey = normOrigin && normOrigin.length > 2 ? `origin_${normOrigin}_${year}` : '';
+      const nameKey = normName && normName.length > 2 ? `name_${normName}_${year}` : '';
+
+      if (unique.has(slug)) return;
+      if (originKey && seenKeys.has(originKey)) return;
+      if (nameKey && seenKeys.has(nameKey)) return;
+
+      unique.set(slug, item);
+      if (originKey) seenKeys.add(originKey);
+      if (nameKey) seenKeys.add(nameKey);
     }
   });
 

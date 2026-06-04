@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { motion } from 'motion/react';
+import { motion, useIsPresent } from 'motion/react';
 import { useQuery } from '@tanstack/react-query';
 import { X, Search } from 'lucide-react';
 import { useTmdbDetails } from '../../hooks/useTmdb';
@@ -11,19 +11,22 @@ export const ExternalResolverModal = ({
   onClose,
   onSelect,
 }: {
+  key?: React.Key;
   id: string; // e.g. "tmdb-123-movie" or "tmdb-123-tv" for TMDB
   onClose: () => void;
-  onSelect: (slug: string) => void;
+  onSelect: (slug: string, sourceId?: string) => void;
 }) => {
+  const isPresent = useIsPresent();
   const isTmdb = id.startsWith('tmdb-');
   
   // Check the resolved cache immediately to transition instantly if already computed
   useEffect(() => {
+    if (!isPresent) return;
     const cached = getResolvedSlug(id);
     if (cached) {
-      onSelect(cached);
+      onSelect(cached, id);
     }
-  }, [id, onSelect]);
+  }, [id, onSelect, isPresent]);
 
   const tmdbParts = isTmdb ? id.split('-') : []; // ["tmdb", "123", "tv", "2"]
   const tmdbId = isTmdb ? tmdbParts[1] : null;
@@ -68,6 +71,7 @@ export const ExternalResolverModal = ({
   const isLoadingSearch = isLoadingSearchSpecific || isLoadingSearchFallback;
 
   useEffect(() => {
+    if (!isPresent) return;
     if (searchResults && searchResults.length > 0) {
       const tmdbInfo = {
         original_title: titleOriginal,
@@ -85,18 +89,18 @@ export const ExternalResolverModal = ({
 
       if (bestMatch && bestMatch.score >= 80) {
         setResolvedSlug(id, bestMatch.item.slug);
-        onSelect(bestMatch.item.slug);
+        onSelect(bestMatch.item.slug, id);
       } else {
         // No high quality match in KKPhim/Ophim. Fallback to direct TMDB/CinemaOS player!
         setResolvedSlug(id, "resolved-" + id);
-        onSelect("resolved-" + id);
+        onSelect("resolved-" + id, id);
       }
     } else if (searchResults && searchResults.length === 0) {
       // Not found in our KKPhim/Ophim API. Try opening directly to fallback to TMDB + CinemaOS.
       setResolvedSlug(id, "resolved-" + id);
-      onSelect("resolved-" + id);
+      onSelect("resolved-" + id, id);
     }
-  }, [searchResults, onSelect, id, tmdbDetail, titleOriginal, titleLocalized]);
+  }, [searchResults, onSelect, id, tmdbDetail, titleOriginal, titleLocalized, isPresent]);
 
   const isLoading = isLoadingTmdb || (!!primarySearchTitle && isLoadingSearch);
   const notFound = !isLoading && searchResults && searchResults.length === 0;

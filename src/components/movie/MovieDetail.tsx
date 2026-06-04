@@ -104,14 +104,14 @@ const formatCurrency = (amount: number | null | undefined): string => {
   return `$${amount.toLocaleString()}`;
 };
 
-export const MovieDetail = ({
-  slug,
-  onClose,
-  onSelect,
-}: {
+export const MovieDetail: React.FC<{
   slug: string;
   onClose: () => void;
   onSelect: (slug: string) => void;
+}> = ({
+  slug,
+  onClose,
+  onSelect,
 }) => {
   const {
     data, isLoading, isFetching,
@@ -144,7 +144,7 @@ export const MovieDetail = ({
     if (!ep?.link_embed) return "";
     let url = ep.link_embed;
     // Substitute dynamic placeholders seamlessly
-    url = url.replace("{season}", (activeEpSeason || 1).toString());
+    url = url.replace("{season}", (validatedActiveEpSeason || 1).toString());
     return url;
   };
 
@@ -280,6 +280,13 @@ export const MovieDetail = ({
     } catch (e) {}
   }, [slug, isPlaying]);
 
+  // Reset season/episode selections immediately when slug changes to avoid state inheritance
+  useEffect(() => {
+    setActiveSeasonNumber(null);
+    setActiveEpSeason(1);
+    setSearchEp("");
+  }, [slug]);
+
   const actorsScrollRef = useRef<HTMLDivElement>(null);
   const episodesScrollRef = useRef<HTMLDivElement>(null);
 
@@ -294,8 +301,35 @@ export const MovieDetail = ({
   const slugParts = isTmdbSlug ? slug.split('-') : [];
   const urlSeason = slugParts.length > 3 ? parseInt(slugParts[3]) : null;
 
+  const isSeasonValid = useMemo(() => {
+    if (activeSeasonNumber === null) return true;
+    if (!isTv) return false;
+    return filteredSeasons.some((s: any) => s.season_number === activeSeasonNumber);
+  }, [activeSeasonNumber, isTv, filteredSeasons]);
+
+  const validatedActiveSeasonNumber = isSeasonValid ? activeSeasonNumber : null;
+
+  useEffect(() => {
+    if (activeSeasonNumber !== null && !isSeasonValid) {
+      setActiveSeasonNumber(null);
+    }
+  }, [activeSeasonNumber, isSeasonValid]);
+
+  const isEpSeasonValid = useMemo(() => {
+    if (!isTv) return true;
+    return filteredSeasons.some((s: any) => s.season_number === activeEpSeason);
+  }, [activeEpSeason, isTv, filteredSeasons]);
+
+  const validatedActiveEpSeason = isEpSeasonValid ? activeEpSeason : 1;
+
+  useEffect(() => {
+    if (!isEpSeasonValid) {
+      setActiveEpSeason(1);
+    }
+  }, [activeEpSeason, isEpSeasonValid]);
+
   const defaultSeason = isTv ? filteredSeasons[0].season_number : null;
-  const currentSeason = activeSeasonNumber !== null ? activeSeasonNumber : (urlSeason || defaultSeason);
+  const currentSeason = validatedActiveSeasonNumber !== null ? validatedActiveSeasonNumber : (urlSeason || defaultSeason);
   
   const cleanTitleForSeasonSearch = (title: string | undefined | null): string => {
     if (!title) return "";
@@ -315,7 +349,7 @@ export const MovieDetail = ({
   };
 
   const { data: seasonServerData } = useQuery({
-    queryKey: ["season-servers", finalTmdbData?.id, currentSeason],
+    queryKey: ["season-servers", slug, finalTmdbData?.id, currentSeason],
     queryFn: async () => {
         if (!isTv || !finalTmdbData) return null;
         
@@ -417,7 +451,7 @@ export const MovieDetail = ({
         }
         return [];
     },
-    enabled: isTv && !!finalTmdbData?.id && !!currentSeason,
+    enabled: isTv && !!finalTmdbData?.id && !!currentSeason && !isLoading && (isTmdbSlug || data?.movie?.slug === slug),
     staleTime: 1000 * 60 * 60 * 24 // 24h
   });
 
@@ -550,7 +584,7 @@ export const MovieDetail = ({
     return {
       tmdbId: finalTmdbData?.id,
       imdbId: resolvedImdbId,
-      title: finalTmdbData?.original_title || finalTmdbData?.original_name || data?.movie?.origin_name || '',
+      title: data?.movie?.origin_name || finalTmdbData?.original_title || finalTmdbData?.original_name || '',
       titleVi: finalTmdbData?.title || finalTmdbData?.name || data?.movie?.name || '',
       type: isTv ? 'tv' as const : 'movie' as const,
       season: isTv ? (currentSeason || 1) : undefined,
@@ -571,7 +605,7 @@ export const MovieDetail = ({
     query: streamQuery,
     servers: currentServers,
     activeEpName: activeEp?.name || '1',
-    enabled: isPlaying && !!activeEp,
+    enabled: !!activeEp && !isLoading,
   });
 
   const { data: subData } = useQuery({
@@ -857,7 +891,7 @@ export const MovieDetail = ({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[100] bg-[#050505] flex flex-col justify-center items-center"
+        className="fixed inset-0 z-[150] bg-[#050505] flex flex-col justify-center items-center"
       >
         <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
       </motion.div>
@@ -982,7 +1016,7 @@ export const MovieDetail = ({
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.98 }}
       transition={{ duration: 0.3 }}
-      className="fixed inset-0 z-[100] bg-[#050505] overflow-y-auto custom-scrollbar"
+      className="fixed inset-0 z-[150] bg-[#050505] overflow-y-auto custom-scrollbar"
     >
       {!showCollectionPage && !isPlaying && (
         <button
@@ -1029,7 +1063,7 @@ export const MovieDetail = ({
                   )}
                 >
                   <NetflixPlayer
-                    key={isTv ? `player-${currentSeason}-${activeEp?.name || '1'}` : 'player-movie'}
+                    key={isTv ? `player-${slug}-${currentSeason}-${activeEp?.name || '1'}` : `player-${slug}-movie`}
                     url={activeStream?.type === 'hls' ? activeStream.url : undefined}
                     embedUrl={
                       activeStream?.type === 'embed' 
@@ -1076,7 +1110,7 @@ export const MovieDetail = ({
                     onEpisodeSelect={handleSelectEpisode}
                     isTv={isTv}
                     currentSeason={currentSeason}
-                    activeEpSeason={activeEpSeason}
+                    activeEpSeason={validatedActiveEpSeason}
                     seasons={filteredSeasons}
                     onSeasonChange={handleSeasonSwitch}
                     tmdbEpisodes={seasonData?.episodes || []}
@@ -1678,7 +1712,7 @@ export const MovieDetail = ({
 
                             const epNameStr = ep.episode_number ? `${ep.episode_number}` : ep.name;
                             const stillPath = getEpStillPath(epNameStr, tmdbEp?.still_path || ep.still_path);
-                            const isSelected = currentSeason === activeEpSeason && (activeEp === ep || (activeEp?.name && isSameEpisode(ep.episode_number || ep.name, activeEp.name)));
+                            const isSelected = currentSeason === validatedActiveEpSeason && (activeEp === ep || (activeEp?.name && isSameEpisode(ep.episode_number || ep.name, activeEp.name)));
                             
                             const displayEpName = ep.episode_number ? `Tập ${ep.episode_number}` : (ep.name.startsWith("Tập") ? ep.name : `Tập ${ep.name}`);
                             const displayEpTitle = tmdbEp?.name && !isGenericEpisodeName(tmdbEp.name, tmdbEp.episode_number)

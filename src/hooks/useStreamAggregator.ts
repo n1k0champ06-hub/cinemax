@@ -16,6 +16,7 @@ import { VI_PROVIDERS } from '../api/streamProviders/viProviders';
 import { cineproProvider } from '../api/streamProviders/cineproProvider';
 import { EMBED_PROVIDERS } from '../api/streamProviders/embedProviders';
 import { allmangaProvider } from '../api/streamProviders/allmangaProvider';
+import { kvFallbackProvider } from '../api/streamProviders/kvFallbackProvider';
 import type { StreamProvider } from '../api/streamProviders/types';
 import { computeScore } from '../api/streamProviders/types';
 
@@ -77,6 +78,9 @@ export interface UseStreamAggregatorResult extends AggregatorState {
 // Hook
 // ---------------------------------------------------------------------------
 
+const STREAM_CACHE = new Map<string, { state: AggregatorState; timestamp: number }>();
+const CACHE_MAX_AGE_MS = 15 * 60 * 1000; // Cache stream lists for 15 minutes
+
 export function useStreamAggregator({
   query,
   servers,
@@ -109,22 +113,27 @@ export function useStreamAggregator({
   const prevRef = useRef<{ queryKey: string; enabled: boolean }>({ queryKey: '', enabled: false });
 
   useEffect(() => {
-    console.log("[useStreamAggregator debug] Effect fired. Change details:", {
-      keyChanged: prevRef.current.queryKey !== queryKey,
-      prevKey: prevRef.current.queryKey,
-      newKey: queryKey,
-      enabledChanged: prevRef.current.enabled !== enabled,
-      prevEnabled: prevRef.current.enabled,
-      newEnabled: enabled
-    });
     prevRef.current = { queryKey, enabled };
 
-    if (!enabled) {
-      console.log("[useStreamAggregator] Aggregator disabled (waiting for activeEp or play state)");
+    if (!enabled) return;
+
+    // 1. Check local memory cache
+    const cached = STREAM_CACHE.get(queryKey);
+    if (cached && (Date.now() - cached.timestamp < CACHE_MAX_AGE_MS)) {
+      console.log(
+        `%c[STREAM AGGREGATOR] Cache Hit! Serving ${cached.state.streams.length} streams instantly.`,
+        'background: #10B981; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+        { title: query.titleVi || query.title, queryKey }
+      );
+      setState(cached.state);
       return;
     }
 
-    console.log("[useStreamAggregator] Running aggregation with query:", query);
+    console.log(
+      `%c[STREAM AGGREGATOR] Searching stream sources for "${query.titleVi || query.title}"`,
+      'background: #3B82F6; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+      { query, activeEp: activeEpName || '1' }
+    );
 
     // Reset selection when query changes
     setSelectedStream(null);
@@ -139,6 +148,9 @@ export function useStreamAggregator({
 
     // 1. Vietnamese providers (OPhim, KKPhim direct API calls)
     allProviders.push(...VI_PROVIDERS);
+
+    // 1.5. KV Cache Fallback (lowest priority — only wins when live VI providers fail)
+    allProviders.push(kvFallbackProvider);
 
     // 2. CinePro HLS (provides all international HLS and embeds dynamically)
     allProviders.push(cineproProvider);
@@ -168,8 +180,13 @@ export function useStreamAggregator({
     aggregateStreams(allProviders, query, {
       onUpdate: (newState) => {
         if (controller.signal.aborted) return;
-        console.log("[useStreamAggregator] Updated state. Total streams:", newState.streams.length);
         setState(newState);
+
+        // Cache the latest resolved state
+        STREAM_CACHE.set(queryKey, {
+          state: newState,
+          timestamp: Date.now(),
+        });
       },
       signal: controller.signal,
     });
@@ -180,7 +197,45 @@ export function useStreamAggregator({
   }, [queryKey, enabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeStream = selectedStream ?? state.autoSelected;
-  console.log("[useStreamAggregator] activeStream evaluated:", activeStream?.providerLabel, activeStream?.type, activeStream?.url);
+
+  // Log active stream selection only when it changes
+  useEffect(() => {
+    if (activeStream) {
+      console.log(
+        `%c[STREAM PLAYBACK] Active Stream: "${activeStream.providerLabel}" (%c${activeStream.type}%c)`,
+        'color: #10B981; font-weight: bold;',
+        'color: #FBBF24; font-weight: bold;',
+        'color: #10B981; font-weight: bold;',
+        {
+          label: activeStream.label,
+          url: activeStream.url,
+          quality: activeStream.quality,
+          timestamp: new Date().toISOString()
+        }
+      );
+    }
+  }, [activeStream?.id]);
+
+  // Log complete aggregation results summary when loading completes
+  useEffect(() => {
+    if (!state.isLoading && state.streams.length > 0) {
+      console.log(
+        `%c[STREAM AGGREGATOR] Completed! Resolved ${state.streams.length} streams.`,
+        'background: #10B981; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+        {
+          title: query.titleVi || query.title,
+          streamsFound: state.streams.map(s => ({
+            label: s.label,
+            provider: s.provider,
+            type: s.type,
+            score: s.score
+          })),
+          autoSelected: state.autoSelected?.providerLabel || 'none',
+          timestamp: new Date().toISOString()
+        }
+      );
+    }
+  }, [state.isLoading, state.streams.length]);
 
   return {
     ...state,

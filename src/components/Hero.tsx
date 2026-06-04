@@ -14,7 +14,7 @@ export const Hero = ({
   onScrollDown,
 }: {
   type?: string;
-  onSelect?: (slug: string) => void;
+  onSelect?: (slug: string, autoPlay?: boolean) => void;
   onScrollDown?: () => void;
   setTab?: (t: string) => void;
   onShowSearch?: () => void;
@@ -37,13 +37,15 @@ export const Hero = ({
           with_genres: '16',
           with_original_language: 'ja',
           sort_by: 'popularity.desc',
-          'vote_count.gte': 8
+          'first_air_date.gte': '2018-01-01',
+          'vote_count.gte': 100
         });
         const movieUrl = await tmdbDiscover('movie', {
           with_genres: '16',
           with_original_language: 'ja',
           sort_by: 'popularity.desc',
-          'vote_count.gte': 8
+          'primary_release_date.gte': '2018-01-01',
+          'vote_count.gte': 50
         });
         
         const combined = [
@@ -197,7 +199,42 @@ export const Hero = ({
             <div className="flex items-center justify-center md:justify-start gap-3 pt-2">
               {/* Play Button */}
               <button 
-                onClick={() => onSelect && onSelect(activeSlug)} 
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const clickDetails = {
+                    component: "HeroSpotlight",
+                    action: "PlayNow",
+                    title: titleString,
+                    slug: activeSlug,
+                    type: activeMovie.media_type || 'movie',
+                    tmdbId: activeMovie.id,
+                    positionIndex: currentIndex,
+                    clickCoordinates: {
+                      clientX: e.clientX,
+                      clientY: e.clientY,
+                      relativeX: Math.round(e.clientX - rect.left),
+                      relativeY: Math.round(e.clientY - rect.top),
+                      elementWidth: Math.round(rect.width),
+                      elementHeight: Math.round(rect.height)
+                    },
+                    scrollState: {
+                      windowScrollX: window.scrollX,
+                      windowScrollY: window.scrollY
+                    },
+                    viewport: {
+                      width: window.innerWidth,
+                      height: window.innerHeight
+                    },
+                    timestamp: new Date().toISOString()
+                  };
+                  console.log(
+                    `%c[USER ACTION: CLICK]%c Hero Spotlight Play Now ("Xem Ngay"): "${titleString}"`,
+                    'background: #E50914; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+                    'color: #ffffff; font-weight: bold;',
+                    clickDetails
+                  );
+                  onSelect && onSelect(activeSlug, true);
+                }} 
                 className="flex items-center justify-center gap-2 bg-white hover:bg-neutral-200 active:scale-[0.97] text-black px-6 py-2.5 md:px-8 md:py-3 rounded-full font-bold text-sm md:text-base transition-all shadow-xl cursor-pointer hover:shadow-black/20"
               >
                 <Play className="w-4 h-4 md:w-5 md:h-5 fill-current text-black" />
@@ -206,7 +243,42 @@ export const Hero = ({
 
               {/* Detail Info Button */}
               <button 
-                onClick={() => onSelect && onSelect(activeSlug)}
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const clickDetails = {
+                    component: "HeroSpotlight",
+                    action: "ViewDetails",
+                    title: titleString,
+                    slug: activeSlug,
+                    type: activeMovie.media_type || 'movie',
+                    tmdbId: activeMovie.id,
+                    positionIndex: currentIndex,
+                    clickCoordinates: {
+                      clientX: e.clientX,
+                      clientY: e.clientY,
+                      relativeX: Math.round(e.clientX - rect.left),
+                      relativeY: Math.round(e.clientY - rect.top),
+                      elementWidth: Math.round(rect.width),
+                      elementHeight: Math.round(rect.height)
+                    },
+                    scrollState: {
+                      windowScrollX: window.scrollX,
+                      windowScrollY: window.scrollY
+                    },
+                    viewport: {
+                      width: window.innerWidth,
+                      height: window.innerHeight
+                    },
+                    timestamp: new Date().toISOString()
+                  };
+                  console.log(
+                    `%c[USER ACTION: CLICK]%c Hero Spotlight View Details ("Chi Tiết"): "${titleString}"`,
+                    'background: #333333; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+                    'color: #ffffff; font-weight: bold;',
+                    clickDetails
+                  );
+                  onSelect && onSelect(activeSlug);
+                }}
                 className="flex items-center justify-center gap-2 bg-black/40 hover:bg-black/60 active:scale-[0.97] border border-white/10 hover:border-white/20 text-white px-6 py-2.5 md:px-8 md:py-3 rounded-full font-bold text-sm md:text-base transition-all cursor-pointer shadow-lg"
               >
                 <Info className="w-4 h-4 md:w-5 md:h-5" />

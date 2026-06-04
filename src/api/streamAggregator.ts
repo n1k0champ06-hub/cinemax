@@ -21,7 +21,7 @@ export type { StreamProvider } from './streamProviders/types';
  */
 async function pingStreamDomain(urlStr: string): Promise<{ latency: number; label: string }> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3500);
+  const timeoutId = setTimeout(() => controller.abort(), 1500);
   const start = Date.now();
   try {
     const url = new URL(urlStr);
@@ -104,7 +104,7 @@ export async function aggregateStreams(
   const promises = providers.map(async provider => {
     if (signal?.aborted) return;
     try {
-      const timeoutMs = provider.id === 'cinepro' ? 30000 : 12000;
+      const timeoutMs = provider.id === 'cinepro' ? 8000 : 5000;
       const streams = await Promise.race([
         provider.fetchStreams(query),
         new Promise<StreamItem[]>((_, reject) =>

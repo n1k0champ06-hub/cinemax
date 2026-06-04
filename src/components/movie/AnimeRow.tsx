@@ -36,11 +36,37 @@ export const AnimeRow = ({ title, type, onSelect }: AnimeRowProps) => {
       const searchQuery = anime.title || anime.title_english || anime.title_japanese || "";
       const isMovie = anime.type?.toLowerCase() === 'movie';
       
+      console.log(
+        `%c[ANIME MATCHING] Starting TMDB search for MAL Anime: "${searchQuery}"`,
+        'background: #E50914; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+        {
+          malId: anime.mal_id,
+          title: anime.title,
+          titleEnglish: anime.title_english,
+          titleJapanese: anime.title_japanese,
+          type: anime.type,
+          year: anime.year || anime.aired?.prop?.from?.year
+        }
+      );
+
       // Search specific to type
       const res = await (isMovie ? tmdbSearchMovie(searchQuery) : tmdbSearchTv(searchQuery));
       
       if (res && res.results && res.results.length > 0) {
+        console.log(
+          `%c[ANIME MATCHING] TMDB Search Results:`,
+          'color: #10B981; font-weight: bold;',
+          res.results.map((r: any) => ({
+            id: r.id,
+            title: r.title || r.name,
+            original_language: r.original_language,
+            genre_ids: r.genre_ids,
+            release_date: r.first_air_date || r.release_date
+          }))
+        );
+
         // Find best match: Japanese language and Animation genre (16)
+        let matchCriteria = "Year + Japanese + Animation";
         let tmdbItem = res.results.find((r: any) => {
           const rYear = r.first_air_date ? r.first_air_date.split('-')[0] : (r.release_date ? r.release_date.split('-')[0] : null);
           const aYear = anime.year?.toString() || anime.aired?.prop?.from?.year?.toString();
@@ -48,6 +74,7 @@ export const AnimeRow = ({ title, type, onSelect }: AnimeRowProps) => {
         });
 
         if (!tmdbItem) {
+          matchCriteria = "Japanese + Animation Only";
           tmdbItem = res.results.find((r: any) => 
             r.original_language === 'ja' && 
             r.genre_ids?.includes(16)
@@ -56,22 +83,42 @@ export const AnimeRow = ({ title, type, onSelect }: AnimeRowProps) => {
 
         // Final fallback to first result
         if (!tmdbItem) {
+          matchCriteria = "First Available Result Fallback";
           tmdbItem = res.results[0];
         }
 
         const mediaType = isMovie ? 'movie' : 'tv';
         const slug = `tmdb-${tmdbItem.id}-${mediaType}`;
+
+        console.log(
+          `%c[ANIME MATCHING] Match Resolved! Criteria: "${matchCriteria}"`,
+          'background: #3B82F6; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+          {
+            matchedTitle: tmdbItem.title || tmdbItem.name,
+            matchedTmdbId: tmdbItem.id,
+            mediaType,
+            slug
+          }
+        );
         onSelect(slug);
       } else {
-        alert(`Không tìm thấy thông tin chi tiết trên máy chủ cho: ${searchQuery}`);
+        console.warn(`%c[ANIME MATCHING] No TMDB results found for keyword: "${searchQuery}"`, 'color: #EF4444; font-weight: bold;');
+        const showAlert = (window as any).showCinemaxAlert || alert;
+        showAlert("Nội dung phim này đang được cập nhật lên hệ thống. Vui lòng quay lại sau nhé!");
       }
     } catch (e) {
       console.error(e);
-      alert("Lỗi khi tìm kiếm phim.");
+      const showAlert = (window as any).showCinemaxAlert || alert;
+      showAlert("Có lỗi xảy ra khi tải thông tin phim. Vui lòng thử lại sau.");
     }
   };
 
-  const animes = animeData?.data || [];
+  const seenMalIds = new Set();
+  const animes = (animeData?.data || []).filter((anime: any) => {
+    if (!anime.mal_id || seenMalIds.has(anime.mal_id)) return false;
+    seenMalIds.add(anime.mal_id);
+    return true;
+  });
 
   if (isLoading || animes.length === 0) return null;
 
@@ -128,6 +175,8 @@ export const AnimeRow = ({ title, type, onSelect }: AnimeRowProps) => {
                   onSelect={() => handleSelect(anime)}
                   isTop10={false}
                   idx={idx}
+                  rowTitle={title}
+                  aspectRatio="poster"
                 />
               </div>
             );

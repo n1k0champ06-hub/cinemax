@@ -82,7 +82,39 @@ export const SimilarMovies = ({
           {finalSimilar.map((movie, idx) => (
             <div
               key={idx}
-              onClick={() => {
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const clickDetails = {
+                  component: "SimilarMovies",
+                  title: movie.name,
+                  slug: movie.slug,
+                  type: movie.type || 'movie',
+                  tmdbId: movie.slug?.split('-')?.[1] || 'none',
+                  positionIndex: idx,
+                  clickCoordinates: {
+                    clientX: e.clientX,
+                    clientY: e.clientY,
+                    relativeX: Math.round(e.clientX - rect.left),
+                    relativeY: Math.round(e.clientY - rect.top),
+                    elementWidth: Math.round(rect.width),
+                    elementHeight: Math.round(rect.height)
+                  },
+                  scrollState: {
+                    windowScrollX: window.scrollX,
+                    windowScrollY: window.scrollY
+                  },
+                  viewport: {
+                    width: window.innerWidth,
+                    height: window.innerHeight
+                  },
+                  timestamp: new Date().toISOString()
+                };
+                console.log(
+                  `%c[USER ACTION: CLICK]%c Similar Movie Card: "${movie.name}"`,
+                  'background: #808080; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+                  'color: #ffffff; font-weight: bold;',
+                  clickDetails
+                );
                 if (typeof movie.slug === "string") {
                   onSelect(movie.slug);
                 }

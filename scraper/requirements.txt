@@ -1,0 +1,6 @@
+# Cinemax Scraper Dependencies
+httpx[http2]>=0.27.0
+scrapling[fetchers]>=0.2.0
+pyyaml>=6.0.1
+rich>=13.7.0
+python-dotenv>=1.0.1

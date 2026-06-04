@@ -160,7 +160,6 @@ export const useTmdbDetails = (id: string | number | null | undefined, type: 'mo
     },
     enabled: isIdValid,
     staleTime: 60 * 60 * 1000,
-    placeholderData: keepPreviousData
   });
 };
 

@@ -12,12 +12,11 @@ interface DiscoverPageProps {
   setTab: (tab: string) => void;
 }
 
-// Vietnamese-friendly Modern Filter Lists Matching Screenshot
 const MEDIA_TYPES = [
   { id: 'all', label: 'Phân loại' },
   { id: 'movie', label: 'Phim Lẻ' },
   { id: 'tv', label: 'Phim Bộ' },
-  { id: 'anime', label: 'Hoạt hình' },
+  { id: 'anime', label: 'Anime' },
 ];
 
 const SORT_OPTIONS = [
@@ -39,7 +38,78 @@ const GENRES = [
   { id: '10402', label: 'Âm Nhạc' },
   { id: '10751', label: 'Gia Đình' },
   { id: '99', label: 'Tài Liệu' },
-  { id: '16', label: 'Hoạt Hình' },
+  { id: '16', label: 'Hoạt Hinh' },
+];
+
+const ANIME_GENRES = [
+  { id: 'all', label: 'Tất cả thể loại' },
+  { id: '1', label: 'Hành động' },
+  { id: '2', label: 'Phiêu lưu' },
+  { id: '5', label: 'Phá cách' },
+  { id: '46', label: 'Đạt giải' },
+  { id: '28', label: 'Đam mỹ' },
+  { id: '4', label: 'Hài hước' },
+  { id: '8', label: 'Kịch tính' },
+  { id: '10', label: 'Kỳ ảo' },
+  { id: '26', label: 'Bách hợp' },
+  { id: '47', label: 'Ẩm thực' },
+  { id: '14', label: 'Kinh dị' },
+  { id: '7', label: 'Bí ẩn' },
+  { id: '22', label: 'Lãng mạn' },
+  { id: '24', label: 'Viễn tưởng' },
+  { id: '36', label: 'Đời thường' },
+  { id: '30', label: 'Thể thao' },
+  { id: '37', label: 'Siêu nhiên' },
+  { id: '41', label: 'Ly kỳ' },
+  { id: '9', label: 'Gợi cảm' },
+  { id: '50', label: 'Nhân vật trưởng thành' },
+  { id: '51', label: 'Nhân hóa' },
+  { id: '52', label: 'Gái dễ thương' },
+  { id: '53', label: 'Chăm trẻ' },
+  { id: '54', label: 'Võ đối kháng' },
+  { id: '81', label: 'Giả trang' },
+  { id: '55', label: 'Bất lương' },
+  { id: '39', label: 'Thám tử' },
+  { id: '56', label: 'Giáo dục' },
+  { id: '57', label: 'Hài bựa' },
+  { id: '58', label: 'Máu me' },
+  { id: '35', label: 'Harem' },
+  { id: '59', label: 'Trò chơi sinh tử' },
+  { id: '13', label: 'Lịch sử' },
+  { id: '60', label: 'Thần tượng nữ' },
+  { id: '61', label: 'Thần tượng nam' },
+  { id: '62', label: 'Xuyên không' },
+  { id: '63', label: 'Chữa lành' },
+  { id: '64', label: 'Tình yêu đa giác' },
+  { id: '65', label: 'Biến đổi giới tính' },
+  { id: '66', label: 'Ma pháp thiếu nữ' },
+  { id: '17', label: 'Võ thuật' },
+  { id: '18', label: 'Robot' },
+  { id: '67', label: 'Y học' },
+  { id: '38', label: 'Quân sự' },
+  { id: '19', label: 'Âm nhạc' },
+  { id: '6', label: 'Thần thoại' },
+  { id: '68', label: 'Tội phạm Mafia' },
+  { id: '69', label: 'Văn hóa Otaku' },
+  { id: '23', label: 'Học đường' },
+  { id: '75', label: 'Giải trí' },
+  { id: '29', label: 'Vũ trụ' },
+  { id: '11', label: 'Game chiến thuật' },
+  { id: '31', label: 'Siêu năng lực' },
+  { id: '76', label: 'Sinh tồn' },
+  { id: '77', label: 'Thể thao đồng đội' },
+  { id: '78', label: 'Du hành thời gian' },
+  { id: '32', label: 'Ma cà rồng' },
+  { id: '79', label: 'Trò chơi điện tử' },
+  { id: '80', label: 'Nghệ thuật thị giác' },
+  { id: '48', label: 'Công sở' },
+  { id: '82', label: 'Kỳ ảo đô thị' },
+  { id: '83', label: 'Ác nữ' },
+  { id: '43', label: 'Josei' },
+  { id: '15', label: 'Trẻ em' },
+  { id: '42', label: 'Seinen' },
+  { id: '25', label: 'Shoujo' },
+  { id: '27', label: 'Shounen' }
 ];
 
 const YEARS = [
@@ -98,6 +168,14 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
     return params.get("rating") || "all";
   });
 
+  const currentGenres = selectedMediaType === 'anime' ? ANIME_GENRES : GENRES;
+
+  const handleMediaTypeChange = (type: string) => {
+    setSelectedMediaType(type);
+    setSelectedGenre('all'); // Reset genre filter on media type swap
+    setActiveDropdown(null);
+  };
+
   // Active custom select dropdown key
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
@@ -138,6 +216,24 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  // Log filter changes in detail
+  useEffect(() => {
+    console.log(
+      `%c[USER ACTION: FILTER]%c Active filters changed:`,
+      'background: #10B981; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+      'color: #ffffff; font-weight: bold;',
+      {
+        mediaType: selectedMediaType,
+        sort: selectedSort,
+        genre: selectedGenre,
+        country: selectedCountry,
+        year: selectedYear,
+        rating: selectedRating,
+        timestamp: new Date().toISOString()
+      }
+    );
+  }, [selectedMediaType, selectedSort, selectedGenre, selectedCountry, selectedYear, selectedRating]);
   
   const filterPanelRef = useRef<HTMLDivElement>(null);
 
@@ -235,39 +331,138 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
   } = useInfiniteQuery({
     queryKey: ['discover_list', selectedMediaType, selectedSort, selectedGenre, selectedCountry, selectedYear, selectedRating],
     queryFn: async ({ pageParam = 1 }) => {
-      let activeType: 'movie' | 'tv' = 'movie';
-      if (selectedMediaType === 'tv') {
-        activeType = 'tv';
-      } else if (selectedMediaType === 'anime') {
-        activeType = 'movie'; // Anime is processed via media query + category
-      }
-
-      const params = buildParams(activeType);
-      const res = await tmdbDiscover(activeType, { ...params, page: pageParam });
-
-      if (res?.results) {
-        return {
-          ...res,
-          results: res.results.map((item: any) => ({
-            id: `tmdb-${item.id}-${activeType}`,
-            slug: `tmdb-${item.id}-${activeType}`,
-            name: item.title || item.name,
-            origin_name: item.original_title || item.original_name,
-            poster_url: item.poster_path 
-              ? (item.poster_path.startsWith('http') ? item.poster_path : `https://image.tmdb.org/t/p/w320/${item.poster_path.split('/').pop()}`) 
-              : null,
-            tmdb: { vote_average: item.vote_average },
-            year: (item.release_date || item.first_air_date || '').substring(0, 4),
-            media_type: activeType
-          }))
+      if (selectedMediaType === 'anime') {
+        const params: Record<string, string | number> = {
+          page: pageParam,
+          limit: 20
         };
+
+        if (selectedGenre !== 'all') {
+          params.genres = selectedGenre;
+        }
+
+        // Map sorting
+        if (selectedSort === 'popularity.desc') {
+          params.order_by = 'popularity';
+          params.sort = 'desc';
+        } else if (selectedSort === 'release_date.desc') {
+          params.order_by = 'start_date';
+          params.sort = 'desc';
+        } else if (selectedSort === 'vote_average.desc') {
+          params.order_by = 'score';
+          params.sort = 'desc';
+        }
+
+        // Map year
+        if (selectedYear !== 'all') {
+          if (selectedYear.endsWith('s')) {
+            params.year = selectedYear.substring(0, 4);
+          } else {
+            params.year = selectedYear;
+          }
+        }
+
+        // Map rating
+        if (selectedRating !== 'all') {
+          params.min_score = selectedRating;
+        }
+
+        const queryStr = new URLSearchParams(params as any).toString();
+        const response = await fetch(`https://api.jikan.moe/v4/anime?${queryStr}`);
+        if (!response.ok) {
+          throw new Error('Jikan API error');
+        }
+        const data = await response.json();
+        const results = data.data || [];
+        const uniqueAnimes = new Map<string, any>();
+        
+        const cleanTitle = (t: string) => {
+          if (!t) return '';
+          return t.toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-z0-9]/g, '')
+            .trim();
+        };
+
+        results.forEach((item: any) => {
+          const mainTitle = item.title_english || item.title || '';
+          const normTitle = cleanTitle(mainTitle);
+          if (!normTitle) return;
+
+          const existing = uniqueAnimes.get(normTitle);
+          if (!existing) {
+            uniqueAnimes.set(normTitle, item);
+          } else {
+            const isExistingTv = existing.type === 'TV';
+            const isCurrentTv = item.type === 'TV';
+            if (isCurrentTv && !isExistingTv) {
+              uniqueAnimes.set(normTitle, item);
+            } else if (isCurrentTv === isExistingTv) {
+              const existingScore = existing.score || 0;
+              const currentScore = item.score || 0;
+              if (currentScore > existingScore) {
+                uniqueAnimes.set(normTitle, item);
+              }
+            }
+          }
+        });
+
+        const dedupedResults = Array.from(uniqueAnimes.values());
+
+        return {
+          results: dedupedResults.map((item: any) => ({
+            id: item.mal_id ? `jikan-${item.mal_id}` : '',
+            slug: item.mal_id ? `jikan-${item.mal_id}` : '',
+            name: item.title_english || item.title || item.title_japanese,
+            origin_name: item.title || item.title_japanese,
+            poster_url: item.images?.webp?.large_image_url || item.images?.jpg?.large_image_url || null,
+            tmdb: { vote_average: item.score || 0 },
+            year: item.year?.toString() || item.aired?.prop?.from?.year?.toString() || "",
+            media_type: 'anime',
+            isJikan: true,
+            rawAnime: item
+          })),
+          page: pageParam,
+          has_next_page: data.pagination?.has_next_page || false
+        };
+      } else {
+        let activeType: 'movie' | 'tv' = 'movie';
+        if (selectedMediaType === 'tv') {
+          activeType = 'tv';
+        }
+
+        const params = buildParams(activeType);
+        const res = await tmdbDiscover(activeType, { ...params, page: pageParam });
+
+        if (res?.results) {
+          return {
+            results: res.results.map((item: any) => {
+              const posterFilename = item.poster_path?.split('/').pop();
+              const backdropFilename = item.backdrop_path?.split('/').pop();
+              return {
+                id: `tmdb-${item.id}-${activeType}`,
+                slug: `tmdb-${item.id}-${activeType}`,
+                name: item.title || item.name,
+                origin_name: item.original_title || item.original_name,
+                poster_url: posterFilename ? `https://image.tmdb.org/t/p/w342/${posterFilename}` : null,
+                thumb_url: backdropFilename ? `https://image.tmdb.org/t/p/w780/${backdropFilename}` : null,
+                tmdb: item,
+                year: (item.release_date || item.first_air_date || '').substring(0, 4),
+                media_type: activeType
+              };
+            }),
+            page: pageParam,
+            has_next_page: res.page < res.total_pages
+          };
+        }
+        return { results: [], page: pageParam, has_next_page: false };
       }
-      return { results: [] };
     },
     initialPageParam: 1,
-    getNextPageParam: (lastPage, allPages) => {
-      if (!lastPage || !lastPage.results || lastPage.results.length === 0) return undefined;
-      return allPages.length + 1;
+    getNextPageParam: (lastPage) => {
+      if (!lastPage || !lastPage.results || lastPage.results.length === 0 || !lastPage.has_next_page) return undefined;
+      return lastPage.page + 1;
     },
   });
 
@@ -275,6 +470,104 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
 
   const toggleDropdown = (name: string) => {
     setActiveDropdown(prev => prev === name ? null : name);
+  };
+
+  const handleSelect = async (movie: any) => {
+    console.log(
+      `%c[USER ACTION: CLICK]%c Discover Page Card Selected: "${movie.name}"`,
+      'background: #3B82F6; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+      'color: #ffffff; font-weight: bold;',
+      {
+        id: movie.id,
+        slug: movie.slug,
+        isJikan: !!movie.isJikan,
+        year: movie.year,
+        mediaType: movie.media_type,
+        timestamp: new Date().toISOString()
+      }
+    );
+
+    if (movie.isJikan && movie.rawAnime) {
+      try {
+        const { tmdbSearchTv, tmdbSearchMovie } = await import('../../api/tmdbApi');
+        const anime = movie.rawAnime;
+        const searchQueryText = anime.title || anime.title_english || anime.title_japanese || "";
+        const isMovie = anime.type?.toLowerCase() === 'movie';
+        
+        console.log(
+          `%c[DISCOVER ANIME MATCHING] Starting TMDB search for: "${searchQueryText}"`,
+          'background: #E50914; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+          {
+            malId: anime.mal_id,
+            title: anime.title,
+            titleEnglish: anime.title_english,
+            titleJapanese: anime.title_japanese,
+            type: anime.type,
+            year: anime.year || anime.aired?.prop?.from?.year
+          }
+        );
+
+        const res = await (isMovie ? tmdbSearchMovie(searchQueryText) : tmdbSearchTv(searchQueryText));
+        if (res && res.results && res.results.length > 0) {
+          console.log(
+            `%c[DISCOVER ANIME MATCHING] TMDB Search Results:`,
+            'color: #10B981; font-weight: bold;',
+            res.results.map((r: any) => ({
+              id: r.id,
+              title: r.title || r.name,
+              original_language: r.original_language,
+              genre_ids: r.genre_ids,
+              release_date: r.first_air_date || r.release_date
+            }))
+          );
+
+          let matchCriteria = "Year + Japanese + Animation";
+          let tmdbItem = res.results.find((r: any) => {
+            const rYear = r.first_air_date ? r.first_air_date.split('-')[0] : (r.release_date ? r.release_date.split('-')[0] : null);
+            const aYear = anime.year?.toString() || anime.aired?.prop?.from?.year?.toString();
+            return rYear === aYear && r.original_language === 'ja' && r.genre_ids?.includes(16);
+          });
+
+          if (!tmdbItem) {
+            matchCriteria = "Japanese + Animation Only";
+            tmdbItem = res.results.find((r: any) => 
+              r.original_language === 'ja' && 
+              r.genre_ids?.includes(16)
+            );
+          }
+
+          if (!tmdbItem) {
+            matchCriteria = "First Available Result Fallback";
+            tmdbItem = res.results[0];
+          }
+
+          const mediaType = isMovie ? 'movie' : 'tv';
+          const matchedSlug = `tmdb-${tmdbItem.id}-${mediaType}`;
+          
+          console.log(
+            `%c[DISCOVER ANIME MATCHING] Match Resolved! Criteria: "${matchCriteria}"`,
+            'background: #10B981; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+            {
+              matchedTitle: tmdbItem.title || tmdbItem.name,
+              matchedTmdbId: tmdbItem.id,
+              mediaType,
+              matchedSlug
+            }
+          );
+          onSelect(matchedSlug);
+        } else {
+          console.warn(`%c[DISCOVER ANIME MATCHING] No TMDB results found for: "${searchQueryText}"`, 'color: #EF4444; font-weight: bold;');
+          const showAlert = (window as any).showCinemaxAlert || alert;
+          showAlert("Nội dung phim này đang được cập nhật lên hệ thống. Vui lòng quay lại sau nhé!");
+        }
+      } catch (e) {
+        console.error('[DISCOVER ANIME MATCHING] Error matching Jikan anime:', e);
+        const showAlert = (window as any).showCinemaxAlert || alert;
+        showAlert("Có lỗi xảy ra khi tìm kiếm thông tin Anime. Vui lòng thử lại sau.");
+      }
+    } else {
+      onSelect(movie.slug || movie.id);
+    }
   };
 
   return (
@@ -311,7 +604,10 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
         </div>
 
         {/* Filters Selectors Row - Exact match layout with 2 columns on mobile */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
+        <div className={cn(
+          "grid grid-cols-2 gap-3 md:gap-4",
+          selectedMediaType === 'anime' ? "md:grid-cols-4" : "md:grid-cols-5"
+        )}>
           
           {/* Selector 1: Category / Phân loại */}
           <div className={cn("relative", activeDropdown === 'category' ? "z-50" : "z-10")}>
@@ -342,7 +638,7 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
                     return (
                       <React.Fragment key={m.id}>
                         <button 
-                          onClick={() => { setSelectedMediaType(m.id); setActiveDropdown(null); }}
+                          onClick={() => handleMediaTypeChange(m.id)}
                           className={cn(
                             "w-full text-left px-3.5 py-2 text-[13px] font-medium hover:bg-white/10 transition-all duration-150 flex items-center justify-between rounded-xl",
                             isSelected ? "text-white bg-white/5 font-semibold" : "text-gray-400 hover:text-white"
@@ -418,7 +714,7 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
               )}
             >
               <span className="truncate">
-                {GENRES.find(g => g.id === selectedGenre)?.label || 'Thể loại'}
+                {currentGenres.find(g => g.id === selectedGenre)?.label || 'Thể loại'}
               </span>
               <ChevronDown className={cn("w-3.5 h-3.5 text-neutral-600 transition-transform duration-300", activeDropdown === 'genres' && "rotate-180")} />
             </button>
@@ -431,7 +727,7 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
                   transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
                   className="absolute top-full left-0 right-0 mt-2 bg-[#0e0e0e]/98 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 shadow-[0_20px_40px_rgba(0,0,0,0.85)] z-50 max-h-[300px] overflow-y-auto custom-scrollbar origin-top flex flex-col gap-0.5"
                 >
-                  {GENRES.map((g, idx) => {
+                  {currentGenres.map((g, idx) => {
                     const isSelected = selectedGenre === g.id;
                     return (
                       <React.Fragment key={g.id}>
@@ -455,51 +751,53 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
           </div>
 
           {/* Selector 4: Country Selection */}
-          <div className={cn("relative", activeDropdown === 'country' ? "z-50" : "z-10")}>
-            <button 
-              type="button"
-              onClick={() => toggleDropdown('country')}
-              className={cn(
-                "flex items-center justify-between w-full px-4 py-3 bg-transparent hover:bg-white/5 border rounded-2xl text-sm font-semibold tracking-wide transition-all duration-200 cursor-pointer text-left shadow-sm",
-                selectedCountry !== 'all' ? "border-white/30 text-white shadow-white/5" : "border-white/10 text-gray-300"
-              )}
-            >
-              <span className="truncate">
-                {COUNTRIES.find(c => c.id === selectedCountry)?.label || 'Quốc gia'}
-              </span>
-              <ChevronDown className={cn("w-3.5 h-3.5 text-neutral-600 transition-transform duration-300", activeDropdown === 'country' && "rotate-180")} />
-            </button>
-            <AnimatePresence>
-              {activeDropdown === 'country' && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -4, scale: 0.96 }}
-                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  className="absolute top-full left-0 right-0 mt-2 bg-[#0e0e0e]/98 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 shadow-[0_20px_40px_rgba(0,0,0,0.85)] z-50 max-h-[300px] overflow-y-auto custom-scrollbar origin-top flex flex-col gap-0.5"
-                >
-                  {COUNTRIES.map((c, idx) => {
-                    const isSelected = selectedCountry === c.id;
-                    return (
-                      <React.Fragment key={c.id}>
-                        <button 
-                          onClick={() => { setSelectedCountry(c.id); setActiveDropdown(null); }}
-                          className={cn(
-                            "w-full text-left px-3.5 py-2 text-[13px] font-medium hover:bg-white/10 transition-all duration-150 flex items-center justify-between rounded-xl",
-                            isSelected ? "text-white bg-white/5 font-semibold" : "text-gray-400 hover:text-white"
-                          )}
-                        >
-                          <span>{c.label}</span>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
-                        </button>
-                        {idx === 0 && <div className="h-px bg-white/5 my-1 mx-1.5" />}
-                      </React.Fragment>
-                    );
-                  })}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+          {selectedMediaType !== 'anime' && (
+            <div className={cn("relative", activeDropdown === 'country' ? "z-50" : "z-10")}>
+              <button 
+                type="button"
+                onClick={() => toggleDropdown('country')}
+                className={cn(
+                  "flex items-center justify-between w-full px-4 py-3 bg-transparent hover:bg-white/5 border rounded-2xl text-sm font-semibold tracking-wide transition-all duration-200 cursor-pointer text-left shadow-sm",
+                  selectedCountry !== 'all' ? "border-white/30 text-white shadow-white/5" : "border-white/10 text-gray-300"
+                )}
+              >
+                <span className="truncate">
+                  {COUNTRIES.find(c => c.id === selectedCountry)?.label || 'Quốc gia'}
+                </span>
+                <ChevronDown className={cn("w-3.5 h-3.5 text-neutral-600 transition-transform duration-300", activeDropdown === 'country' && "rotate-180")} />
+              </button>
+              <AnimatePresence>
+                {activeDropdown === 'country' && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -4, scale: 0.96 }}
+                    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                    className="absolute top-full left-0 right-0 mt-2 bg-[#0e0e0e]/98 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 shadow-[0_20px_40px_rgba(0,0,0,0.85)] z-50 max-h-[300px] overflow-y-auto custom-scrollbar origin-top flex flex-col gap-0.5"
+                  >
+                    {COUNTRIES.map((c, idx) => {
+                      const isSelected = selectedCountry === c.id;
+                      return (
+                        <React.Fragment key={c.id}>
+                          <button 
+                            onClick={() => { setSelectedCountry(c.id); setActiveDropdown(null); }}
+                            className={cn(
+                              "w-full text-left px-3.5 py-2 text-[13px] font-medium hover:bg-white/10 transition-all duration-150 flex items-center justify-between rounded-xl",
+                              isSelected ? "text-white bg-white/5 font-semibold" : "text-gray-400 hover:text-white"
+                            )}
+                          >
+                            <span>{c.label}</span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+                          </button>
+                          {idx === 0 && <div className="h-px bg-white/5 my-1 mx-1.5" />}
+                        </React.Fragment>
+                      );
+                    })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
 
           {/* Selector 5: Release Years Option */}
           <div className={cn("relative", activeDropdown === 'years' ? "z-50" : "z-10")}>
@@ -577,7 +875,7 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
         </div>
       )}
 
-      {!isLoading && movies.length > 0 && (
+       {!isLoading && movies.length > 0 && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-7">
             {movies.map((movie: any, idx: number) => (
@@ -586,8 +884,10 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
                 movie={movie} 
                 idx={idx} 
                 isTop10={false}
-                onSelect={(slug) => onSelect(slug)} 
+                onSelect={() => handleSelect(movie)} 
                 className="w-full"
+                rowTitle="Khám phá & Bộ lọc"
+                aspectRatio={selectedMediaType === 'anime' ? 'poster' : 'landscape'}
               />
             ))}
           </div>

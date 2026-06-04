@@ -61,3 +61,16 @@ export const useAnimeDbSearch = (params: { q?: string; genres?: string; type?: s
   });
 };
 
+export const useAniListCover = (title: string, enabled = true) => {
+  return useQuery({
+    queryKey: ['anilist', 'cover', title],
+    queryFn: async () => {
+      const { fetchAniListCover } = await import('../api/anilistApi');
+      return fetchAniListCover(title);
+    },
+    staleTime: 1000 * 60 * 60 * 24, // 24 hours
+    enabled: enabled && !!title,
+  });
+};
+
+

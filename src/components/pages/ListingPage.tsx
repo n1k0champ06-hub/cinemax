@@ -231,6 +231,7 @@ export const ListingPage = ({ currentTab, onSelect, setTab }: { currentTab: stri
                 isTop10={false} 
                 className="w-full"
                 onSelect={(slug) => { onSelect(slug); }} 
+                rowTitle={title}
               />
             ))}
           </div>

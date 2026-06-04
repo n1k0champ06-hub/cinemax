@@ -71,7 +71,7 @@ export const ImdbRow = ({ type, title, onSelect }: { type: 'top250-movies' | 'to
         >
           {data.slice(0, 10).map((movie: any, index: number) => (
             <div key={index} className="flex-none snap-start pt-4 pb-8">
-              <RankingCard movie={movie} onSelect={onSelect} idx={index} type={type} />
+              <RankingCard movie={movie} onSelect={onSelect} idx={index} type={type} rowTitle={title} />
             </div>
           ))}
         </div>

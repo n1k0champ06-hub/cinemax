@@ -140,7 +140,7 @@ export function computeScore(item: Omit<StreamItem, 'score'>): number {
   else if (item.provider === 'allmanga') score = 92; // Dedicated anime stream provider
   else if (['ophim', 'kkphim', 'nguonc'].includes(item.provider) && item.type === 'hls') score = SCORE.HLS_VIETSUB;
   else if (['vidlink', 'autoembed'].includes(item.provider)) score = SCORE.EMBED_GOOD;
-  else if (['vidsrc', '2embed'].includes(item.provider)) score = SCORE.EMBED_OK;
+  else if (['vidsrc', 'vidsrc_xyz', 'vidsrc_to', 'vidsrc_pm', 'vidsrc_in', '2embed', 'superembed'].includes(item.provider)) score = SCORE.EMBED_OK;
   else if (item.provider === 'cinemaos') score = SCORE.EMBED_SLOW;
   else score = 40;
 

@@ -688,6 +688,197 @@ export default {
 
     }
 
+    // 8. KV Fallback — cached Vietnamese streams ->/api/kv-fallback
+    if (url.pathname.startsWith("/api/kv-fallback")) {
+      const slug = url.searchParams.get('slug');
+      if (!slug) {
+        return json({ error: 'Missing slug param' }, 400);
+      }
+
+      try {
+        const kvKey = `movie:${slug}`;
+        const raw = await env.MOVIE_CACHE.get(kvKey);
+        if (!raw) {
+          return json({ error: 'Not found in cache', slug }, 404, {
+            'Cache-Control': 'public, max-age=60',
+          });
+        }
+
+        const data = JSON.parse(raw);
+        const episode = url.searchParams.get('episode') || '1';
+
+        // Check staleness (48 hours)
+        let stale = false;
+        if (data.sources_updated) {
+          const updatedAt = new Date(data.sources_updated).getTime();
+          const now = Date.now();
+          stale = (now - updatedAt) > 48 * 60 * 60 * 1000;
+        }
+
+        // Build response
+        if (url.searchParams.has('episode') || data.type !== 'series') {
+          // Return streams for a specific episode (or the single movie entry)
+          const epData = data.episodes?.[episode];
+          if (!epData) {
+            return json({
+              error: `Episode ${episode} not found`,
+              slug,
+              available_episodes: data.episodes ? Object.keys(data.episodes) : [],
+            }, 404, {
+              'Cache-Control': 'public, max-age=60',
+            });
+          }
+
+          return json({
+            title: data.title,
+            title_en: data.title_en,
+            year: data.year,
+            type: data.type,
+            episode,
+            streams: epData.streams || [],
+            sources_updated: data.sources_updated,
+            ...(stale ? { stale: true } : {}),
+          }, 200, {
+            'Cache-Control': stale
+              ? 'public, max-age=60, stale-while-revalidate=300'
+              : 'public, max-age=900, s-maxage=1800, stale-while-revalidate=3600',
+          });
+        }
+
+        // Return all episodes data
+        return json({
+          title: data.title,
+          title_en: data.title_en,
+          year: data.year,
+          type: data.type,
+          episodes: data.episodes,
+          sources_updated: data.sources_updated,
+          ...(stale ? { stale: true } : {}),
+        }, 200, {
+          'Cache-Control': stale
+            ? 'public, max-age=60, stale-while-revalidate=300'
+            : 'public, max-age=900, s-maxage=1800, stale-while-revalidate=3600',
+        });
+
+      } catch (err) {
+        console.error('[kv-fallback] Error:', err.message);
+        return json({ error: err.message }, 500);
+      }
+    }
+    // 9. AniList cover search proxy -> /api/anilist
+    if (url.pathname.startsWith("/api/anilist")) {
+      const search = url.searchParams.get('search');
+      if (!search) {
+        return json({ error: 'Missing search param' }, 400);
+      }
+
+      const cleanTitle = search
+        .replace(/\s*[\(\[].*?[\)\]]/g, "") // remove brackets contents
+        .replace(/\s*-\s*Phần\s+\d+/gi, "") // remove " - Phần X"
+        .replace(/\s*Phần\s+\d+/gi, "")     // remove "Phần X"
+        .replace(/\s*Season\s+\d+/gi, "")   // remove "Season X"
+        .replace(/\s*Part\s+\d+/gi, "")     // remove "Part X"
+        .replace(/\s*P\d+/gi, "")           // remove "P5"
+        .trim();
+
+      const RAPIDAPI_HOST = 'Anilistmikilior1V1.p.rapidapi.com';
+      const RAPIDAPI_KEY = '1349644f56mshbd1a582f9f80113p171564jsneb07bf153208';
+      const RAPIDAPI_URL = 'https://anilistmikilior1v1.p.rapidapi.com/searchSeries';
+
+      // Try RapidAPI first with a strict 2s timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+      try {
+        const response = await fetch(RAPIDAPI_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-rapidapi-host': RAPIDAPI_HOST,
+            'x-rapidapi-key': RAPIDAPI_KEY,
+          },
+          body: JSON.stringify({ search: cleanTitle }),
+          signal: controller.signal,
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const media = data?.data?.Media || data?.Media || (Array.isArray(data) ? data[0] : data);
+          if (media) {
+            clearTimeout(timeoutId);
+            return json({
+              extraLarge: media.coverImage?.extraLarge || media.coverImage?.large || null,
+              large: media.coverImage?.large || media.coverImage?.medium || null,
+              medium: media.coverImage?.medium || null,
+              banner: media.bannerImage || null,
+              color: media.coverImage?.color || null,
+            }, 200, {
+              'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=43200',
+            });
+          }
+        }
+      } catch (err) {
+        // Fail silently
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      // Fallback to official GraphQL endpoint
+      try {
+        const gqlQuery = `
+          query ($search: String) {
+            Media (search: $search, type: ANIME) {
+              id
+              title {
+                english
+                romaji
+                native
+              }
+              coverImage {
+                extraLarge
+                large
+                medium
+                color
+              }
+              bannerImage
+            }
+          }
+        `;
+
+        const fallbackRes = await fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify({
+            query: gqlQuery,
+            variables: { search: cleanTitle }
+          })
+        });
+
+        if (fallbackRes.ok) {
+          const result = await fallbackRes.json();
+          const media = result?.data?.Media;
+          if (media) {
+            return json({
+              extraLarge: media.coverImage?.extraLarge || null,
+              large: media.coverImage?.large || null,
+              medium: media.coverImage?.medium || null,
+              banner: media.bannerImage || null,
+              color: media.coverImage?.color || null,
+            }, 200, {
+              'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=43200',
+            });
+          }
+        }
+      } catch (err) {
+        // Fail silently
+      }
+
+      return json(null);
+    }
+
     return new Response("Cinemax CF Worker Proxy is running!", {
       status: 200,
       headers: { ...CORS_HEADERS, "Content-Type": "text/plain; charset=utf-8" }

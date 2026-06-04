@@ -22,9 +22,7 @@ import { ListingPage } from "./components/pages/ListingPage";
 import { DiscoverPage } from "./components/pages/DiscoverPage";
 import "./lib/firebase";
 
-import { ExternalResolverModal } from "./components/movie/ExternalResolverModal";
 import { ImdbRow } from "./components/movie/ImdbRow";
-import { getResolvedSlug } from "./utils/movieMatcher";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,18 +42,24 @@ export default function App() {
 
   const [selectedMovieSlug, setSelectedMovieSlugState] = useState<string | null>(() => {
     const params = new URLSearchParams(window.location.search);
-    const movieParam = params.get("movie");
-    if (movieParam) {
-      const resolved = getResolvedSlug(movieParam);
-      return resolved || movieParam;
-    }
-    return null;
+    return params.get("movie");
   });
 
   const [showSearch, setShowSearch] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("search") === "true";
   });
+
+  const [notification, setNotification] = useState<{ message: string } | null>(null);
+
+  useEffect(() => {
+    (window as any).showCinemaxAlert = (message: string) => {
+      setNotification({ message });
+    };
+    return () => {
+      delete (window as any).showCinemaxAlert;
+    };
+  }, []);
 
   const handleSetTab = (tab: string) => {
     setCurrentTab(tab);
@@ -64,10 +68,16 @@ export default function App() {
     window.scrollTo(0, 0);
   };
 
-  const setSelectedMovieSlug = (slug: string | null) => {
+  const setSelectedMovieSlug = (slug: string | null, autoPlay = false) => {
+    console.log('[APP] setSelectedMovieSlug called with:', slug);
     if (slug) {
-      const resolved = getResolvedSlug(slug);
-      setSelectedMovieSlugState(resolved || slug);
+      setSelectedMovieSlugState(slug);
+      if (autoPlay) {
+        const params = new URLSearchParams(window.location.search);
+        params.set("play", "true");
+        const newUrl = params.toString() ? `/?${params.toString()}` : "/";
+        window.history.replaceState({}, "", newUrl);
+      }
     } else {
       setSelectedMovieSlugState(null);
     }
@@ -372,7 +382,7 @@ export default function App() {
                 id="movie-lists"
                 className="pb-32 mt-4 sm:mt-12 relative z-20 flex flex-col gap-0"
               >
-                <AnimeRankingRow onSelect={setSelectedMovieSlug} showFilters={true} />
+                <AnimeRankingRow onSelect={setSelectedMovieSlug} showFilters={false} />
                 <AnimeRow
                   title="Anime Mới Mùa Này"
                   type="season-now"
@@ -454,19 +464,44 @@ export default function App() {
 
         <AnimatePresence>
           {selectedMovieSlug && (
-            (selectedMovieSlug.startsWith("tt") || selectedMovieSlug.startsWith("tmdb-")) ? (
-              <ExternalResolverModal
-                id={selectedMovieSlug}
-                onClose={() => setSelectedMovieSlug(null)}
-                onSelect={setSelectedMovieSlug}
-              />
-            ) : (
-              <MovieDetail
-                slug={selectedMovieSlug}
-                onClose={() => setSelectedMovieSlug(null)}
-                onSelect={setSelectedMovieSlug}
-              />
-            )
+            <MovieDetail
+              key={selectedMovieSlug}
+              slug={selectedMovieSlug}
+              onClose={() => setSelectedMovieSlug(null)}
+              onSelect={setSelectedMovieSlug}
+            />
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {notification && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[999] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4"
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-[#0c0c0c] border border-white/10 rounded-2xl p-6 max-w-sm w-full text-center relative shadow-2xl"
+              >
+                <div className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4 border border-white/10 text-yellow-500 font-bold text-xl">
+                  !
+                </div>
+                <h3 className="text-lg font-bold text-white mb-2">Thông báo</h3>
+                <p className="text-gray-400 text-xs leading-relaxed mb-6">
+                  {notification.message}
+                </p>
+                <button
+                  onClick={() => setNotification(null)}
+                  className="bg-[#E50914] hover:bg-[#ff2e35] text-white font-bold w-full py-2.5 rounded-xl transition-colors text-xs uppercase tracking-wider cursor-pointer"
+                >
+                  Đóng
+                </button>
+              </motion.div>
+            </motion.div>
           )}
         </AnimatePresence>
 

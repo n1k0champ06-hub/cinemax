@@ -281,7 +281,11 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
   const resolvedHeaders = useMemo(() => {
     return activeStream?.headers || headers;
-  }, [activeStream, headers]);
+  }, [activeStream?.headers, headers]);
+
+  const serializedHeaders = useMemo(() => {
+    return JSON.stringify(resolvedHeaders || {});
+  }, [resolvedHeaders]);
 
   const [isSourcesOpen, setIsSourcesOpen] = useState(false);
 
@@ -550,7 +554,12 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     let hls: Hls | null = null;
     
     if (Hls.isSupported() && resolvedUrl) {
-      const isVietnameseSource = activeStream?.category === 'vi';
+      const activeStreamCategory = activeStream?.category;
+      const isVietnameseSource = activeStreamCategory === 'vi';
+      console.log(`[NetflixPlayer debug] Initializing HLS.js for URL: ${resolvedUrl} (isVietnameseSource: ${isVietnameseSource})`);
+      
+      const headersObj = JSON.parse(serializedHeaders);
+
       hls = new Hls({ 
         maxBufferLength: isVietnameseSource ? 40 : 10,
         maxMaxBufferLength: isVietnameseSource ? 60 : 20,
@@ -560,18 +569,24 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
         capLevelToPlayerSize: true,
         backBufferLength: 10,
         xhrSetup: (xhr) => {
-          if (resolvedHeaders) {
-            Object.entries(resolvedHeaders).forEach(([key, val]) => {
+          if (headersObj) {
+            Object.entries(headersObj).forEach(([key, val]) => {
               xhr.setRequestHeader(key, String(val));
             });
           }
         }
       });
       hlsRef.current = hls;
+
+      hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+        console.log("[NetflixPlayer debug] HLS.js media attached successfully to video element");
+      });
+
       hls.loadSource(resolvedUrl);
       hls.attachMedia(video);
 
       hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+        console.log(`[NetflixPlayer debug] HLS.js manifest parsed. Level count: ${data.levels?.length || 0}`);
         handleReady();
         if (hls) {
           const lvls = hls.levels.map((lvl, index) => {
@@ -615,14 +630,16 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       });
 
       hls.on(Hls.Events.ERROR, (event, data) => {
+        console.warn(`[NetflixPlayer debug] HLS.js error event: ${data.type} (${data.details}), fatal: ${data.fatal}`, data);
         if (data.fatal) {
-          console.warn("HLS fatal error, falling back to Iframe embed:", data);
+          console.error("[NetflixPlayer debug] HLS fatal error, falling back to Iframe embed:", data);
           if (resolvedEmbedUrl) {
             setUseEmbed(true);
           }
         }
       });
     } else if (video.canPlayType('application/vnd.apple.mpegurl') && resolvedUrl) {
+      console.log(`[NetflixPlayer debug] Native Safari HLS playback for URL: ${resolvedUrl}`);
       video.src = resolvedUrl;
       video.addEventListener('loadedmetadata', handleReady);
       video.addEventListener('error', handleVideoError);
@@ -649,6 +666,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
       if (hls) {
         try {
+          console.log("[NetflixPlayer debug] Cleaning up HLS.js player instance");
           hls.detachMedia();
           hls.destroy();
         } catch (e) {}
@@ -663,7 +681,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       video.removeEventListener('loadedmetadata', handleReady);
       video.removeEventListener('error', handleVideoError);
     };
-  }, [resolvedUrl, slug, episodeName, resolvedEmbedUrl, autoplay, isTv, posterUrl, thumbUrl, movieName, activeStream, resolvedHeaders, isIframeMode]);
+  }, [resolvedUrl, slug, episodeName, resolvedEmbedUrl, autoplay, isTv, posterUrl, thumbUrl, movieName, activeStream?.category, serializedHeaders, isIframeMode]);
 
   // Audio Context Web Audio Boost Configuration
   const handleAudioBoostChange = (boostValue: number) => {
@@ -706,6 +724,20 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     if (!slug || !episodeName || !posterUrl || !movieName) return;
     
     const save = () => {
+      if (isIframeMode) {
+        saveProgress(slug, {
+          episodeName,
+          currentTime: 0,
+          duration: 100,
+          savedAt: Date.now(),
+          posterUrl,
+          thumbUrl,
+          movieName,
+          season: isTv ? currentSeason : undefined
+        });
+        return;
+      }
+
       const vid = videoRef.current;
       if (vid && vid.duration > 0) {
         saveProgress(slug, {
@@ -721,12 +753,17 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       }
     };
 
+    if (isIframeMode) {
+      save();
+      return;
+    }
+
     const interval = setInterval(save, 10000); // 10s
     return () => {
       clearInterval(interval);
       save();
     };
-  }, [slug, episodeName, posterUrl, thumbUrl, movieName, saveProgress]);
+  }, [slug, episodeName, posterUrl, thumbUrl, movieName, saveProgress, isIframeMode, isTv, currentSeason]);
 
   // Keyboard Shortcuts Effect
   useEffect(() => {
@@ -1806,21 +1843,36 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
             return (
               <div
                 key={stream.id}
-                onClick={() => {
-                  console.log("[NetflixPlayer debug] Stream card clicked in sidebar:", {
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const clickDetails = {
+                    component: "NetflixPlayerStreamPicker",
+                    action: "SelectStream",
                     streamId: stream.id,
                     provider: stream.provider,
                     type: stream.type,
-                    url: stream.url
-                  });
+                    url: stream.url,
+                    clickCoordinates: {
+                      clientX: e.clientX,
+                      clientY: e.clientY,
+                      relativeX: Math.round(e.clientX - rect.left),
+                      relativeY: Math.round(e.clientY - rect.top),
+                      elementWidth: Math.round(rect.width),
+                      elementHeight: Math.round(rect.height)
+                    },
+                    timestamp: new Date().toISOString()
+                  };
+                  console.log(
+                    `%c[USER ACTION: CLICK]%c Stream Source: "${stream.provider || 'unknown'}" (${stream.type || 'unknown'})`,
+                    'background: #10B981; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+                    'color: #ffffff; font-weight: bold;',
+                    clickDetails
+                  );
                   const isThirdPartyEmbed = stream.type === 'embed' && !stream.url?.includes('cinemaos.tech');
-                  console.log("[NetflixPlayer debug] isThirdPartyEmbed evaluated:", isThirdPartyEmbed);
                   if (isThirdPartyEmbed) {
-                    console.log("[NetflixPlayer debug] Clicking third party embed, setting pendingStream and showAdWarning to true");
                     setPendingStream(stream);
                     setShowAdWarning(true);
                   } else {
-                    console.log("[NetflixPlayer debug] Selecting stream directly (no warning needed)");
                     if (onStreamSelect) {
                       onStreamSelect(stream);
                     }
@@ -2107,8 +2159,8 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
               <span>{title}</span>
             </h2>
 
-            {/* Episode List Selection Button inside top-right of player */}
-            {episodes && episodes.length > 0 && onEpisodeSelect && (
+            {/* Episode List Selection Button inside top-right of player (Only visible when fullscreen) */}
+            {isFullscreen && episodes && episodes.length > 0 && onEpisodeSelect && (
               <button 
                 onClick={(e) => { 
                   e.stopPropagation(); 
@@ -2122,8 +2174,8 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                   }
                 }} 
                 className={cn(
-                  "hover:opacity-100 transition-all flex items-center gap-1.5 md:gap-2 rounded-full active:scale-95 cursor-pointer px-4 py-2 md:px-5 md:py-2.5 bg-black/70 border border-white/15 hover:bg-black/90 hover:border-white/25 text-white text-xs md:text-sm font-bold backdrop-blur-md shadow-2xl select-none",
-                  isEpisodesOpen ? "text-[#E50914] border-red-500/50 bg-black/80 shadow-[0_0_15px_rgba(229,9,20,0.15)]" : "text-white"
+                  "hover:opacity-100 transition-[transform,background-color,border-color,color] duration-150 flex items-center gap-1.5 md:gap-2 rounded-full active:scale-95 cursor-pointer px-4 py-2 md:px-5 md:py-2.5 bg-black/80 border border-white/15 hover:bg-black hover:border-white/30 text-white text-xs md:text-sm font-bold shadow-2xl select-none",
+                  isEpisodesOpen ? "text-[#E50914] border-red-500/50 bg-black shadow-[0_0_15px_rgba(229,9,20,0.15)]" : "text-white"
                 )}
                 title="Chọn tập phim"
               >
@@ -2327,7 +2379,28 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                           return (
                             <button 
                               key={s.season_number}
-                              onClick={() => {
+                              onClick={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const clickDetails = {
+                                  component: "NetflixPlayerEpisodesSidebar",
+                                  action: "SelectSeason",
+                                  seasonNumber: s.season_number,
+                                  clickCoordinates: {
+                                    clientX: e.clientX,
+                                    clientY: e.clientY,
+                                    relativeX: Math.round(e.clientX - rect.left),
+                                    relativeY: Math.round(e.clientY - rect.top),
+                                    elementWidth: Math.round(rect.width),
+                                    elementHeight: Math.round(rect.height)
+                                  },
+                                  timestamp: new Date().toISOString()
+                                };
+                                console.log(
+                                  `%c[USER ACTION: CLICK]%c Season Changed to: Mùa ${s.season_number}`,
+                                  'background: #7C3AED; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+                                  'color: #ffffff; font-weight: bold;',
+                                  clickDetails
+                                );
                                 if (onSeasonChange) onSeasonChange(s.season_number);
                               }}
                               className={cn(
@@ -2377,7 +2450,33 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                       return (
                         <button
                           key={index}
-                          onClick={() => {
+                          onClick={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const clickDetails = {
+                              component: "NetflixPlayerEpisodesSidebar",
+                              action: "SelectEpisode",
+                              showTitle: movieName || title || "unknown",
+                              episodeName: ep.name,
+                              episodeTitle: tmdbEp?.name || "none",
+                              episodeIndex: index,
+                              seasonNumber: currentSeason,
+                              slug: slug || "none",
+                              clickCoordinates: {
+                                clientX: e.clientX,
+                                clientY: e.clientY,
+                                relativeX: Math.round(e.clientX - rect.left),
+                                relativeY: Math.round(e.clientY - rect.top),
+                                elementWidth: Math.round(rect.width),
+                                elementHeight: Math.round(rect.height)
+                              },
+                              timestamp: new Date().toISOString()
+                            };
+                            console.log(
+                              `%c[USER ACTION: CLICK]%c Episode Selected: "${ep.name}" in season ${currentSeason} of "${movieName || title || 'unknown'}"`,
+                              'background: #D97706; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
+                              'color: #ffffff; font-weight: bold;',
+                              clickDetails
+                            );
                             onEpisodeSelect(ep);
                             setIsEpisodesOpen(false);
                           }}
@@ -2488,16 +2587,16 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
               {/* Media Controllers bar layout */}
               <div className="flex items-center justify-between text-white mt-1">
                 <div className="flex items-center gap-3 sm:gap-4 md:gap-6">
-                  <button onClick={togglePlay} className="hover:text-gray-300 hover:scale-110 active:scale-95 transition-all">
+                  <button onClick={togglePlay} className="hover:text-gray-300 hover:scale-110 active:scale-95 transition-[transform,colors] duration-150 cursor-pointer">
                     {isPlaying ? <Pause fill="currentColor" size={22} /> : <Play fill="currentColor" size={22} />}
                   </button>
                   
                   {!(isMobile && isPortrait) && (
                     <>
-                      <button onClick={(e) => { e.stopPropagation(); if (videoRef.current) videoRef.current.currentTime -= 10; }} className="hover:text-gray-300 hover:scale-110 active:scale-95 transition-all">
+                      <button onClick={(e) => { e.stopPropagation(); if (videoRef.current) videoRef.current.currentTime -= 10; }} className="hover:text-gray-300 hover:scale-110 active:scale-95 transition-[transform,colors] duration-150 cursor-pointer">
                         <Rewind fill="currentColor" size={20} />
                       </button>
-                      <button onClick={(e) => { e.stopPropagation(); if (videoRef.current) videoRef.current.currentTime += 10; }} className="hover:text-gray-300 hover:scale-110 active:scale-95 transition-all">
+                      <button onClick={(e) => { e.stopPropagation(); if (videoRef.current) videoRef.current.currentTime += 10; }} className="hover:text-gray-300 hover:scale-110 active:scale-95 transition-[transform,colors] duration-150 cursor-pointer">
                         <FastForward fill="currentColor" size={20} />
                       </button>
                     </>
@@ -2508,7 +2607,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                     <div className="flex items-center gap-2 group/volume ml-2">
                       <button 
                         onClick={toggleMute} 
-                        className="hover:text-gray-300 hover:scale-110 active:scale-95 transition-all cursor-pointer"
+                        className="hover:text-gray-300 hover:scale-110 active:scale-95 transition-[transform,colors] duration-150 cursor-pointer"
                         title={isMuted ? "Bật âm thanh" : "Tắt tiếng"}
                       >
                         {isMuted ? (
@@ -2532,7 +2631,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                             videoRef.current.muted = val === 0;
                           }
                         }}
-                        className="w-0 opacity-0 invisible group-hover/volume:w-20 group-hover/volume:opacity-100 group-hover/volume:visible group-focus-within/volume:w-20 group-focus-within/volume:opacity-100 group-focus-within/volume:visible transition-all duration-300 accent-[#E50914] h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                        className="w-0 opacity-0 invisible group-hover/volume:w-20 group-hover/volume:opacity-100 group-hover/volume:visible group-focus-within/volume:w-20 group-focus-within/volume:opacity-100 group-focus-within/volume:visible transition-[width,opacity] duration-200 accent-[#E50914] h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
                       />
                     </div>
                   )}
@@ -2557,7 +2656,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                   {typeof document !== 'undefined' && document.pictureInPictureEnabled && (
                     <button 
                       onClick={togglePiP} 
-                      className="hover:text-gray-300 hover:scale-110 transition-all cursor-pointer"
+                      className="hover:text-gray-300 hover:scale-110 transition-[transform,colors] duration-150 cursor-pointer"
                       title="Phát đè màn hình (Picture-in-Picture)"
                     >
                       <PictureInPicture size={20} />
@@ -2574,7 +2673,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                         setIsSettingsOpen(false);
                       }} 
                       className={cn(
-                        "hover:opacity-100 transition-all flex items-center gap-2 rounded-xl active:scale-95 cursor-pointer px-3 py-1.5 bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.1]",
+                        "hover:opacity-100 transition-[transform,background-color,border-color,color] duration-150 flex items-center gap-2 rounded-xl active:scale-95 cursor-pointer px-3 py-1.5 bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.1]",
                         isSourcesOpen ? "text-emerald-400 opacity-100 font-bold border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.15)]" : "opacity-85 text-white"
                       )}
                       title="Nguồn phát video"
@@ -2592,11 +2691,11 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                       setIsEpisodesOpen(false); 
                       setIsSourcesOpen(false);
                     }} 
-                    className={cn("hover:text-gray-300 hover:scale-110 transition-all cursor-pointer", isSettingsOpen && "text-red-500 rotate-90")}
+                    className={cn("hover:text-gray-300 hover:scale-110 transition-[transform,colors] duration-150 cursor-pointer", isSettingsOpen && "text-red-500 rotate-90")}
                   >
                     <Settings size={20} />
                   </button>
-                  <button onClick={toggleFullscreen} className="hover:text-gray-300 hover:scale-110 active:scale-95 transition-all">
+                  <button onClick={toggleFullscreen} className="hover:text-gray-300 hover:scale-110 active:scale-95 transition-[transform,colors] duration-150 cursor-pointer">
                     <Maximize size={20} />
                   </button>
                 </div>
