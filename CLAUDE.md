@@ -7,10 +7,10 @@ This file outlines the codebase architecture, development workflows, core applic
 ## 🛠️ Architecture & Deployment Setup
 
 Cinemax operates on a split serverless architecture:
-- **Frontend App**: Built in React 19 (TypeScript) + Vite + Tailwind CSS. Deployed directly to **Vercel** (`focusflow.id.vn`, project `netflix-clone`) via the Vercel CLI. *Note: Git-based auto-deployment is not utilized.*
-- **Backend edge Proxies**: Deployed to **Cloudflare Workers** (`cinemax-backend-proxy` at `cloudflare-worker.js` and `cinepro-core`). It acts as a gateway proxy for subtitles, AniList, and streaming APIs to resolve CORS restrictions.
+- **Frontend & Serverless Backend (Vercel)**: The React 19 app and the serverless functions in the `api/` directory (e.g. `api/anilist.js`, `api/sub-proxy.js`) are deployed directly to **Vercel** (`focusflow.id.vn`, project `netflix-clone`) via the Vercel CLI.
+- **Edge Proxy Backend (Cloudflare)**: The proxy gateway is also deployed to **Cloudflare Workers** (`cinemax-backend-proxy` at `cloudflare-worker.js` and `cinepro-core`). It acts as a redundant edge gateway and cache layer for AniList, subtitle search, and stream providers to resolve CORS restrictions.
 - **Python Movie Scraper Bot**: Located in the `scraper/` folder. Crawls external stream providers (OPhim/KKPhim), extracts stream links, checks differences, and pushes updates to the Cloudflare KV database namespace `MOVIE_CACHE`. Runs automatically via GitHub Actions `.github/workflows/scraper.yml`.
-- **Local Emulation**: For local development, Express emulates the Edge Serverless runtime on port `3001` (`scripts/dev-api.cjs`), loading proxy scripts dynamically from `api/*.js`.
+- **Local Emulation**: For local development, Express emulates the Vercel/Edge Serverless runtime on port `3001` (`scripts/dev-api.cjs`), loading proxy scripts dynamically from `api/*.js`.
 
 ---
 
