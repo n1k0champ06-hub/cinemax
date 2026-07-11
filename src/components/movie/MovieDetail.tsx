@@ -657,7 +657,7 @@ export const MovieDetail: React.FC<{
       type: isTv ? 'tv' as const : 'movie' as const,
       season: isTv ? (currentSeason || 1) : undefined,
       episode: isTv ? (getEpisodeNumber(activeEp?.name) || 1) : undefined,
-      viSlug: slug,
+      viSlug: data?.movie?.slug || slug,
       casts: finalTmdbData?.credits?.cast?.slice(0, 8).map((c: any) => c.name || c.original_name) || [],
       isAnime,
       hianimeEpisodeId: activeEp?.hianime_episode_id,
