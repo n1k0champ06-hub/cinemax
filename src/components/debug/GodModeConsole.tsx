@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  X, Trash2, Copy, ChevronsUpDown, ShieldAlert, Wifi, Monitor, Play, Cpu, Minimize2, Maximize2, Puzzle
+  X, Trash2, Copy, ChevronsUpDown, ShieldAlert, Wifi, Monitor, Play, Cpu, Minimize2, Maximize2, Puzzle, Smartphone
 } from 'lucide-react';
 import { godModeStore, GodModeLog } from '../../lib/godmode';
 
@@ -183,6 +183,13 @@ export const GodModeConsole: React.FC = () => {
 
           {/* Action Toolbar */}
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('open-mobile-simulator'))}
+              title="Mở bộ giả lập di động (Mobile Simulator)"
+              className="p-1.5 hover:bg-zinc-800 hover:text-[#E50914] text-red-500 rounded transition-colors cursor-pointer"
+            >
+              <Smartphone size={13} />
+            </button>
             <button
               onClick={handleCopyAll}
               title="Copy All Logs"

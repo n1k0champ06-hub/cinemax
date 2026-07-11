@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const { MongoClient } = require('mongodb');
+const { spawn } = require('child_process');
 
 const PORT = 3001;
 
@@ -76,11 +77,31 @@ connectMongoDB();
 // ---------------------------------------------------------------------------
 // Scraper / Miner Admin Endpoints
 // ---------------------------------------------------------------------------
+const runningJobs = new Map();
+
+function getUnifiedScraperState() {
+  const isRunning = runningJobs.size > 0;
+  let currentTask = 'Idle';
+  let processed = 0;
+  let total = 0;
+  
+  if (isRunning) {
+    const jobs = Array.from(runningJobs.values());
+    currentTask = jobs.map(j => j.task).join(' | ');
+    processed = jobs.reduce((sum, j) => sum + j.processed, 0);
+    total = jobs.reduce((sum, j) => sum + j.total, 0);
+  }
+  
+  return {
+    isRunning,
+    currentTask,
+    processed,
+    total,
+    logs: scraperState.logs
+  };
+}
+
 let scraperState = {
-  isRunning: false,
-  currentTask: 'Idle',
-  processed: 0,
-  total: 0,
   logs: ['[System] Trình quản trị máy đào sẵn sàng.']
 };
 
@@ -93,12 +114,15 @@ function addScraperLog(msg) {
 }
 
 async function startBackgroundSync(source, limitPages = 2, customUrl = '') {
-  if (scraperState.isRunning) return;
-  scraperState.isRunning = true;
-  scraperState.processed = 0;
-  scraperState.total = limitPages;
-  scraperState.currentTask = `Đồng bộ dữ liệu từ ${source.toUpperCase()}`;
-  scraperState.logs = [];
+  if (runningJobs.has(source)) return;
+  
+  const job = {
+    source,
+    processed: 0,
+    total: limitPages,
+    task: `Đồng bộ ${source.toUpperCase()}`
+  };
+  runningJobs.set(source, job);
 
   let baseUrl = (customUrl || '').trim();
   if (!baseUrl) {
@@ -108,7 +132,7 @@ async function startBackgroundSync(source, limitPages = 2, customUrl = '') {
   }
   baseUrl = baseUrl.replace(/\/$/, '');
 
-  addScraperLog(`Bắt đầu đồng bộ từ nguồn: ${baseUrl} (Giới hạn: ${limitPages} trang)...`);
+  addScraperLog(`[${source.toUpperCase()}] Bắt đầu đồng bộ từ nguồn: ${baseUrl} (Giới hạn: ${limitPages} trang)...`);
 
   try {
     if (!db) {
@@ -120,12 +144,12 @@ async function startBackgroundSync(source, limitPages = 2, customUrl = '') {
 
     let actualLimit = limitPages;
     for (let page = 1; page <= actualLimit; page++) {
-      if (!scraperState.isRunning) {
-        addScraperLog("Đồng bộ bị dừng bởi người dùng.");
+      if (!runningJobs.has(source)) {
+        addScraperLog(`[${source.toUpperCase()}] Đồng bộ bị dừng bởi người dùng.`);
         break;
       }
 
-      addScraperLog(`Đang tải dữ liệu trang ${page}...`);
+      addScraperLog(`[${source.toUpperCase()}] Đang tải dữ liệu trang ${page}...`);
       
       let listUrl = `${baseUrl}/danh-sach/phim-moi-cap-nhat?page=${page}`;
       if (source === 'nguonc' || baseUrl.includes('nguonc.com')) {
@@ -136,12 +160,12 @@ async function startBackgroundSync(source, limitPages = 2, customUrl = '') {
       try {
         listRes = await fetch(listUrl);
       } catch (err) {
-        addScraperLog(`Lỗi tải trang ${page}: ${err.message}`);
+        addScraperLog(`[${source.toUpperCase()}] Lỗi tải trang ${page}: ${err.message}`);
         continue;
       }
 
       if (!listRes.ok) {
-        addScraperLog(`Lỗi tải trang ${page}: HTTP ${listRes.status}`);
+        addScraperLog(`[${source.toUpperCase()}] Lỗi tải trang ${page}: HTTP ${listRes.status}`);
         continue;
       }
 
@@ -152,15 +176,15 @@ async function startBackgroundSync(source, limitPages = 2, customUrl = '') {
         const paginationObj = listData.paginate || listData.pagination || {};
         const totalPages = parseInt(paginationObj.total_page || paginationObj.totalPages || paginationObj.total_pages || '1000', 10);
         actualLimit = totalPages;
-        scraperState.total = totalPages;
-        addScraperLog(`Cài đặt chế độ đồng bộ tất cả: Tổng cộng ${totalPages} trang.`);
+        job.total = totalPages;
+        addScraperLog(`[${source.toUpperCase()}] Cài đặt chế độ đồng bộ tất cả: Tổng cộng ${totalPages} trang.`);
       }
 
       const items = listData.items || listData.data || [];
-      addScraperLog(`Trang ${page} có ${items.length} phim mới cập nhật.`);
+      addScraperLog(`[${source.toUpperCase()}] Trang ${page} có ${items.length} phim mới cập nhật.`);
 
       for (const item of items) {
-        if (!scraperState.isRunning) break;
+        if (!runningJobs.has(source)) break;
 
         const slug = item.slug;
         let detailsUrl = `${baseUrl}/phim/${slug}`;
@@ -172,12 +196,12 @@ async function startBackgroundSync(source, limitPages = 2, customUrl = '') {
         try {
           detailRes = await fetch(detailsUrl);
         } catch (err) {
-          addScraperLog(`Lỗi tải chi tiết phim '${slug}': ${err.message}`);
+          addScraperLog(`[${source.toUpperCase()}] Lỗi tải chi tiết phim '${slug}': ${err.message}`);
           continue;
         }
 
         if (!detailRes.ok) {
-          addScraperLog(`Lỗi tải chi tiết phim '${slug}': HTTP ${detailRes.status}`);
+          addScraperLog(`[${source.toUpperCase()}] Lỗi tải chi tiết phim '${slug}': HTTP ${detailRes.status}`);
           continue;
         }
 
@@ -233,23 +257,41 @@ async function startBackgroundSync(source, limitPages = 2, customUrl = '') {
           }
         }
 
-        addScraperLog(`Đã đồng bộ phim '${movie.name}' (${addedEpisodesCount} tập).`);
+        addScraperLog(`[${source.toUpperCase()}] Đã đồng bộ phim '${movie.name}' (${addedEpisodesCount} tập).`);
         await new Promise(r => setTimeout(r, 200));
       }
 
-      scraperState.processed = page;
+      job.processed = page;
     }
 
-    if (scraperState.isRunning) {
-      addScraperLog("Đồng bộ hoàn tất thành công!");
+    if (runningJobs.has(source)) {
+      addScraperLog(`[${source.toUpperCase()}] Đồng bộ hoàn tất thành công!`);
     }
   } catch (err) {
-    addScraperLog(`Lỗi hệ thống trong quá trình đồng bộ: ${err.message}`);
+    addScraperLog(`[${source.toUpperCase()}] Lỗi hệ thống trong quá trình đồng bộ: ${err.message}`);
     console.error(err);
   } finally {
-    scraperState.isRunning = false;
-    scraperState.currentTask = 'Idle';
+    runningJobs.delete(source);
   }
+}
+
+const net = require('net');
+
+function isPortOpen(port) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    const onError = () => {
+      socket.destroy();
+      resolve(false);
+    };
+    socket.setTimeout(1000);
+    socket.once('error', onError);
+    socket.once('timeout', onError);
+    socket.connect(port, '127.0.0.1', () => {
+      socket.end();
+      resolve(true);
+    });
+  });
 }
 
 async function handleLocalScraperStats() {
@@ -258,19 +300,82 @@ async function handleLocalScraperStats() {
       connected: false,
       moviesCount: 0,
       streamsCount: 0,
+      cineproConnected: false,
       error: "Chưa kết nối MongoDB"
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
   try {
     const moviesCount = await db.collection('movies').countDocuments();
     const streamsCount = await db.collection('streams').countDocuments();
+    const cineproConnected = await isPortOpen(3232);
     return new Response(JSON.stringify({
       connected: true,
       moviesCount,
-      streamsCount
+      streamsCount,
+      cineproConnected
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
+let pythonProcess = null;
+
+async function runPythonScraper(tmdbId, title) {
+  if (runningJobs.has('python')) return;
+  
+  const job = {
+    source: 'python',
+    processed: 0,
+    total: 1,
+    task: `Chạy Python Scrapling: ${title}`
+  };
+  runningJobs.set('python', job);
+
+  addScraperLog(`[PYTHON] Bắt đầu chạy kịch bản Python Scrapling cho TMDB ID ${tmdbId}...`);
+
+  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+  const scraperScript = path.join(__dirname, 'scraper.py');
+
+  try {
+    pythonProcess = spawn(pythonCmd, [scraperScript, tmdbId, title], {
+      env: { ...process.env, MONGODB_URI: process.env.MONGODB_URI }
+    });
+
+    pythonProcess.stdout.on('data', (data) => {
+      const lines = data.toString().split('\n');
+      lines.forEach(line => {
+        if (line.trim()) addScraperLog(`[PYTHON] ${line.trim()}`);
+      });
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      const lines = data.toString().split('\n');
+      lines.forEach(line => {
+        if (line.trim()) addScraperLog(`[PYTHON] [ERROR] ${line.trim()}`);
+      });
+    });
+
+    pythonProcess.on('close', (code) => {
+      pythonProcess = null;
+      runningJobs.delete('python');
+      if (code === 0) {
+        job.processed = 1;
+        addScraperLog(`[PYTHON] Kịch bản Python hoàn thành thành công (code ${code})!`);
+      } else {
+        addScraperLog(`[PYTHON] [ERROR] Kịch bản Python kết thúc với mã lỗi ${code}.`);
+      }
+    });
+
+    pythonProcess.on('error', (err) => {
+      pythonProcess = null;
+      runningJobs.delete('python');
+      addScraperLog(`[PYTHON] [ERROR] Không thể khởi chạy python: ${err.message}`);
+    });
+  } catch (err) {
+    pythonProcess = null;
+    runningJobs.delete('python');
+    addScraperLog(`[PYTHON] [ERROR] Lỗi hệ thống: ${err.message}`);
   }
 }
 
@@ -279,8 +384,19 @@ async function handleLocalScraperStart(searchParams) {
   const limit = parseInt(searchParams.get('limit') || '2', 10);
   const customUrl = searchParams.get('customUrl') || '';
   
-  if (scraperState.isRunning) {
-    return new Response(JSON.stringify({ error: 'Máy đào đang hoạt động. Vui lòng dừng hoặc chờ hoàn thành.' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+  if (runningJobs.has(source)) {
+    return new Response(JSON.stringify({ error: `Nguồn ${source.toUpperCase()} đang được đồng bộ. Vui lòng chờ hoàn thành.` }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  if (source === 'python') {
+    const tmdbId = searchParams.get('tmdb_id');
+    const title = searchParams.get('title');
+    if (!tmdbId || !title) {
+      return new Response(JSON.stringify({ error: 'Thiếu TMDB ID hoặc Tiêu đề phim' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    // Chạy nền kịch bản Python
+    runPythonScraper(tmdbId, title);
+    return new Response(JSON.stringify({ ok: true, message: 'Đã kích hoạt kịch bản Python Scrapling chạy ngầm.' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
   // Chạy nền
@@ -290,13 +406,18 @@ async function handleLocalScraperStart(searchParams) {
 }
 
 async function handleLocalScraperStatus() {
-  return new Response(JSON.stringify(scraperState), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(getUnifiedScraperState()), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
 async function handleLocalScraperStop() {
-  if (scraperState.isRunning) {
-    scraperState.isRunning = false;
-    addScraperLog("Đang yêu cầu dừng máy đào...");
+  if (runningJobs.size > 0) {
+    addScraperLog("Đang yêu cầu dừng toàn bộ máy đào...");
+    runningJobs.clear();
+    if (pythonProcess) {
+      pythonProcess.kill();
+      pythonProcess = null;
+      addScraperLog("Đã tắt tiến trình kịch bản Python.");
+    }
   }
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
@@ -308,44 +429,54 @@ async function handleLocalScraperGetStreams(searchParams) {
 
   const title = searchParams.get('title') || '';
   const titleVi = searchParams.get('titleVi') || '';
+  const slug = searchParams.get('slug') || '';
   const year = parseInt(searchParams.get('year') || '0', 10);
   const episode = searchParams.get('episode') || '1';
 
   try {
-    const queryConds = [];
-    if (title) {
-      queryConds.push({ title: { $regex: new RegExp(`^${escapeRegex(title)}$`, 'i') } });
-      queryConds.push({ originTitle: { $regex: new RegExp(`^${escapeRegex(title)}$`, 'i') } });
-      queryConds.push({ title: { $regex: new RegExp(escapeRegex(title), 'i') } });
-      queryConds.push({ originTitle: { $regex: new RegExp(escapeRegex(title), 'i') } });
-    }
-    if (titleVi) {
-      queryConds.push({ title: { $regex: new RegExp(`^${escapeRegex(titleVi)}$`, 'i') } });
-      queryConds.push({ originTitle: { $regex: new RegExp(`^${escapeRegex(titleVi)}$`, 'i') } });
-      queryConds.push({ title: { $regex: new RegExp(escapeRegex(titleVi), 'i') } });
-      queryConds.push({ originTitle: { $regex: new RegExp(escapeRegex(titleVi), 'i') } });
+    let bestMovie = null;
+    if (slug) {
+      bestMovie = await db.collection('movies').findOne({ slug });
     }
 
-    if (queryConds.length === 0) {
+    if (!bestMovie) {
+      const queryConds = [];
+      if (title) {
+        queryConds.push({ title: { $regex: new RegExp(`^${escapeRegex(title)}$`, 'i') } });
+        queryConds.push({ originTitle: { $regex: new RegExp(`^${escapeRegex(title)}$`, 'i') } });
+        queryConds.push({ title: { $regex: new RegExp(escapeRegex(title), 'i') } });
+        queryConds.push({ originTitle: { $regex: new RegExp(escapeRegex(title), 'i') } });
+      }
+      if (titleVi) {
+        queryConds.push({ title: { $regex: new RegExp(`^${escapeRegex(titleVi)}$`, 'i') } });
+        queryConds.push({ originTitle: { $regex: new RegExp(`^${escapeRegex(titleVi)}$`, 'i') } });
+        queryConds.push({ title: { $regex: new RegExp(escapeRegex(titleVi), 'i') } });
+        queryConds.push({ originTitle: { $regex: new RegExp(escapeRegex(titleVi), 'i') } });
+      }
+
+      if (queryConds.length > 0) {
+        const movies = await db.collection('movies').find({
+          $or: queryConds
+        }).toArray();
+
+        if (movies.length > 0) {
+          bestMovie = movies[0];
+          if (year > 0) {
+            const matchYear = movies.find(m => parseInt(m.year) === year);
+            if (matchYear) bestMovie = matchYear;
+          }
+        }
+      }
+    }
+
+    // If still no movie matches, fallback to querying streams using the slug directly
+    let matchedSlug = bestMovie ? bestMovie.slug : slug;
+    if (!matchedSlug) {
       return new Response(JSON.stringify({ streams: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
-
-    const movies = await db.collection('movies').find({
-      $or: queryConds
-    }).toArray();
-
-    if (movies.length === 0) {
-      return new Response(JSON.stringify({ streams: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
-
-    let bestMovie = movies[0];
-    if (year > 0) {
-      const matchYear = movies.find(m => parseInt(m.year) === year);
-      if (matchYear) bestMovie = matchYear;
     }
 
     const streams = await db.collection('streams').find({
-      slug: bestMovie.slug
+      slug: matchedSlug
     }).toArray();
 
     const getEpNum = (str) => {

@@ -10,8 +10,14 @@ import sys
 import time
 from pymongo import MongoClient
 
+# Reconfigure stdout/stderr to UTF-8 for Windows encoding compatibility
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
+
 try:
-    from scrapling import fetch
+    from scrapling import StealthyFetcher
 except ImportError:
     print("[Error] Thư viện 'scrapling' chưa được cài đặt. Vui lòng cài đặt: pip install scrapling")
     sys.exit(1)
@@ -35,15 +41,13 @@ class CinemaxScraper:
         print(f"[Scraper] Đang tải trang: {target_url}")
         try:
             # Scrapling fetch tự động giả lập browser fingerprint
-            response = fetch(
+            response = StealthyFetcher.fetch(
                 url=target_url,
-                stealthy=True,
-                follow_redirects=True,
-                timeout=15
+                timeout=15000
             )
             
-            if response.status_code != 200:
-                print(f"[Scraper] Lỗi tải trang: HTTP {response.status_code}")
+            if response.status != 200:
+                print(f"[Scraper] Lỗi tải trang: HTTP {response.status}")
                 return None
                 
             return response
@@ -63,7 +67,7 @@ class CinemaxScraper:
         
         if response:
             # Ví dụ trích xuất thẻ h1 bằng CSS Selector của Scrapling
-            extracted_header = response.css("h1::text").first()
+            extracted_header = response.css("h1::text").first
             print(f"[Scraper] Trích xuất thành công tiêu đề trang sandbox: '{extracted_header}'")
 
         slug = f"tmdb-{tmdb_id}-tv"

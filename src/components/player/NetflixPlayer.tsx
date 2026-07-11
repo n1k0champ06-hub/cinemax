@@ -3413,134 +3413,140 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
           </div>
 
           {/* Controls button actions */}
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-start sm:justify-end">
-            {/* Play/Pause Subtitle Timer for sync - Only show if extension is active */}
-            <button
-              onClick={(e) => togglePlay(e)}
-              className={cn(
-                "hover:bg-white/[0.1] transition-all flex items-center justify-center rounded-xl active:scale-95 cursor-pointer h-8 w-8 sm:h-9 sm:w-9 bg-white/[0.04] border border-white/[0.08] shrink-0",
-                isPlaying ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/[0.02]" : "text-amber-400 border-amber-500/30 bg-amber-500/[0.02]"
-              )}
-              title={isPlaying ? "Tạm dừng chạy phụ đề" : "Bắt đầu chạy phụ đề"}
-            >
-              {isPlaying ? <Pause size={15} /> : <Play size={15} />}
-            </button>
+          <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full sm:w-auto justify-start sm:justify-end">
+            
+            {/* Group 1: Play/Pause and Offset */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              {/* Play/Pause Subtitle Timer for sync - Only show if extension is active */}
+              <button
+                onClick={(e) => togglePlay(e)}
+                className={cn(
+                  "hover:bg-white/[0.1] transition-all flex items-center justify-center rounded-xl active:scale-95 cursor-pointer h-8 w-8 sm:h-9 sm:w-9 bg-white/[0.04] border border-white/[0.08] shrink-0",
+                  isPlaying ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/[0.02]" : "text-amber-400 border-amber-500/30 bg-amber-500/[0.02]"
+                )}
+                title={isPlaying ? "Tạm dừng chạy phụ đề" : "Bắt đầu chạy phụ đề"}
+              >
+                {isPlaying ? <Pause size={15} /> : <Play size={15} />}
+              </button>
 
-            {/* Subtitle Offset adjustment */}
-            <div className="flex items-center justify-center gap-1 bg-white/[0.04] rounded-xl px-1.5 py-0.5 border border-white/[0.08] h-8 sm:h-9 shrink-0">
-              <button 
-                onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev - 500); }} 
-                className="w-7 h-6 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/60 hover:text-white active:scale-90 transition-all cursor-pointer"
-                title="Sub nhanh hơn [-0.5s]"
-              >
-                <Minus size={13} />
-              </button>
-              <span className={cn('text-[11px] font-mono font-bold min-w-[34px] text-center', subtitleOffset === 0 ? 'text-white/30' : 'text-emerald-400')}>
-                {subtitleOffset >= 0 ? '+' : ''}{(subtitleOffset / 1000).toFixed(1)}s
-              </span>
-              <button 
-                onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev + 500); }} 
-                className="w-7 h-6 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/60 hover:text-white active:scale-90 transition-all cursor-pointer"
-                title="Sub chậm hơn [+0.5s]"
-              >
-                <Plus size={13} />
-              </button>
-              {subtitleOffset !== 0 && (
+              {/* Subtitle Offset adjustment */}
+              <div className="flex-1 sm:flex-initial flex items-center justify-center gap-1 bg-white/[0.04] rounded-xl px-1.5 py-0.5 border border-white/[0.08] h-8 sm:h-9">
                 <button 
-                  onClick={(e) => { e.stopPropagation(); setSubtitleOffset(0); }} 
-                  className="w-5 h-5 flex items-center justify-center rounded-md hover:bg-white/10 text-white/40 hover:text-white active:scale-90 transition-all cursor-pointer ml-0.5"
-                  title="Reset delay"
+                  onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev - 500); }} 
+                  className="w-7 h-6 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/60 hover:text-white active:scale-90 transition-all cursor-pointer"
+                  title="Sub nhanh hơn [-0.5s]"
                 >
-                  <RotateCcw size={10} />
+                  <Minus size={13} />
+                </button>
+                <span className={cn('text-[11px] font-mono font-bold min-w-[34px] text-center', subtitleOffset === 0 ? 'text-white/30' : 'text-emerald-400')}>
+                  {subtitleOffset >= 0 ? '+' : ''}{(subtitleOffset / 1000).toFixed(1)}s
+                </span>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev + 500); }} 
+                  className="w-7 h-6 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/60 hover:text-white active:scale-90 transition-all cursor-pointer"
+                  title="Sub chậm hơn [+0.5s]"
+                >
+                  <Plus size={13} />
+                </button>
+                {subtitleOffset !== 0 && (
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setSubtitleOffset(0); }} 
+                    className="w-5 h-5 flex items-center justify-center rounded-md hover:bg-white/10 text-white/40 hover:text-white active:scale-90 transition-all cursor-pointer ml-0.5"
+                    title="Reset delay"
+                  >
+                    <RotateCcw size={10} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Group 2: Subtitle Selector & Nguồn */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              {/* Subtitle track picker */}
+              {combinedSubtitleTracks.length > 1 && (!isIframeMode || isExtensionActive || isManualSyncFallback) && (
+                <div className="relative flex-1 sm:flex-initial w-full sm:w-auto">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setIsEmbedSubMenuOpen(v => !v); }}
+                    className={cn(
+                      "hover:opacity-100 transition-all flex items-center justify-center gap-2 rounded-xl active:scale-95 cursor-pointer h-8 sm:h-9 px-3 w-full bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-xs font-bold tracking-wide",
+                      isEmbedSubMenuOpen
+                        ? "text-violet-400 border-violet-500/50 bg-violet-500/10 shadow-[0_0_10px_rgba(139,92,246,0.2)]"
+                        : subEnabled && selectedSubtitleId !== 'off'
+                          ? "text-violet-300 border-violet-500/30"
+                          : "text-white/80"
+                    )}
+                    title="Chọn phụ đề"
+                  >
+                    <Subtitles size={15} className={subEnabled && selectedSubtitleId !== 'off' ? "text-violet-400" : "text-white/50"} />
+                    <span className="truncate max-w-[80px] sm:max-w-[120px]">
+                      {selectedSubtitleId === 'off'
+                        ? 'Phụ đề'
+                        : combinedSubtitleTracks.find(t => t.id === selectedSubtitleId)?.name ?? 'Phụ đề'}
+                    </span>
+                  </button>
+
+                  {/* Dropdown */}
+                  {isEmbedSubMenuOpen && (
+                    <div
+                      className="absolute bottom-full mb-2 right-0 min-w-[180px] bg-[#111116] border border-white/[0.08] rounded-xl shadow-2xl overflow-hidden z-50"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="px-3 pt-2.5 pb-1 text-[10px] text-white/30 font-bold uppercase tracking-widest">Phụ đề</div>
+                      {combinedSubtitleTracks.map((track) => (
+                        <button
+                          key={String(track.id)}
+                          onClick={() => {
+                            setSelectedSubtitleId(track.id);
+                            setSubEnabled(track.id !== 'off');
+                            setIsEmbedSubMenuOpen(false);
+                          }}
+                          className={cn(
+                            "w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-left transition-colors hover:bg-white/[0.06] cursor-pointer",
+                            track.id === selectedSubtitleId ? "text-violet-400" : "text-white/70"
+                          )}
+                        >
+                          {track.id === selectedSubtitleId && <Check size={12} className="text-violet-400 shrink-0" />}
+                          {track.id !== selectedSubtitleId && <span className="w-3 shrink-0" />}
+                          {track.name}
+                        </button>
+                      ))}
+                      <div className="border-t border-white/[0.06] my-1" />
+                      <a
+                        href="/cinemax-extension.zip"
+                        download
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsEmbedSubMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[11px] font-bold text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/[0.03] transition-colors cursor-pointer"
+                      >
+                        <Download size={12} className="shrink-0 text-emerald-400" />
+                        <span>Tải Extension (.zip)</span>
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Select source selection panel */}
+              {streams && streams.length > 0 && (
+                <button 
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    setIsSourcesOpen(!isSourcesOpen); 
+                    setIsEpisodesOpen(false); 
+                  }} 
+                  className={cn(
+                    "hover:opacity-100 transition-all flex items-center justify-center gap-2 rounded-xl active:scale-95 cursor-pointer h-8 sm:h-9 px-3 w-full sm:w-auto bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-xs sm:text-xs font-bold tracking-wide flex-1 sm:flex-initial",
+                    isSourcesOpen ? "text-emerald-400 border-emerald-500/50 bg-emerald-500/10 shadow-[0_0_10px_rgba(16,185,129,0.15)]" : "text-white/80"
+                  )}
+                  title="Chọn nguồn phát"
+                >
+                  <Wifi size={15} className={isSourcesOpen ? "text-emerald-400" : "text-white/60"} />
+                  <span>Nguồn</span>
                 </button>
               )}
             </div>
-
-            {/* Subtitle track picker */}
-            {combinedSubtitleTracks.length > 1 && (!isIframeMode || isExtensionActive || isManualSyncFallback) && (
-              <div className="relative shrink-0 w-full sm:w-auto">
-                <button
-                  onClick={(e) => { e.stopPropagation(); setIsEmbedSubMenuOpen(v => !v); }}
-                  className={cn(
-                    "hover:opacity-100 transition-all flex items-center justify-center gap-2 rounded-xl active:scale-95 cursor-pointer h-8 sm:h-9 px-3 w-full sm:w-auto bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-xs font-bold tracking-wide",
-                    isEmbedSubMenuOpen
-                      ? "text-violet-400 border-violet-500/50 bg-violet-500/10 shadow-[0_0_10px_rgba(139,92,246,0.2)]"
-                      : subEnabled && selectedSubtitleId !== 'off'
-                        ? "text-violet-300 border-violet-500/30"
-                        : "text-white/80"
-                  )}
-                  title="Chọn phụ đề"
-                >
-                  <Subtitles size={15} className={subEnabled && selectedSubtitleId !== 'off' ? "text-violet-400" : "text-white/50"} />
-                  <span className="truncate max-w-[80px] sm:max-w-[120px]">
-                    {selectedSubtitleId === 'off'
-                      ? 'Phụ đề'
-                      : combinedSubtitleTracks.find(t => t.id === selectedSubtitleId)?.name ?? 'Phụ đề'}
-                  </span>
-                </button>
-
-                {/* Dropdown */}
-                {isEmbedSubMenuOpen && (
-                  <div
-                    className="absolute bottom-full mb-2 right-0 min-w-[180px] bg-[#111116] border border-white/[0.08] rounded-xl shadow-2xl overflow-hidden z-50"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="px-3 pt-2.5 pb-1 text-[10px] text-white/30 font-bold uppercase tracking-widest">Phụ đề</div>
-                    {combinedSubtitleTracks.map((track) => (
-                      <button
-                        key={String(track.id)}
-                        onClick={() => {
-                          setSelectedSubtitleId(track.id);
-                          setSubEnabled(track.id !== 'off');
-                          setIsEmbedSubMenuOpen(false);
-                        }}
-                        className={cn(
-                          "w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-left transition-colors hover:bg-white/[0.06] cursor-pointer",
-                          track.id === selectedSubtitleId ? "text-violet-400" : "text-white/70"
-                        )}
-                      >
-                        {track.id === selectedSubtitleId && <Check size={12} className="text-violet-400 shrink-0" />}
-                        {track.id !== selectedSubtitleId && <span className="w-3 shrink-0" />}
-                        {track.name}
-                      </button>
-                    ))}
-                    <div className="border-t border-white/[0.06] my-1" />
-                    <a
-                      href="/cinemax-extension.zip"
-                      download
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsEmbedSubMenuOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[11px] font-bold text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/[0.03] transition-colors cursor-pointer"
-                    >
-                      <Download size={12} className="shrink-0 text-emerald-400" />
-                      <span>Tải Extension (.zip)</span>
-                    </a>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Select source selection panel */}
-            {streams && streams.length > 0 && (
-              <button 
-                onClick={(e) => { 
-                  e.stopPropagation(); 
-                  setIsSourcesOpen(!isSourcesOpen); 
-                  setIsEpisodesOpen(false); 
-                }} 
-                className={cn(
-                  "hover:opacity-100 transition-all flex items-center justify-center gap-2 rounded-xl active:scale-95 cursor-pointer h-8 sm:h-9 px-3 w-full sm:w-auto bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-xs sm:text-xs font-bold tracking-wide shrink-0",
-                  isSourcesOpen ? "text-emerald-400 border-emerald-500/50 bg-emerald-500/10 shadow-[0_0_10px_rgba(16,185,129,0.15)]" : "text-white/80"
-                )}
-                title="Chọn nguồn phát"
-              >
-                <Wifi size={15} className={isSourcesOpen ? "text-emerald-400" : "text-white/60"} />
-                <span>Nguồn</span>
-              </button>
-            )}
-
 
           </div>
         </div>

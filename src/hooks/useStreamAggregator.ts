@@ -119,10 +119,14 @@ export function useStreamAggregator({
     season: query.season,
     episode: query.episode,
     viSlug: query.viSlug,
+    title: query.title,
+    titleVi: query.titleVi,
+    year: query.year,
+    serversLength: servers?.length || 0,
     ep: activeEpName,
     retry: retryCount,
     hianimeEpisodeId: query.hianimeEpisodeId || activeEpisodeObj?.hianime_episode_id
-  }), [query.tmdbId, query.imdbId, query.type, query.season, query.episode, query.viSlug, activeEpName, retryCount, query.hianimeEpisodeId, activeEpisodeObj?.hianime_episode_id]);
+  }), [query.tmdbId, query.imdbId, query.type, query.season, query.episode, query.viSlug, query.title, query.titleVi, query.year, servers, activeEpName, retryCount, query.hianimeEpisodeId, activeEpisodeObj?.hianime_episode_id]);
 
   const prevRef = useRef<{ queryKey: string; enabled: boolean }>({ queryKey: '', enabled: false });
 

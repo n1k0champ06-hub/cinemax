@@ -22,6 +22,7 @@ import { MovieDetail } from "./components/movie/MovieDetail";
 import { SearchPage } from "./components/pages/SearchPage";
 import { ListingPage } from "./components/pages/ListingPage";
 import { DiscoverPage } from "./components/pages/DiscoverPage";
+import { SwipePage } from "./components/pages/SwipePage";
 import { FootballPage } from "./components/pages/FootballPage";
 import { MusicPage } from "./components/pages/MusicPage";
 import { UserGuideModal } from "./components/layout/UserGuideModal";
@@ -31,6 +32,7 @@ import "./lib/firebase";
 import { ImdbRow } from "./components/movie/ImdbRow";
 import { initFetchInterceptor, godModeStore } from "./lib/godmode";
 import { GodModeConsole } from "./components/debug/GodModeConsole";
+import { MobileSimulator } from "./components/debug/MobileSimulator";
 import ScraperDashboard from "./components/admin/ScraperDashboard";
 
 const queryClient = new QueryClient({
@@ -55,8 +57,28 @@ const persister = createAsyncStoragePersister({
 export default function App() {
   const [currentTab, setCurrentTab] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get("tab") || "home";
+    const initialTab = params.get("tab");
+    if (initialTab) {
+      if (initialTab === "swipe" && typeof window !== "undefined" && window.innerWidth >= 768) {
+        return "home";
+      }
+      return initialTab;
+    }
+    const isDesktop = typeof window !== "undefined" && window.innerWidth >= 768;
+    return isDesktop ? "home" : "swipe";
   });
+
+  // Redirect swipe page to home on PC/Desktop
+  useEffect(() => {
+    const checkDesktopSwipe = () => {
+      if (currentTab === "swipe" && window.innerWidth >= 768) {
+        setCurrentTab("home");
+      }
+    };
+    checkDesktopSwipe();
+    window.addEventListener("resize", checkDesktopSwipe);
+    return () => window.removeEventListener("resize", checkDesktopSwipe);
+  }, [currentTab]);
 
   const [selectedMovieSlug, setSelectedMovieSlugState] = useState<string | null>(() => {
     const params = new URLSearchParams(window.location.search);
@@ -258,6 +280,16 @@ export default function App() {
           transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), z-index 0s, box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
       `;
+
+      // Inject simulated touch pointer cursor (finger pointer emulation) when running inside iframe
+      if (window.self !== window.top) {
+        style.innerHTML += `
+          * {
+            cursor: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSI5IiBmaWxsPSJyZ2JhKDEyOCwxMjgsMTI4LDAuNCkiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjYpIiBzdHJva2Utd2lkdGg9IjEuNSIvPjwvc3ZnPg==') 12 12, auto !important;
+          }
+        `;
+      }
+
       document.head.appendChild(style);
     }
   }, []);
@@ -265,12 +297,14 @@ export default function App() {
   return (
     <PersistQueryClientProvider client={queryClient} persistOptions={{ persister }}>
       <div className="min-h-screen bg-[#050505] text-white selection:bg-red-600/30 selection:text-white font-sans overflow-x-hidden relative">
-        <NavBar
-          currentTab={currentTab}
-          setTab={handleSetTab}
-          onShowSearch={() => setShowSearch(true)}
-          onShowGuide={() => setShowUserGuide(true)}
-        />
+        {currentTab !== "scraper" && currentTab !== "admin" && (
+          <NavBar
+            currentTab={currentTab}
+            setTab={handleSetTab}
+            onShowSearch={() => setShowSearch(true)}
+            onShowGuide={() => setShowUserGuide(true)}
+          />
+        )}
 
         <AnimatePresence mode="wait">
           {currentTab === "home" ? (
@@ -537,6 +571,19 @@ export default function App() {
                 setTab={handleSetTab}
               />
             </motion.div>
+          ) : currentTab === "swipe" ? (
+            <motion.div
+              key="swipe"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <SwipePage
+                onSelect={setSelectedMovieSlug}
+                setTab={handleSetTab}
+              />
+            </motion.div>
           ) : currentTab === "scraper" || currentTab === "admin" ? (
             <motion.div
               key="scraper"
@@ -629,6 +676,7 @@ export default function App() {
 
         <Footer />
         <GodModeConsole />
+        <MobileSimulator />
         <ReportNotification />
       </div>
     </PersistQueryClientProvider>

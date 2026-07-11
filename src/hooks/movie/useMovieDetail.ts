@@ -434,7 +434,7 @@ export const useMovieDetail = (rawSlug: string) => {
     let rawServers = (detailData && Array.isArray(detailData.episodes)) ? detailData.episodes : [];
     
     const mainNames = ['OPhim', 'KKPhim', 'NguonC'];
-    let processedServers = mainNames.map(name => {
+    let processedServers: any[] = mainNames.map(name => {
       const found = rawServers.find((s: any) => s.server_name?.startsWith(name) || s.name === name);
       if (found) {
         let newName = found.server_name || found.name;
@@ -544,7 +544,7 @@ export const useMovieDetail = (rawSlug: string) => {
     }
 
     return processedServers;
-  }, [detailData, isAnime, finalAnilistData, finalTmdbData?.id, mediaType]);
+  }, [detailData, isAnime, finalAnilistData, finalTmdbData?.id, mediaType, data]);
 
   const isEpValid = useMemo(() => {
     if (!activeEp) return false;

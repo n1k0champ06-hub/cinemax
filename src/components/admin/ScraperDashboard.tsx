@@ -20,6 +20,7 @@ interface ScraperStats {
   connected: boolean;
   moviesCount: number;
   streamsCount: number;
+  cineproConnected?: boolean;
   error?: string;
 }
 
@@ -129,18 +130,53 @@ export default function ScraperDashboard() {
 
   const handleRunPythonScraper = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customTmdbId || !customTitle) {
-      alert("Vui lòng nhập đầy đủ TMDB ID và Tiêu đề phim!");
+    if (!customTmdbId) {
+      alert("Vui lòng nhập TMDB ID!");
       return;
     }
     
     setLoading(true);
+    let title = customTitle.trim();
+
     try {
-      const res = await fetch(`http://localhost:3001/api/admin/scraper/start?source=python&tmdb_id=${customTmdbId}&title=${encodeURIComponent(customTitle)}`, {
+      if (!title) {
+        // Automatically fetch title from TMDB API via local proxy
+        try {
+          // Try movie details first
+          let resTmdb = await fetch(`/tmdb/movie/${customTmdbId}?language=vi`);
+          if (resTmdb.ok) {
+            let dataTmdb = await resTmdb.json();
+            if (dataTmdb && (dataTmdb.title || dataTmdb.name)) {
+              title = dataTmdb.title || dataTmdb.name;
+            }
+          }
+          
+          // Try tv show details if movie failed/returned no title
+          if (!title) {
+            let resTmdbTv = await fetch(`/tmdb/tv/${customTmdbId}?language=vi`);
+            if (resTmdbTv.ok) {
+              let dataTmdbTv = await resTmdbTv.json();
+              if (dataTmdbTv && (dataTmdbTv.title || dataTmdbTv.name)) {
+                title = dataTmdbTv.title || dataTmdbTv.name;
+              }
+            }
+          }
+        } catch (tmdbErr) {
+          console.error("Failed to auto-fetch TMDB details:", tmdbErr);
+        }
+
+        if (!title) {
+          alert("Không thể tìm thấy tiêu đề phim tự động từ TMDB ID này. Vui lòng điền tiêu đề thủ công!");
+          setLoading(false);
+          return;
+        }
+      }
+
+      const res = await fetch(`http://localhost:3001/api/admin/scraper/start?source=python&tmdb_id=${customTmdbId}&title=${encodeURIComponent(title)}`, {
         method: 'POST'
       });
       if (res.ok) {
-        alert("Đã gửi yêu cầu chạy kịch bản Python Scrapling!");
+        alert(`Đã gửi yêu cầu chạy kịch bản Python Scrapling cho phim: ${title}`);
         setCustomTmdbId('');
         setCustomTitle('');
         await fetchStatus();
@@ -157,13 +193,6 @@ export default function ScraperDashboard() {
       {/* Header */}
       <div className="max-w-6xl mx-auto flex items-center justify-between mb-8 pb-5 border-b border-zinc-900">
         <div className="flex items-center gap-4">
-          <a 
-            href="/"
-            className="w-9 h-9 rounded-lg bg-zinc-950 border border-zinc-900 hover:border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-white transition-all duration-200"
-            title="Cinemax"
-          >
-            <ArrowLeft size={16} />
-          </a>
           <div>
             <h1 className="text-base sm:text-lg font-black tracking-widest text-white flex items-center gap-2 font-mono">
               <Server className="text-zinc-500" size={18} />
@@ -172,14 +201,25 @@ export default function ScraperDashboard() {
           </div>
         </div>
         
-        {/* Status indicator */}
-        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold font-mono transition-all duration-300 ${
-          stats.connected 
-            ? 'bg-emerald-950/20 border-emerald-900/50 text-emerald-400' 
-            : 'bg-red-950/20 border-red-900/50 text-red-400'
-        }`}>
-          <Database size={12} className={stats.connected ? 'animate-pulse' : ''} />
-          <span>DB: {stats.connected ? 'CONNECTED' : 'DISCONNECTED'}</span>
+        {/* Status indicators */}
+        <div className="flex items-center gap-2.5">
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold font-mono transition-all duration-300 ${
+            stats.cineproConnected 
+              ? 'bg-emerald-950/20 border-emerald-900/50 text-emerald-400' 
+              : 'bg-zinc-950 border-zinc-900 text-zinc-500'
+          }`}>
+            <Cpu size={12} className={stats.cineproConnected ? 'animate-pulse' : ''} />
+            <span>CINEPRO: {stats.cineproConnected ? 'CONNECTED' : 'OFFLINE'}</span>
+          </div>
+
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold font-mono transition-all duration-300 ${
+            stats.connected 
+              ? 'bg-emerald-950/20 border-emerald-900/50 text-emerald-400' 
+              : 'bg-red-950/20 border-red-900/50 text-red-400'
+          }`}>
+            <Database size={12} className={stats.connected ? 'animate-pulse' : ''} />
+            <span>DB: {stats.connected ? 'CONNECTED' : 'DISCONNECTED'}</span>
+          </div>
         </div>
       </div>
 
@@ -373,7 +413,7 @@ export default function ScraperDashboard() {
                 <Type size={14} className="text-zinc-600" />
                 <input
                   type="text"
-                  placeholder="Title"
+                  placeholder="Tiêu đề (Không bắt buộc - tự lấy từ TMDB)"
                   value={customTitle}
                   disabled={status.isRunning}
                   onChange={(e) => setCustomTitle(e.target.value)}

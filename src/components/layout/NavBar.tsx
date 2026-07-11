@@ -12,7 +12,8 @@ import {
   ChevronDown,
   Trophy,
   Music,
-  HelpCircle
+  HelpCircle,
+  Flame
 } from "lucide-react";
 import { motion } from "motion/react";
 
@@ -28,6 +29,7 @@ export const NavBar = ({
   onShowGuide: () => void;
 }) => {
   const [scrolled, setScrolled] = useState(false);
+  const [pulseHeart, setPulseHeart] = useState(false);
 
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 30);
@@ -35,16 +37,23 @@ export const NavBar = ({
     return () => window.removeEventListener("scroll", fn);
   }, []);
 
+  useEffect(() => {
+    const handleFavAdded = () => {
+      setPulseHeart(true);
+      setTimeout(() => setPulseHeart(false), 1000);
+    };
+    window.addEventListener('cinemax_favorite_added', handleFavAdded);
+    return () => window.removeEventListener('cinemax_favorite_added', handleFavAdded);
+  }, []);
+
   const topTabs = [
     { id: "home", label: "Trang chủ" },
     { id: "phim-bo", label: "Phim bộ" },
     { id: "phim-le", label: "Phim lẻ" },
     { id: "hoat-hinh", label: "Anime" },
-    { id: "football", label: "Football" },
-    { id: "music", label: "Âm nhạc" },
     { id: "discover", label: "Thể loại" },
     { id: "my-list", label: "Yêu thích" },
-  ].filter(tab => tab.id !== "football" && tab.id !== "music");
+  ];
 
   const mobileDockTabs = [
     { 
@@ -62,6 +71,13 @@ export const NavBar = ({
       action: () => setTab("discover") 
     },
     { 
+      id: "swipe", 
+      label: "Quẹt phim", 
+      icon: Flame, 
+      isActive: currentTab === "swipe", 
+      action: () => setTab("swipe") 
+    },
+    { 
       id: "search", 
       label: "Tìm kiếm", 
       icon: Search, 
@@ -74,13 +90,6 @@ export const NavBar = ({
       icon: Heart, 
       isActive: currentTab === "my-list", 
       action: () => setTab("my-list") 
-    },
-    { 
-      id: "guide", 
-      label: "Hướng dẫn", 
-      icon: HelpCircle, 
-      isActive: false, 
-      action: onShowGuide 
     },
   ];
 
@@ -115,6 +124,7 @@ export const NavBar = ({
                 if (tab.id === "phim-bo") return Tv;
                 if (tab.id === "phim-le") return Film;
                 if (tab.id === "hoat-hinh") return Cat;
+                if (tab.id === "swipe") return Flame;
                 if (tab.id === "football") return Trophy;
                 if (tab.id === "music") return Music;
                 if (tab.id === "discover") return LayoutGrid;
@@ -171,17 +181,37 @@ export const NavBar = ({
 
       {/* Mobile Floating Bottom Dock */}
       <div className="md:hidden fixed bottom-5 left-0 w-full z-[100] flex justify-center pointer-events-none px-4">
-        <nav className="pointer-events-auto flex items-center justify-around w-full max-w-[420px] h-16 bg-[#050505]/92 backdrop-blur-2xl border border-white/[0.08] rounded-2xl px-2 shadow-[0_24px_48px_rgba(0,0,0,0.95)]">
+        <nav className="pointer-events-auto flex items-center justify-around w-full max-w-[420px] h-16 bg-[#050505]/92 backdrop-blur-2xl border border-white/[0.08] rounded-[28px] px-2 shadow-[0_24px_48px_rgba(0,0,0,0.95)]">
           {mobileDockTabs.map((tab) => {
              const Icon = tab.icon;
              const isActive = tab.isActive;
+             const isHeartTab = tab.id === "my-list";
              return (
                <button
                  key={tab.id}
                  onClick={tab.action}
                  className="flex-1 flex flex-col justify-center items-center h-full relative cursor-pointer"
                >
-                 <Icon className={cn("w-5 h-5 transition-all duration-300", isActive ? "text-[#E50914] scale-110" : "text-neutral-400 active:scale-95")} />
+                 <motion.div
+                   animate={isHeartTab && pulseHeart ? {
+                     scale: [1, 1.45, 1, 1.45, 1],
+                     color: ["#a3a3a3", "#ef4444", "#a3a3a3", "#ef4444", isActive ? "#E50914" : "#a3a3a3"],
+                     filter: [
+                       "drop-shadow(0 0 0px rgba(239,68,68,0))",
+                       "drop-shadow(0 0 12px rgba(239,68,68,0.9))",
+                       "drop-shadow(0 0 0px rgba(239,68,68,0))",
+                       "drop-shadow(0 0 12px rgba(239,68,68,0.9))",
+                       "drop-shadow(0 0 0px rgba(239,68,68,0))"
+                     ]
+                   } : {}}
+                   transition={{ duration: 0.8, ease: "easeInOut" }}
+                   className="flex justify-center items-center"
+                 >
+                   <Icon 
+                     className={cn("w-5 h-5 transition-all duration-300", isActive ? "text-[#E50914] scale-110" : "text-neutral-400 active:scale-95")} 
+                     style={{ color: isHeartTab && pulseHeart ? 'inherit' : undefined }}
+                   />
+                 </motion.div>
                  <span className={cn("text-[9px] font-bold mt-1 tracking-wide transition-colors duration-300", isActive ? "text-white" : "text-neutral-500")}>
                    {tab.label}
                  </span>

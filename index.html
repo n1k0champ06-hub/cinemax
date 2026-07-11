@@ -16,6 +16,13 @@
     <meta name="color-scheme" content="dark" />
     <title>Cinemax</title>
     <link rel="icon" type="image/png" href="https://res.cloudinary.com/dwbbs7rho/image/upload/v1779716516/Elegant_Marquee_Style_Logo_with_Deep_Crimson_C_c2sulc.png" />
+    
+    <!-- PWA Optimization -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#E50914" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="apple-touch-icon" href="https://res.cloudinary.com/dwbbs7rho/image/upload/v1779716516/Elegant_Marquee_Style_Logo_with_Deep_Crimson_C_c2sulc.png" />
 
     <!-- Cloudflare Web Analytics Placeholder -->
     <!-- Thay 'YOUR_CF_TOKEN' bằng Web Analytics Token của bạn trên Cloudflare Dashboard -->
@@ -25,6 +32,29 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
+      // Service Worker Registration for PWA installation
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => {
+              console.log('Service Worker registered successfully:', reg.scope);
+              reg.update();
+              reg.onupdatefound = () => {
+                const installingWorker = reg.installing;
+                if (installingWorker) {
+                  installingWorker.onstatechange = () => {
+                    if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                      console.log('New version found, reloading page...');
+                      window.location.reload();
+                    }
+                  };
+                }
+              };
+            })
+            .catch(err => console.error('Service Worker registration failed:', err));
+        });
+      }
+
       document.addEventListener('contextmenu', (e) => e.preventDefault());
       document.addEventListener('keydown', (e) => {
         if (

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 export type MyListItem = {
   slug: string;
@@ -9,31 +10,50 @@ export type MyListItem = {
 
 export const useMyList = () => {
   const [myList, setMyList] = useState<MyListItem[]>([]);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('cinemax_mylist');
-      const parsed = stored ? JSON.parse(stored) : [];
-      if (Array.isArray(parsed)) setMyList(parsed);
-    } catch (e) {}
+    const updateList = () => {
+      try {
+        const stored = localStorage.getItem('cinemax_mylist');
+        const parsed = stored ? JSON.parse(stored) : [];
+        if (Array.isArray(parsed)) setMyList(parsed);
+      } catch (e) {}
+    };
+
+    updateList();
+
+    window.addEventListener('cinemax_mylist_updated', updateList);
+    window.addEventListener('storage', updateList);
+    return () => {
+      window.removeEventListener('cinemax_mylist_updated', updateList);
+      window.removeEventListener('storage', updateList);
+    };
   }, []);
+
+  const triggerUpdate = useCallback(() => {
+    window.dispatchEvent(new Event('cinemax_mylist_updated'));
+    queryClient.invalidateQueries({ queryKey: ['movies'] });
+  }, [queryClient]);
 
   const addToList = useCallback((item: MyListItem) => {
     setMyList(prev => {
       if (prev.find(i => i.slug === item.slug)) return prev;
       const next = [item, ...prev];
       localStorage.setItem('cinemax_mylist', JSON.stringify(next));
+      setTimeout(triggerUpdate, 0);
       return next;
     });
-  }, []);
+  }, [triggerUpdate]);
 
   const removeFromList = useCallback((slug: string) => {
     setMyList(prev => {
       const next = prev.filter(s => s.slug !== slug);
       localStorage.setItem('cinemax_mylist', JSON.stringify(next));
+      setTimeout(triggerUpdate, 0);
       return next;
     });
-  }, []);
+  }, [triggerUpdate]);
 
   const isInList = useCallback((slug: string) => !!myList.find(i => i.slug === slug), [myList]);
 
@@ -52,9 +72,10 @@ export const useMyList = () => {
         }, ...prev];
       }
       localStorage.setItem('cinemax_mylist', JSON.stringify(next));
+      setTimeout(triggerUpdate, 0);
       return next;
     });
-  }, []);
+  }, [triggerUpdate]);
 
   return { myList, addToList, removeFromList, isInList, toggleListItem };
 };
