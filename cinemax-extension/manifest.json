@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Cinemax Helper",
+  "version": "2.0",
+  "description": "Đồng bộ phụ đề tiếng Việt + Chặn quảng cáo popup cho Cinemax Player.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Cinemax Helper"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "tabs",
+    "storage",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "declarative_net_request": {
+    "rule_resources": []
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>", "http://localhost/*", "https://localhost/*", "http://127.0.0.1/*", "https://127.0.0.1/*"],
+      "js": ["content.js"],
+      "all_frames": true,
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["defuser.js"],
+      "all_frames": true,
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ],
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}

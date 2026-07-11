@@ -45,12 +45,13 @@ export interface CineproStreamResult {
 }
 
 // ---------------------------------------------------------------------------
-// API base
+// API base — always route through the local dev-api proxy to avoid CORS
 // ---------------------------------------------------------------------------
 
 const API_BASE = typeof window !== 'undefined' ? '' : 'http://localhost:3001';
 
 function apiUrl(path: string): string {
+  // Always go through local proxy — never call external URLs directly from browser
   return `${API_BASE}${path}`;
 }
 
@@ -194,8 +195,16 @@ export function selectBestCineproSource(sources: CineproSource[]): CineproSource
 // Proxied M3U8 URL builder (reuses existing m3u8-proxy)
 // ---------------------------------------------------------------------------
 
+/**
+ * Cloudflare Worker URL — always route m3u8 through the worker so the
+ * server-side ad-filter (filterPlaylistAds) runs on every HLS playlist.
+ * Without this, production mode bypasses the proxy and gambling ads pass through.
+ */
+const WORKER_URL = 'https://cinemax-backend-proxy.cykablyatt1505.workers.dev';
+
 export function buildProxiedM3u8Url(streamUrl: string, referer?: string | null): string {
+  const base = typeof window !== 'undefined' ? '' : WORKER_URL;
   const params = new URLSearchParams({ url: streamUrl });
   if (referer) params.set('referer', referer);
-  return `${API_BASE}/api/m3u8-proxy?${params.toString()}`;
+  return `${base}/api/m3u8-proxy?${params.toString()}`;
 }

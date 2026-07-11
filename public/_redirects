@@ -1,3 +1,4 @@
 /api/* https://cinemax-backend-proxy.cykablyatt1505.workers.dev/api/:splat 200
 /tmdb/* https://cinemax-backend-proxy.cykablyatt1505.workers.dev/tmdb/:splat 200
 /img/* https://cinemax-backend-proxy.cykablyatt1505.workers.dev/img/:splat 200
+/* /index.html 200

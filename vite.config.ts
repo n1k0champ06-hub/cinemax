@@ -19,21 +19,20 @@ export default defineConfig(({mode}) => {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify — file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
-      // Proxy /api/*, /tmdb/*, and /img/* directly to the Cloudflare Workers edge.
-      // This emulates Vercel Edge proxy redirection locally.
+      // Proxy /api/*, /tmdb/*, and /img/* to the local dev-api server.
       proxy: {
         '/api': {
-          target: 'https://cinemax-backend-proxy.cykablyatt1505.workers.dev',
+          target: 'http://localhost:3001',
           changeOrigin: true,
           secure: false,
         },
         '/tmdb': {
-          target: 'https://cinemax-backend-proxy.cykablyatt1505.workers.dev',
+          target: 'http://localhost:3001',
           changeOrigin: true,
           secure: false,
         },
         '/img': {
-          target: 'https://cinemax-backend-proxy.cykablyatt1505.workers.dev',
+          target: 'http://localhost:3001',
           changeOrigin: true,
           secure: false,
         },

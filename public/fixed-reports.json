@@ -1,0 +1,17 @@
+{
+  "fixedReportIds": [],
+  "fixedQueries": [
+    {
+      "movieSlug": "tmdb-296206-tv",
+      "episodeName": "5",
+      "serverName": "KKPHIM - Vietsub",
+      "message": "Sự cố giật lag tập 5 phim 'Đặc Vụ Kim Tái Khởi Động' (KKPHIM - Vietsub) đã được khắc phục hoàn toàn bằng cách tối ưu hóa băng thông luồng phát!"
+    },
+    {
+      "movieSlug": "dac-vu-kim-tai-khoi-dong",
+      "episodeName": "5",
+      "serverName": "KKPHIM - Vietsub",
+      "message": "Sự cố giật lag tập 5 phim 'Đặc Vụ Kim Tái Khởi Động' (KKPHIM - Vietsub) đã được khắc phục hoàn toàn bằng cách tối ưu hóa băng thông luồng phát!"
+    }
+  ]
+}

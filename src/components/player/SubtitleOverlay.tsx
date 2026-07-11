@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { parseVttCues, srtToVtt, type VttCue } from '../../api/subtitleApi';
+import { parseVttCues, srtToVtt, assToVtt, type VttCue } from '../../api/subtitleApi';
 
 interface SubtitleOverlayProps {
   // Presenter mode (direct cues rendering)
@@ -13,6 +13,7 @@ interface SubtitleOverlayProps {
   videoRef?: React.RefObject<HTMLVideoElement | null>;
   offsetMs?: number;
   enabled?: boolean;
+  onError?: (url: string) => void;
 }
 
 const FONT_SIZE_MAP = {
@@ -36,6 +37,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
   videoRef,
   offsetMs = 0,
   enabled = true,
+  onError,
 }) => {
   const [internalCues, setInternalCues] = useState<VttCue[]>([]);
   const [loading, setLoading] = useState(false);
@@ -62,7 +64,11 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
       try {
         // Route through local proxy to bypass CORS
         let fetchUrl = subtitleUrl;
-        if (subtitleUrl.startsWith('http') && !subtitleUrl.includes('localhost') && !subtitleUrl.includes(window.location.host)) {
+        if (subtitleUrl.startsWith('http') && 
+            !subtitleUrl.includes('localhost') && 
+            !subtitleUrl.includes(window.location.host) &&
+            !subtitleUrl.includes('/api/') &&
+            !subtitleUrl.includes('workers.dev')) {
           fetchUrl = `/api/sub-proxy?provider=download&url=${encodeURIComponent(subtitleUrl)}`;
         }
         
@@ -70,9 +76,12 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
         if (!res.ok) throw new Error(`Subtitle load failed: ${res.status}`);
         let text = await res.text();
 
-        // Convert SRT to VTT if needed
+        // Convert SRT or ASS/SSA to VTT if needed
         const isSrt = subtitleUrl.toLowerCase().endsWith('.srt') || (text.includes('-->') && !text.includes('WEBVTT'));
-        if (isSrt) {
+        const isAss = subtitleUrl.toLowerCase().endsWith('.ass') || subtitleUrl.toLowerCase().endsWith('.ssa') || text.includes('[Script Info]') || text.includes('Dialogue:');
+        if (isAss) {
+          text = assToVtt(text);
+        } else if (isSrt) {
           text = srtToVtt(text);
         }
 
@@ -82,9 +91,14 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
           setInternalCues(parsed);
           setLoading(false);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('[SubtitleOverlay] Error loading subtitle:', err);
-        if (active) setLoading(false);
+        if (active) {
+          setLoading(false);
+          if (onError && subtitleUrl) {
+            onError(subtitleUrl);
+          }
+        }
       }
     };
 
@@ -106,7 +120,18 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
     return timeMs >= start && timeMs <= end;
   });
 
-  if (activeCues.length === 0) return null;
+  // Filter out duplicate text cues to avoid repeating text in overlay
+  const uniqueActiveCues: VttCue[] = [];
+  const seenTexts = new Set<string>();
+  for (const cue of activeCues) {
+    const cleanText = cue.text.trim().toLowerCase();
+    if (!seenTexts.has(cleanText)) {
+      seenTexts.add(cleanText);
+      uniqueActiveCues.push(cue);
+    }
+  }
+
+  if (uniqueActiveCues.length === 0) return null;
 
   return (
     <div
@@ -126,7 +151,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
         backdropFilter: 'blur(2px)',
       }}
     >
-      {activeCues.map((cue, i) => (
+      {uniqueActiveCues.map((cue, i) => (
         <div
           key={i}
           style={{
@@ -143,7 +168,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
             fontFamily: 'system-ui, -apple-system, sans-serif',
             fontWeight: 600,
             whiteSpace: 'pre-wrap',
-            marginBottom: i < activeCues.length - 1 ? '4px' : '0',
+            marginBottom: i < uniqueActiveCues.length - 1 ? '4px' : '0',
           }}
           dangerouslySetInnerHTML={{ __html: cue.text.replace(/\n/g, '<br/>') }}
         />
@@ -163,7 +188,8 @@ export function useVideoSubtitleSync(
   const rafRef = useRef<number | null>(null);
 
   const tick = useCallback(() => {
-    if (videoRef.current && !videoRef.current.paused && !videoRef.current.ended) {
+    if (videoRef.current) {
+      // Always read currentTime regardless of play/pause state
       setCurrentTimeMs(videoRef.current.currentTime * 1000);
     }
     rafRef.current = requestAnimationFrame(tick);

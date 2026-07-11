@@ -5,15 +5,14 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
-  "kv_namespaces": [
-    {
-      "binding": "MOVIE_CACHE",
-      "id": "26fa9d0570f0473181207439732645d4"
-    }
+  "routes": [
+    "focusflow.id.vn/api/*",
+    "focusflow.id.vn/tmdb/*",
+    "focusflow.id.vn/img/*"
   ],
   "vars": {
     "CINEPRO_URL": "https://cinepro-core.cykablyatt1505.workers.dev",
-    "SUBDL_API_KEY": "subdl_GjDcZHi97s0f9hCa56ZuOurG0LRWwKKlWJoAs1Wrl4c",
+    "SUBDL_API_KEY": "sk_0d92e54aa45a7bb0c71df831bd65b27dcb948149e1a062654c2c6a3739430f26",
     "TMDB_ACCESS_TOKEN": "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJlODBkOGQxMDIyNDFlZTllNGY3MmU0YmIxMjA5YWI2YSIsIm5iZiI6MTc3Nzg2NDcyOS4wNiwic3ViIjoiNjlmODEwMTk4MWQwYmZlNTcwYzYwMDMzIiwic2NvcGVzIjpbImFwaV9yZWFkIl0sInZlcnNpb24iOjF9.JH8fusjlUu3Ed8HAJRmY-A-aOio1VRoKW-_Aiot17Og",
     "VITE_SUBTITLE_ADDONS": "stremio://opensubtitles-v3.strem.io/manifest.json"
   }

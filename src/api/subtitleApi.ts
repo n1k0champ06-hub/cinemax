@@ -142,6 +142,70 @@ export function srtToVtt(srt: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// ASS → VTT conversion
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert Advanced SubStation Alpha (.ass / .ssa) content to WebVTT (.vtt).
+ * Handles styles, positions, centisecond timestamps, and alignment.
+ */
+export function assToVtt(ass: string): string {
+  // Strip BOM and normalize line endings
+  let content = ass.replace(/^\uFEFF/, '');
+  content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = content.split('\n');
+
+  const vttLines = ['WEBVTT', ''];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('Dialogue:')) continue;
+
+    // The format is typically: Dialogue: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+    const firstCommaIdx = trimmed.indexOf(':');
+    if (firstCommaIdx === -1) continue;
+
+    const fieldsStr = trimmed.slice(firstCommaIdx + 1).trim();
+    const parts = fieldsStr.split(',');
+    if (parts.length < 10) continue;
+
+    const startStr = parts[1].trim(); // e.g. 0:00:23.90 or 00:00:23.90
+    const endStr = parts[2].trim(); // e.g. 0:00:25.59 or 00:00:25.59
+
+    // Join remaining fields for the actual dialogue text (which can contain commas)
+    let text = parts.slice(9).join(',');
+
+    // Remove ASS override styling tags like {\pos(960,960)} or {\fnArial\fs20\b1}
+    text = text.replace(/\{[^}]+\}/g, '');
+
+    // Replace ASS newline markers (\N, \n) with standard newlines
+    text = text.replace(/\\N/gi, '\n').replace(/\\n/gi, '\n');
+
+    // Convert ASS timestamp (h:mm:ss.cc or hh:mm:ss.cc) to VTT (hh:mm:ss.mmm)
+    const padTime = (timeStr: string) => {
+      const p = timeStr.split(':');
+      if (p.length !== 3) return '00:00:00.000';
+      const h = p[0].padStart(2, '0');
+      const m = p[1].padStart(2, '0');
+      let [s, cc] = p[2].split('.');
+      s = s.padStart(2, '0');
+      cc = (cc || '00').padEnd(3, '0').slice(0, 3);
+      return `${h}:${m}:${s}.${cc}`;
+    };
+
+    const startVtt = padTime(startStr);
+    const endVtt = padTime(endStr);
+
+    vttLines.push(`${startVtt} --> ${endVtt}`);
+    vttLines.push(text.trim());
+    vttLines.push('');
+  }
+
+  return vttLines.join('\n');
+}
+
+
+// ---------------------------------------------------------------------------
 // Parse VTT into cue objects
 // ---------------------------------------------------------------------------
 

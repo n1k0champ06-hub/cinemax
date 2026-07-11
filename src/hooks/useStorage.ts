@@ -69,6 +69,8 @@ export type ProgressStore = {
     thumbUrl?: string;
     movieName: string;
     season?: number;
+    tmdbId?: string | number;
+    type?: string;
   }
 };
 

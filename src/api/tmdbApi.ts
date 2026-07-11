@@ -1,11 +1,11 @@
 /// <reference types="vite/client" />
 
-// Có thể dùng Vercel Proxy (hoặc Cloudflare) để giấu API
+// Có thể dùng Cloudflare Proxy để giấu API
 const USE_PROXY = true;
-const TMDB_BASE_URL = typeof window !== 'undefined' ? '/tmdb' : 'https://cinemax-backend-proxy.cykablyatt1505.workers.dev/tmdb';
+export const TMDB_BASE_URL = typeof window !== 'undefined' ? '/tmdb' : 'http://localhost:3001/tmdb';
 
 // Nếu dùng PROXY thì client sẽ KHÔNG truyền token nữa (để ẩn token)
-// Hãy cấu hình biến môi trường VITE_TMDB_ACCESS_TOKEN (hoặc TMDB_ACCESS_TOKEN) trên Vercel Dashboard
+// Hãy cấu hình biến môi trường VITE_TMDB_ACCESS_TOKEN (hoặc TMDB_ACCESS_TOKEN) trên Cloudflare Dashboard hoặc wrangler.json
 
 // Helper to resolve TMDB token safely
 const getTmdbToken = () => {
@@ -109,13 +109,13 @@ export const tmdbSearchTv = (query: string, page = 1) =>
 export const tmdbGetMovieDetails = (movieId: number | string) => 
   fetchTmdb(`/movie/${movieId}`, { 
     append_to_response: 'credits,videos,recommendations,similar,images,release_dates,translations',
-    include_image_language: 'en,null'
+    include_image_language: 'en,null,vi,ja,ko,zh'
   });
 
 export const tmdbGetTvDetails = (tvId: number | string) => 
   fetchTmdb(`/tv/${tvId}`, { 
     append_to_response: 'credits,videos,recommendations,similar,images,content_ratings,translations',
-    include_image_language: 'en,null'
+    include_image_language: 'en,null,vi,ja,ko,zh'
   });
 
 export const tmdbGetTvSeason = (tvId: number | string, seasonNumber: number | string) => 

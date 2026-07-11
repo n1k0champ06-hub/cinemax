@@ -9,3 +9,7 @@ coverage/
 
 .vercel
 scratch/
+.agent/
+.agents/
+.claude/
+test-keys*.ts

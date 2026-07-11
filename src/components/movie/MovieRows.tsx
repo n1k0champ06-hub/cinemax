@@ -9,20 +9,25 @@ import { HorizontalShimmer } from "../ui/ImageShimmer";
 import { useIntersectionObserver } from "../../hooks/useIntersectionObserver";
 import { useWatchProgress, useMyList } from "../../hooks/useStorage";
 import { fetchDetail } from "../../api/phimApi";
-import { useTmdbDiscover } from "../../hooks/useTmdb";
+import { useTmdbDiscover, useTmdbBulkDetails } from "../../hooks/useTmdb";
+import { useAnilistBulkCovers } from "../../hooks/useAnimeDb";
 
-export const CustomMovieRowContainer = ({
+export const CustomMovieRowContainer = React.memo(({
   title,
   movies,
   onSelect,
   isTop10,
   progressStore,
+  aspectRatio = 'landscape',
+  isAnime,
 }: {
   title: string;
   movies: any[];
   onSelect: (id: string) => void;
   isTop10?: boolean;
   progressStore?: any;
+  aspectRatio?: 'landscape' | 'poster';
+  isAnime?: boolean;
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -32,8 +37,38 @@ export const CustomMovieRowContainer = ({
     }
   };
 
+  // Collect TMDB requests and Anime titles in bulk
+  const bulkRequests = useMemo(() => {
+    return movies.map(movie => {
+      const displayName = typeof movie.name === 'string' ? movie.name : (movie.title || '');
+      const isOriginallyTvPattern = /phần|season|tập|mùa|part|\b(tv|series)\b/i.test(displayName);
+      const isTv = movie?.type === 'series' || movie?.type === 'hoathinh' || movie?.tmdb?.media_type === 'tv' || (typeof movie?.slug === 'string' && movie.slug.endsWith('-tv')) || isOriginallyTvPattern;
+      const tmdbId = movie?.tmdb_id || movie?.tmdb?.id || (typeof movie.slug === 'string' && movie.slug.startsWith('tmdb-') ? movie.slug.split('-')[1] : null);
+      
+      return tmdbId ? { id: tmdbId, type: isTv ? 'tv' as const : 'movie' as const } : null;
+    }).filter(Boolean) as Array<{ id: string | number; type: 'movie' | 'tv' }>;
+  }, [movies]);
+
+  const bulkAnimeTitles = useMemo(() => {
+    return movies.map(movie => {
+      const isAnimeItem = isAnime || movie?.isJikan || 
+        (typeof movie?.slug === 'string' && (movie.slug.startsWith('anilist-') || movie.slug.startsWith('mal-') || movie.slug.startsWith('jikan-') || /^\d+$/.test(movie.slug))) || 
+        movie?.media_type === 'anime' || 
+        (title && /anime|hoạt hình/i.test(title));
+        
+      if (!isAnimeItem) return null;
+      
+      const originalTitle = movie.tmdb?.original_title || movie.tmdb?.original_name;
+      const displayName = typeof movie.name === 'string' ? movie.name : (movie.title || '');
+      return originalTitle || displayName;
+    }).filter(Boolean) as string[];
+  }, [movies, title, isAnime]);
+
+  const { data: bulkTmdbData } = useTmdbBulkDetails(bulkRequests);
+  const { data: bulkAnilistData } = useAnilistBulkCovers(bulkAnimeTitles);
+
   return (
-    <div className="py-[1.5vw] md:py-[2vw] relative group/row overflow-visible">
+    <div className="py-[0.6vw] md:py-[0.8vw] relative group/row overflow-visible">
       <div className="flex items-center gap-3 px-4 sm:px-8 md:px-12 mb-3">
         <div className="w-[3px] h-5 sm:h-6 bg-[#E50914] rounded-full" />
         <h2 className="text-white text-xl sm:text-2xl md:text-[28px] font-bold tracking-tight">
@@ -67,48 +102,92 @@ export const CustomMovieRowContainer = ({
             <div
               ref={scrollRef}
               className={cn(
-                "flex gap-2 lg:gap-3 overflow-x-auto py-8 sm:py-12 -my-8 sm:-my-12 px-[4%] scrollbar-hide items-center relative z-10",
+                "flex gap-4 sm:gap-6 overflow-x-auto py-8 sm:py-12 -my-8 sm:-my-12 px-[4%] scrollbar-hide items-center relative z-10",
                 isTop10 ? "pl-[4%]" : "",
               )}
               style={{ scrollbarWidth: "none" }}
             >
-              {movies.map((movie, idx) => (
-                <div key={`${movie.slug}-${idx}`} className="shrink-0 pt-4 pb-12">
-                  {isTop10 ? (
-                    <RankingCard movie={movie} onSelect={onSelect} idx={idx} rowTitle={`Bảng xếp hạng: ${title}`} />
-                  ) : (
-                    <MovieCard
-                      movie={movie}
-                      onSelect={onSelect}
-                      isTop10={!!isTop10}
-                      idx={idx}
-                      progressData={progressStore?.[movie.slug as string]}
-                      rowTitle={title}
-                    />
-                  )}
-                </div>
-              ))}
+              {movies.map((movie, idx) => {
+                const displayName = typeof movie.name === 'string' ? movie.name : (movie.title || '');
+                const isOriginallyTvPattern = /phần|season|tập|mùa|part|\b(tv|series)\b/i.test(displayName);
+                const isTv = movie?.type === 'series' || movie?.type === 'hoathinh' || movie?.tmdb?.media_type === 'tv' || (typeof movie?.slug === 'string' && movie.slug.endsWith('-tv')) || isOriginallyTvPattern;
+                const tmdbId = movie?.tmdb_id || movie?.tmdb?.id || (typeof movie.slug === 'string' && movie.slug.startsWith('tmdb-') ? movie.slug.split('-')[1] : null);
+                
+                const enDetails = tmdbId ? bulkTmdbData?.[`${isTv ? 'tv' : 'movie'}:${tmdbId}`] : undefined;
+                const resolvedDisplayName = enDetails?.title || enDetails?.name || displayName;
+                const originalTitle = movie.tmdb?.original_title || movie.tmdb?.original_name;
+                const aniListCover = bulkAnilistData?.[resolvedDisplayName] || 
+                                     bulkAnilistData?.[displayName] || 
+                                     (originalTitle && (bulkAnilistData?.[originalTitle] || bulkAnilistData?.[originalTitle.toLowerCase()]));
+
+                return (
+                  <div key={`${movie.slug}-${idx}`} className="shrink-0 pt-2.5 pb-5">
+                    {isTop10 ? (
+                      <RankingCard 
+                        movie={movie} 
+                        onSelect={onSelect} 
+                        idx={idx} 
+                        rowTitle={`Bảng xếp hạng: ${title}`}
+                        enDetails={enDetails}
+                        aniListCover={aniListCover}
+                        isAnime={isAnime}
+                      />
+                    ) : (
+                      <MovieCard
+                        movie={movie}
+                        onSelect={onSelect}
+                        isTop10={!!isTop10}
+                        idx={idx}
+                        progressData={progressStore?.[movie.slug as string]}
+                        rowTitle={title}
+                        enDetails={enDetails}
+                        aniListCover={aniListCover}
+                        aspectRatio={aspectRatio}
+                        isAnime={isAnime}
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
       </div>
     </div>
   );
-};
+});
 
 export const MovieRow = ({
   title,
   type,
   onSelect,
   isTop10,
+  aspectRatio = 'landscape',
 }: {
   title: string;
   type: string;
   onSelect: (slug: string) => void;
   isTop10?: boolean;
+  aspectRatio?: 'landscape' | 'poster';
 }) => {
   const ref = useRef<HTMLDivElement>(null);
-  const isIntersecting = true; // Set to true to bypass buggy iframe scroll intersection behaviors and fetch immediately
+  const [hasIntersected, setHasIntersected] = useState(false);
+
+  useEffect(() => {
+    if (hasIntersected) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setHasIntersected(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '400px' });
+    const el = ref.current;
+    if (el) observer.observe(el);
+    return () => {
+      if (el) observer.unobserve(el);
+      observer.disconnect();
+    };
+  }, [hasIntersected]);
   
   const showMovie = type !== 'phim-bo';
   const showTv = type !== 'phim-le';
@@ -161,10 +240,19 @@ export const MovieRow = ({
   const minVotesMovie = isAnime ? 5 : (isAsian ? 5 : 20);
   const minVotesTv = isAnime ? 5 : (isAsian ? 5 : 10);
 
+  // Dynamic date floor for Anime to prioritize new & popular releases
+  const getAnimeDateFloor = (rowType: string) => {
+    if (rowType === 'hoat-hinh-nhat') return '2025-01-01'; // New anime (from 2025-2026)
+    if (rowType === 'anime-popular') return '2022-01-01'; // Popular anime (from 2022-2026)
+    if (rowType === 'anime-kids') return '2010-01-01';    // Kids anime (can go back further for classics)
+    return '2022-01-01';                                 // Default for genre rows (Action, Fantasy, Romance, Comedy)
+  };
+  const animeDateFloor = isAnime ? getAnimeDateFloor(type) : '2024-01-01';
+
   const movieParams: any = {
     sort_by: type === 'phim-moi-cap-nhat' ? 'primary_release_date.desc' : 'popularity.desc',
     'vote_count.gte': type === 'phim-moi-cap-nhat' ? 0 : minVotesMovie,
-    'primary_release_date.gte': isAnime ? '1990-01-01' : '2024-01-01', // Fetch only movies from 2024 onwards to ensure fresh and modern results (lifted for Anime)
+    'primary_release_date.gte': isAnime ? animeDateFloor : '2024-01-01', // Fetch only movies from specified floor onwards
     page: 1,
   };
   const movieGenre = GENRE_MAP_MOVIE[type];
@@ -174,12 +262,18 @@ export const MovieRow = ({
     movieParams.with_original_language = 'ja';
     if (type === 'anime-action') {
       movieParams.with_genres = '16,28';
+      movieParams.without_genres = '10751,10762'; // Exclude Family, Kids to prevent family anime from bloating action rows
     } else if (type === 'anime-fantasy') {
-      movieParams.with_genres = '16,12'; // Adventure/Fantasy
+      movieParams.with_genres = '16,12|14'; // Adventure/Fantasy (12 is Adventure, 14 is Fantasy)
+      movieParams.without_genres = '10751,10762'; // Exclude Family, Kids
     } else if (type === 'anime-romance') {
       movieParams.with_genres = '16,10749';
+      movieParams.without_genres = '28,12,10751,10762'; // Exclude Action, Adventure, Family, Kids
     } else if (type === 'anime-comedy') {
       movieParams.with_genres = '16,35';
+      movieParams.without_genres = '28,12,14,10751,10762'; // Pure comedy/slice of life, excluding Action/Adventure/Fantasy/Family/Kids
+    } else if (type === 'anime-kids') {
+      movieParams.with_genres = '16,10751'; // Animation + Family
     } else {
       movieParams.with_genres = '16';
     }
@@ -193,7 +287,7 @@ export const MovieRow = ({
   const tvParams: any = {
     sort_by: type === 'phim-moi-cap-nhat' ? 'first_air_date.desc' : 'popularity.desc',
     'vote_count.gte': type === 'phim-moi-cap-nhat' ? 0 : minVotesTv,
-    'first_air_date.gte': isAnime ? '1990-01-01' : '2024-01-01', // Fetch only series from 2024 onwards to ensure fresh and modern results (lifted for Anime)
+    'first_air_date.gte': isAnime ? animeDateFloor : '2024-01-01', // Fetch only series from specified floor onwards
     page: 1,
   };
   const tvGenre = GENRE_MAP_TV[type];
@@ -203,12 +297,18 @@ export const MovieRow = ({
     tvParams.with_original_language = 'ja';
     if (type === 'anime-action') {
       tvParams.with_genres = '16,10759';
+      tvParams.without_genres = '10751,10762'; // Exclude Family, Kids to prevent family anime from bloating action rows
     } else if (type === 'anime-fantasy') {
       tvParams.with_genres = '16,10765';
+      tvParams.without_genres = '10751,10762'; // Exclude Family, Kids
     } else if (type === 'anime-romance') {
       tvParams.with_genres = '16,18';
+      tvParams.without_genres = '10759,10762'; // Exclude Action/Adventure, Kids
     } else if (type === 'anime-comedy') {
       tvParams.with_genres = '16,35';
+      tvParams.without_genres = '10759,10765,10751,10762'; // Exclude Action/Adventure, Sci-Fi/Fantasy, Family, Kids
+    } else if (type === 'anime-kids') {
+      tvParams.with_genres = '16,10751|10762'; // Animation + Family/Kids
     } else {
       tvParams.with_genres = '16';
     }
@@ -219,9 +319,26 @@ export const MovieRow = ({
   }
 
   // Dual React Queries
-  const { data: movieData, isLoading: movieLoading } = useTmdbDiscover('movie', movieParams, { enabled: isIntersecting && showMovie });
-  const { data: tvData, isLoading: tvLoading } = useTmdbDiscover('tv', tvParams, { enabled: isIntersecting && showTv });
+  const { data: movieData, isLoading: movieLoading } = useTmdbDiscover('movie', movieParams, { enabled: hasIntersected && showMovie });
+  const { data: tvData, isLoading: tvLoading } = useTmdbDiscover('tv', tvParams, { enabled: hasIntersected && showTv });
   const { progressStore } = useWatchProgress();
+
+  if (!hasIntersected) {
+    return (
+      <div
+        ref={ref}
+        className="py-[0.6vw] md:py-[0.8vw] relative min-h-[200px] md:min-h-[250px]"
+      >
+        <div className="flex items-center gap-3 px-4 sm:px-8 md:px-12 mb-3">
+          <div className="w-[3px] h-5 sm:h-6 bg-[#E50914] rounded-full" />
+          <h2 className="text-white text-xl sm:text-2xl md:text-[28px] font-bold tracking-tight">
+            {title}
+          </h2>
+        </div>
+        <HorizontalShimmer />
+      </div>
+    );
+  }
 
   const isLoading = (showMovie && movieLoading) || (showTv && tvLoading);
   const showLoading = isLoading;
@@ -285,6 +402,8 @@ export const MovieRow = ({
           isTop10={isTop10}
           onSelect={onSelect}
           progressStore={progressStore}
+          aspectRatio={aspectRatio}
+          isAnime={isAnime}
         />
       )}
     </div>
@@ -304,6 +423,8 @@ export const ContinueWatchingRow = ({
       name: data.movieName,
       poster_url: data.posterUrl,
       thumb_url: data.thumbUrl || data.posterUrl,
+      tmdb_id: data.tmdbId,
+      type: data.type || (slug.endsWith('-tv') ? 'series' : 'single'),
     }));
 
   if (items.length === 0) return null;

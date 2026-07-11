@@ -6,6 +6,8 @@ import { cn } from '../../lib/utils';
 import { tmdbDiscover } from '../../api/tmdbApi';
 import { MovieCard } from '../movie/MovieCard';
 import { GridShimmer } from '../ui/ImageShimmer';
+import { useTmdbBulkDetails } from '../../hooks/useTmdb';
+import { useAnilistBulkCovers } from '../../hooks/useAnimeDb';
 
 export const ListingPage = ({ currentTab, onSelect, setTab }: { currentTab: string, onSelect: (slug: string) => void, setTab: (t: string) => void }) => {
   const isMyList = currentTab === 'my-list';
@@ -147,6 +149,33 @@ export const ListingPage = ({ currentTab, onSelect, setTab }: { currentTab: stri
 
   // extract properly, handling my list too
   const movies = isMyList ? (data?.pages[0]?.results || []) : (data?.pages.flatMap(page => page.results || []) || []);
+
+  const bulkRequests = useMemo(() => {
+    return movies.map(movie => {
+      const displayName = typeof movie.name === 'string' ? movie.name : (movie.title || '');
+      const isOriginallyTvPattern = /phần|season|tập|mùa|part|\b(tv|series)\b/i.test(displayName);
+      const isTv = movie?.type === 'series' || movie?.type === 'hoathinh' || movie?.tmdb?.media_type === 'tv' || (typeof movie?.slug === 'string' && movie.slug.endsWith('-tv')) || isOriginallyTvPattern;
+      const tmdbId = movie?.tmdb_id || movie?.tmdb?.id || (typeof movie.slug === 'string' && movie.slug.startsWith('tmdb-') ? movie.slug.split('-')[1] : null);
+      
+      return tmdbId ? { id: tmdbId, type: isTv ? 'tv' as const : 'movie' as const } : null;
+    }).filter(Boolean) as Array<{ id: string | number; type: 'movie' | 'tv' }>;
+  }, [movies]);
+
+  const bulkAnimeTitles = useMemo(() => {
+    return movies.map(movie => {
+      const displayName = typeof movie.name === 'string' ? movie.name : (movie.title || '');
+      
+      const isAnime = movie?.isJikan || 
+        (typeof movie?.slug === 'string' && (movie.slug.startsWith('anilist-') || movie.slug.startsWith('mal-') || movie.slug.startsWith('jikan-') || /^\d+$/.test(movie.slug))) || 
+        movie?.media_type === 'anime' || 
+        (currentTab === 'hoat-hinh');
+        
+      return isAnime ? displayName : null;
+    }).filter(Boolean) as string[];
+  }, [movies, currentTab]);
+
+  const { data: bulkTmdbData } = useTmdbBulkDetails(bulkRequests);
+  const { data: bulkAnilistData } = useAnilistBulkCovers(bulkAnimeTitles);
   
   return (
     <div className="max-w-[1400px] mx-auto px-4 md:px-12 w-full pt-6">
@@ -223,17 +252,30 @@ export const ListingPage = ({ currentTab, onSelect, setTab }: { currentTab: stri
       {!isLoading && movies.length > 0 && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-5 gap-y-10">
-            {movies.map((movie: any, idx: number) => (
-              <MovieCard 
-                key={`${movie.slug || idx}-${idx}`} 
-                movie={movie} 
-                idx={idx} 
-                isTop10={false} 
-                className="w-full"
-                onSelect={(slug) => { onSelect(slug); }} 
-                rowTitle={title}
-              />
-            ))}
+            {movies.map((movie: any, idx: number) => {
+              const displayName = typeof movie.name === 'string' ? movie.name : (movie.title || '');
+              const isOriginallyTvPattern = /phần|season|tập|mùa|part|\b(tv|series)\b/i.test(displayName);
+              const isTv = movie?.type === 'series' || movie?.type === 'hoathinh' || movie?.tmdb?.media_type === 'tv' || (typeof movie?.slug === 'string' && movie.slug.endsWith('-tv')) || isOriginallyTvPattern;
+              const tmdbId = movie?.tmdb_id || movie?.tmdb?.id || (typeof movie.slug === 'string' && movie.slug.startsWith('tmdb-') ? movie.slug.split('-')[1] : null);
+              
+              const enDetails = tmdbId ? bulkTmdbData?.[`${isTv ? 'tv' : 'movie'}:${tmdbId}`] : undefined;
+              const resolvedDisplayName = enDetails?.title || enDetails?.name || displayName;
+              const aniListCover = bulkAnilistData?.[resolvedDisplayName] || bulkAnilistData?.[displayName];
+
+              return (
+                <MovieCard 
+                  key={`${movie.slug || idx}-${idx}`} 
+                  movie={movie} 
+                  idx={idx} 
+                  isTop10={false} 
+                  className="w-full"
+                  onSelect={(slug) => { onSelect(slug); }} 
+                  rowTitle={title}
+                  enDetails={enDetails}
+                  aniListCover={aniListCover}
+                />
+              );
+            })}
           </div>
 
           {hasNextPage && !isMyList && (

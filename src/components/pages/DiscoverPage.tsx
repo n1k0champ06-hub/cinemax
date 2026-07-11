@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, SlidersHorizontal, Loader2, RefreshCw, Check } from 'lucide-react';
 import { useInfiniteQuery } from '@tanstack/react-query';
@@ -6,6 +6,8 @@ import { cn } from '../../lib/utils';
 import { tmdbDiscover } from '../../api/tmdbApi';
 import { MovieCard } from '../movie/MovieCard';
 import { GridShimmer } from '../ui/ImageShimmer';
+import { useTmdbBulkDetails } from '../../hooks/useTmdb';
+import { useAnilistBulkCovers } from '../../hooks/useAnimeDb';
 
 interface DiscoverPageProps {
   onSelect: (slug: string) => void;
@@ -468,6 +470,33 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
 
   const movies = data?.pages.flatMap(page => page.results || []) || [];
 
+  const bulkRequests = useMemo(() => {
+    return movies.map(movie => {
+      const displayName = typeof movie.name === 'string' ? movie.name : (movie.title || '');
+      const isOriginallyTvPattern = /phần|season|tập|mùa|part|\b(tv|series)\b/i.test(displayName);
+      const isTv = movie?.type === 'series' || movie?.type === 'hoathinh' || movie?.tmdb?.media_type === 'tv' || (typeof movie?.slug === 'string' && movie.slug.endsWith('-tv')) || isOriginallyTvPattern;
+      const tmdbId = movie?.tmdb_id || movie?.tmdb?.id || (typeof movie.slug === 'string' && movie.slug.startsWith('tmdb-') ? movie.slug.split('-')[1] : null);
+      
+      return tmdbId ? { id: tmdbId, type: isTv ? 'tv' as const : 'movie' as const } : null;
+    }).filter(Boolean) as Array<{ id: string | number; type: 'movie' | 'tv' }>;
+  }, [movies]);
+
+  const bulkAnimeTitles = useMemo(() => {
+    return movies.map(movie => {
+      const displayName = typeof movie.name === 'string' ? movie.name : (movie.title || '');
+      
+      const isAnime = movie?.isJikan || 
+        (typeof movie?.slug === 'string' && (movie.slug.startsWith('anilist-') || movie.slug.startsWith('mal-') || movie.slug.startsWith('jikan-') || /^\d+$/.test(movie.slug))) || 
+        movie?.media_type === 'anime' || 
+        (selectedMediaType === 'anime');
+        
+      return isAnime ? displayName : null;
+    }).filter(Boolean) as string[];
+  }, [movies, selectedMediaType]);
+
+  const { data: bulkTmdbData } = useTmdbBulkDetails(bulkRequests);
+  const { data: bulkAnilistData } = useAnilistBulkCovers(bulkAnimeTitles);
+
   const toggleDropdown = (name: string) => {
     setActiveDropdown(prev => prev === name ? null : name);
   };
@@ -878,18 +907,31 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
        {!isLoading && movies.length > 0 && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-7">
-            {movies.map((movie: any, idx: number) => (
-              <MovieCard 
-                key={`${movie.slug || idx}-${idx}`} 
-                movie={movie} 
-                idx={idx} 
-                isTop10={false}
-                onSelect={() => handleSelect(movie)} 
-                className="w-full"
-                rowTitle="Khám phá & Bộ lọc"
-                aspectRatio={selectedMediaType === 'anime' ? 'poster' : 'landscape'}
-              />
-            ))}
+            {movies.map((movie: any, idx: number) => {
+              const displayName = typeof movie.name === 'string' ? movie.name : (movie.title || '');
+              const isOriginallyTvPattern = /phần|season|tập|mùa|part|\b(tv|series)\b/i.test(displayName);
+              const isTv = movie?.type === 'series' || movie?.type === 'hoathinh' || movie?.tmdb?.media_type === 'tv' || (typeof movie?.slug === 'string' && movie.slug.endsWith('-tv')) || isOriginallyTvPattern;
+              const tmdbId = movie?.tmdb_id || movie?.tmdb?.id || (typeof movie.slug === 'string' && movie.slug.startsWith('tmdb-') ? movie.slug.split('-')[1] : null);
+              
+              const enDetails = tmdbId ? bulkTmdbData?.[`${isTv ? 'tv' : 'movie'}:${tmdbId}`] : undefined;
+              const resolvedDisplayName = enDetails?.title || enDetails?.name || displayName;
+              const aniListCover = bulkAnilistData?.[resolvedDisplayName] || bulkAnilistData?.[displayName];
+
+              return (
+                <MovieCard 
+                  key={`${movie.slug || idx}-${idx}`} 
+                  movie={movie} 
+                  idx={idx} 
+                  isTop10={false}
+                  onSelect={() => handleSelect(movie)} 
+                  className="w-full"
+                  rowTitle="Khám phá & Bộ lọc"
+                  aspectRatio={selectedMediaType === 'anime' ? 'poster' : 'landscape'}
+                  enDetails={enDetails}
+                  aniListCover={aniListCover}
+                />
+              );
+            })}
           </div>
 
           {hasNextPage && (

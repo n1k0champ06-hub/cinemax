@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play, Info, Plus, Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { useTmdbTrending } from "../hooks/useTmdb";
 import { SafeImage } from "./ui/ImageShimmer";
-import { tmdbGetTrending, tmdbDiscover } from "../api/tmdbApi";
+import { tmdbGetTrending, tmdbDiscover, tmdbGetMovieDetails, tmdbGetTvDetails } from "../api/tmdbApi";
 
 export const Hero = ({
   type = "home",
@@ -19,6 +19,7 @@ export const Hero = ({
   setTab?: (t: string) => void;
   onShowSearch?: () => void;
 }) => {
+  const queryClient = useQueryClient();
   const { data: trendingData, isLoading: isTrendingLoading } = useQuery({
     queryKey: ['tmdb', 'hero-trending', type],
     queryFn: async () => {
@@ -37,14 +38,14 @@ export const Hero = ({
           with_genres: '16',
           with_original_language: 'ja',
           sort_by: 'popularity.desc',
-          'first_air_date.gte': '2018-01-01',
+          'first_air_date.gte': '2023-01-01',
           'vote_count.gte': 100
         });
         const movieUrl = await tmdbDiscover('movie', {
           with_genres: '16',
           with_original_language: 'ja',
           sort_by: 'popularity.desc',
-          'primary_release_date.gte': '2018-01-01',
+          'primary_release_date.gte': '2023-01-01',
           'vote_count.gte': 50
         });
         
@@ -60,22 +61,61 @@ export const Hero = ({
         return tmdbGetTrending('all', 'week');
       }
     },
-    staleTime: 15 * 60 * 1000,
+    staleTime: 24 * 60 * 60 * 1000,
   });
   const [currentIndex, setCurrentIndex] = useState(0);
-
   const maxItems = trendingData?.results ? Math.min(trendingData.results.length, 10) : 0;
   const activeMovie = trendingData?.results?.[currentIndex];
+
+  const [progress, setProgress] = useState(0);
+  const [shouldShowLoader, setShouldShowLoader] = useState(true);
+
+  const isLoaded = !isTrendingLoading && !!activeMovie;
+
+  useEffect(() => {
+    if (isLoaded) {
+      setProgress(100);
+      const timeout = setTimeout(() => {
+        setShouldShowLoader(false);
+      }, 400);
+      return () => clearTimeout(timeout);
+    } else {
+      const interval = setInterval(() => {
+        setProgress((prev) => {
+          if (prev >= 98) return prev;
+          const inc = Math.floor(Math.random() * 8) + 4;
+          return Math.min(prev + inc, 98);
+        });
+      }, 100);
+      return () => clearInterval(interval);
+    }
+  }, [isLoaded]);
+
+  // Prefetch details (including logos) for the top 10 trending items in the background
+  useEffect(() => {
+    if (!trendingData?.results) return;
+    const items = trendingData.results.slice(0, 10);
+    items.forEach((movie: any) => {
+      queryClient.prefetchQuery({
+        queryKey: ['tmdb', 'details', movie.media_type || 'movie', movie.id],
+        queryFn: () => {
+          return (movie.media_type === 'tv') 
+            ? tmdbGetTvDetails(movie.id) 
+            : tmdbGetMovieDetails(movie.id);
+        },
+        staleTime: 24 * 60 * 60 * 1000,
+      });
+    });
+  }, [trendingData, queryClient]);
 
   // Fetch full details of active trending slide to pull English logo backdrops
   const { data: tmdbDetails } = useQuery({
     queryKey: ['tmdb', 'details', activeMovie?.media_type || 'movie', activeMovie?.id],
-    queryFn: async () => {
-      const { tmdbGetMovieDetails, tmdbGetTvDetails } = await import('../api/tmdbApi');
+    queryFn: () => {
       return (activeMovie?.media_type === 'tv') ? tmdbGetTvDetails(activeMovie.id) : tmdbGetMovieDetails(activeMovie.id);
     },
     enabled: !!activeMovie?.id,
-    staleTime: 1000 * 60 * 15, // 15 minutes cache
+    staleTime: 24 * 60 * 60 * 1000, // 24 hours cache
   });
 
   // Slider Auto rotation
@@ -87,15 +127,29 @@ export const Hero = ({
     return () => clearInterval(interval);
   }, [maxItems, currentIndex]);
 
-  if (isTrendingLoading || !activeMovie) {
+  if (shouldShowLoader || !activeMovie) {
     return (
-      <div className="relative h-[65dvh] min-h-[460px] lg:h-screen lg:h-[100dvh] lg:min-h-[550px] w-full overflow-hidden bg-[#050505] flex items-center justify-center">
+      <div className="relative h-[65dvh] min-h-[460px] lg:h-screen lg:h-[100dvh] lg:min-h-[550px] w-full overflow-hidden bg-[#050505] flex flex-col items-center justify-center gap-4">
         {/* Top Slim Crimson Loading Progress Bar */}
-        <div className="absolute top-0 left-0 h-[2.5px] bg-[#E50914] shadow-[0_0_8px_#E50914] animate-[shimmer_2s_infinite_linear]" style={{ width: "65%" }} />
+        <div 
+          className="absolute top-0 left-0 h-[2.5px] bg-[#E50914] shadow-[0_0_8px_#E50914] transition-all duration-300 ease-out" 
+          style={{ width: `${progress}%` }} 
+        />
         
-        <span className="text-[10px] sm:text-xs font-mono tracking-[0.3em] text-gray-400 font-semibold uppercase animate-pulse select-none">
-          Đang tải dữ liệu...
-        </span>
+        <div className="flex flex-col items-center gap-3">
+          <span className="text-[10px] sm:text-xs font-mono tracking-[0.3em] text-gray-400 font-semibold uppercase select-none">
+            Đang tải dữ liệu...
+          </span>
+          <div className="w-48 h-1 bg-white/10 rounded-full overflow-hidden relative">
+            <div 
+              className="h-full bg-[#E50914] shadow-[0_0_8px_#E50914] transition-all duration-300 ease-out rounded-full"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <span className="text-xs font-bold text-gray-500 font-mono tracking-wider">
+            {progress}%
+          </span>
+        </div>
       </div>
     );
   }
@@ -109,8 +163,14 @@ export const Hero = ({
   // 2. Main backdrop image choice (Standard textless backdrop is preferred since we are overlaying the logo)
   const bgImage = activeMovie.backdrop_path ? (activeMovie.backdrop_path.startsWith('http') ? activeMovie.backdrop_path : `https://image.tmdb.org/t/p/original/${activeMovie.backdrop_path.split('/').pop()}`) : englishBackdropUrl || activeMovie.poster_path;
   
-  // 3. Official transparent logo overlay
-  const logoFile = isDetailsForActiveMovie ? tmdbDetails?.images?.logos?.find((l: any) => l.iso_639_1 === 'en' || l.iso_639_1 === 'vi' || !l.iso_639_1)?.file_path : null;
+  // 3. Official transparent logo overlay (prioritize English, fallback to neutral, Japanese, Korean, Vietnamese)
+  const logoFile = isDetailsForActiveMovie
+    ? (tmdbDetails?.images?.logos?.find((l: any) => l.iso_639_1 === 'en')?.file_path ||
+       tmdbDetails?.images?.logos?.find((l: any) => !l.iso_639_1)?.file_path ||
+       tmdbDetails?.images?.logos?.find((l: any) => l.iso_639_1 === 'ja')?.file_path ||
+       tmdbDetails?.images?.logos?.find((l: any) => l.iso_639_1 === 'ko')?.file_path ||
+       tmdbDetails?.images?.logos?.find((l: any) => l.iso_639_1 === 'vi')?.file_path)
+    : null;
   const logoUrl = logoFile ? `https://image.tmdb.org/t/p/w500/${logoFile}` : null;
 
   const handleNext = () => setCurrentIndex((prev) => (prev + 1) % maxItems);
@@ -138,7 +198,7 @@ export const Hero = ({
           transition={{ duration: 1.0, ease: "easeInOut" }}
           className="absolute inset-0 h-full w-full z-0 overflow-hidden bg-black"
         >
-          <SafeImage src={bgImage || ''} alt={titleString} className="w-full h-full object-cover opacity-100 lg:opacity-90 pointer-events-none select-none" />
+          <SafeImage src={bgImage || ''} alt={titleString} className="w-full h-full object-cover opacity-100 lg:opacity-90 pointer-events-none select-none" priority={true} />
         </motion.div>
       </AnimatePresence>
 
@@ -165,7 +225,7 @@ export const Hero = ({
             {/* Official English Title Artwork Logo or Large Text-Fallback */}
             {logoUrl ? (
               <div className="max-w-[80%] sm:max-w-[70%] lg:max-w-[420px] aspect-[16/7] relative flex items-end justify-center md:justify-start mx-auto md:mx-0 pointer-events-none drop-shadow-[0_4px_12px_rgba(0,0,0,0.85)] filter brightness-115">
-                <SafeImage src={logoUrl} alt={titleString} className="max-h-full max-w-full object-contain object-center md:object-left origin-center md:origin-left scale-95" />
+                <SafeImage src={logoUrl} alt={titleString} className="max-h-full max-w-full object-contain object-center md:object-left origin-center md:origin-left scale-95" priority={true} />
               </div>
             ) : (
               <h1 

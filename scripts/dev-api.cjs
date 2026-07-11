@@ -1,9 +1,6 @@
 /**
- * Local dev server — emulates Vercel Edge Functions on port 3001.
+ * Local dev server — emulates Cloudflare Workers on port 3001.
  * Run: node scripts/dev-api.cjs
- *
- * Supports both text (JSON, m3u8 manifests) and binary (TS segments) responses.
- * Not needed on Vercel — Edge Functions run natively there.
  */
 
 'use strict';
@@ -14,6 +11,7 @@ const urlModule = require('url');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
+const { MongoClient } = require('mongodb');
 
 const PORT = 3001;
 
@@ -45,230 +43,467 @@ function loadEnv() {
 
 loadEnv();
 
+// Load wrangler vars as fallback
+let wranglerVars = {};
+try {
+  const wranglerConfig = JSON.parse(fs.readFileSync(path.join(__dirname, '../wrangler.json'), 'utf8'));
+  wranglerVars = wranglerConfig.vars || {};
+} catch (_) {}
+
 // ---------------------------------------------------------------------------
-// fetch() polyfill — supports binary (Buffer) response
+// Connect to MongoDB
 // ---------------------------------------------------------------------------
-global.fetch = (targetUrl, options = {}) => {
-  return new Promise((resolve, reject) => {
-    const parsedUrl = new URL(targetUrl);
-    const isHttps = parsedUrl.protocol === 'https:';
-    const lib = isHttps ? https : http;
+let dbClient = null;
+let db = null;
 
-    const reqOpts = {
-      hostname: parsedUrl.hostname,
-      port: parsedUrl.port || (isHttps ? 443 : 80),
-      path: parsedUrl.pathname + parsedUrl.search,
-      method: options.method || 'GET',
-      headers: options.headers || {},
-      timeout: 35000,
-    };
+async function connectMongoDB() {
+  const mongoUri = process.env.MONGODB_URI;
+  if (!mongoUri) {
+    console.log('[CINEMAX dev-api] MONGODB_URI not configured in .env, MongoDB caching disabled.');
+    return;
+  }
+  try {
+    dbClient = new MongoClient(mongoUri);
+    await dbClient.connect();
+    db = dbClient.db();
+    console.log('[CINEMAX dev-api] Connected to MongoDB database:', db.databaseName);
+  } catch (err) {
+    console.error('[CINEMAX dev-api] MongoDB connection failed:', err.message);
+  }
+}
+connectMongoDB();
 
-    const req = lib.request(reqOpts, (res) => {
-      const chunks = [];
-      res.on('data', chunk => chunks.push(chunk));
-      res.on('end', () => {
-        let body = Buffer.concat(chunks);
-
-        // Decompress gzip/br if needed
-        const encoding = res.headers['content-encoding'] || '';
-        try {
-          if (encoding === 'gzip') body = zlib.gunzipSync(body);
-          else if (encoding === 'deflate') body = zlib.inflateSync(body);
-          else if (encoding === 'br') body = zlib.brotliDecompressSync(body);
-        } catch (_) { /* ignore decompression errors — pass raw */ }
-
-        const text = () => Promise.resolve(body.toString('utf-8'));
-        const json = () => {
-          try { return Promise.resolve(JSON.parse(body.toString('utf-8'))); }
-          catch (e) { return Promise.reject(e); }
-        };
-        const arrayBuffer = () => {
-          const ab = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength);
-          return Promise.resolve(ab);
-        };
-
-        resolve({
-          ok: res.statusCode >= 200 && res.statusCode < 300,
-          status: res.statusCode,
-          headers: {
-            get: (h) => res.headers[h.toLowerCase()] || null,
-            entries: () => Object.entries(res.headers),
-          },
-          _rawBody: body, // keep Buffer for binary pass-through
-          text, json, arrayBuffer,
-        });
-      });
-    });
-
-    if (options.signal) {
-      const onAbort = () => {
-        req.destroy(new Error('Request aborted'));
-      };
-      if (options.signal.aborted) {
-        onAbort();
-      } else {
-        options.signal.addEventListener('abort', onAbort);
-        req.on('close', () => {
-          options.signal.removeEventListener('abort', onAbort);
-        });
-      }
-    }
-
-    req.setTimeout(35000, () => { req.destroy(new Error('Request timeout')); });
-    req.on('error', reject);
-    if (options.body) req.write(options.body);
-    req.end();
-  });
+// ---------------------------------------------------------------------------
+// Scraper / Miner Admin Endpoints
+// ---------------------------------------------------------------------------
+let scraperState = {
+  isRunning: false,
+  currentTask: 'Idle',
+  processed: 0,
+  total: 0,
+  logs: ['[System] Trình quản trị máy đào sẵn sàng.']
 };
 
-// ---------------------------------------------------------------------------
-// AbortSignal.timeout polyfill
-// ---------------------------------------------------------------------------
-if (!global.AbortSignal) {
-  global.AbortSignal = { timeout: (ms) => ({ aborted: false }) };
+function addScraperLog(msg) {
+  const time = new Date().toLocaleTimeString();
+  scraperState.logs.push(`[${time}] ${msg}`);
+  if (scraperState.logs.length > 200) {
+    scraperState.logs.shift();
+  }
 }
 
-// ---------------------------------------------------------------------------
-// Response class — supports both text and binary body
-// ---------------------------------------------------------------------------
-global.Response = class Response {
-  constructor(body, init = {}) {
-    this._body = body;   // string | ArrayBuffer | Buffer | null
-    this.status = init.status || 200;
-    this.headers = init.headers || {};
+async function startBackgroundSync(source, limitPages = 2, customUrl = '') {
+  if (scraperState.isRunning) return;
+  scraperState.isRunning = true;
+  scraperState.processed = 0;
+  scraperState.total = limitPages;
+  scraperState.currentTask = `Đồng bộ dữ liệu từ ${source.toUpperCase()}`;
+  scraperState.logs = [];
+
+  let baseUrl = (customUrl || '').trim();
+  if (!baseUrl) {
+    if (source === 'kkphim') baseUrl = 'https://phimapi.com';
+    else if (source === 'nguonc') baseUrl = 'https://phim.nguonc.com/api';
+    else baseUrl = 'https://ophim1.cc';
   }
+  baseUrl = baseUrl.replace(/\/$/, '');
 
-  /** Returns true if body is binary (ArrayBuffer or Buffer) */
-  get _isBinary() {
-    return this._body instanceof ArrayBuffer ||
-           Buffer.isBuffer(this._body) ||
-           this._body instanceof Uint8Array;
-  }
+  addScraperLog(`Bắt đầu đồng bộ từ nguồn: ${baseUrl} (Giới hạn: ${limitPages} trang)...`);
 
-  get body() { return this._body; }
-};
-
-// ---------------------------------------------------------------------------
-// Route handler — loads api/*.js files dynamically
-// ---------------------------------------------------------------------------
-async function routeRequest(pathname, searchParams, method, incomingHeaders) {
-  const targetUrl = `https://cinemax-backend-proxy.cykablyatt1505.workers.dev${pathname}?${searchParams.toString()}`;
-  
   try {
-    const headers = { ...incomingHeaders };
-    // Override host header to match the Cloudflare Worker domain
-    headers['host'] = 'cinemax-backend-proxy.cykablyatt1505.workers.dev';
-    
-    // Remove headers that might cause decompression or agent issues
-    delete headers['connection'];
-    delete headers['accept-encoding'];
+    if (!db) {
+      throw new Error("Chưa kết nối cơ sở dữ liệu MongoDB. Hãy cấu hình MONGODB_URI trong file .env");
+    }
 
-    const res = await fetch(targetUrl, {
-      method,
-      headers,
-    });
-    
-    const contentType = res.headers.get('Content-Type') || 'application/json';
-    const status = res.status;
-    
-    // Determine if the content is binary (m3u8-proxy, image, segment etc.)
-    const isBinary = contentType.includes('video/') || contentType.includes('image/') || pathname.includes('m3u8-proxy') || pathname.includes('img');
-    
-    let body;
-    if (isBinary) {
-      const arrayBuffer = await res.arrayBuffer();
-      body = Buffer.from(arrayBuffer);
-    } else {
-      const text = await res.text();
-      body = Buffer.from(text, 'utf-8');
+    const moviesCol = db.collection('movies');
+    const streamsCol = db.collection('streams');
+
+    let actualLimit = limitPages;
+    for (let page = 1; page <= actualLimit; page++) {
+      if (!scraperState.isRunning) {
+        addScraperLog("Đồng bộ bị dừng bởi người dùng.");
+        break;
+      }
+
+      addScraperLog(`Đang tải dữ liệu trang ${page}...`);
+      
+      let listUrl = `${baseUrl}/danh-sach/phim-moi-cap-nhat?page=${page}`;
+      if (source === 'nguonc' || baseUrl.includes('nguonc.com')) {
+        listUrl = `${baseUrl}/films/phim-moi-cap-nhat?page=${page}`;
+      }
+      
+      let listRes;
+      try {
+        listRes = await fetch(listUrl);
+      } catch (err) {
+        addScraperLog(`Lỗi tải trang ${page}: ${err.message}`);
+        continue;
+      }
+
+      if (!listRes.ok) {
+        addScraperLog(`Lỗi tải trang ${page}: HTTP ${listRes.status}`);
+        continue;
+      }
+
+      const listData = await listRes.json();
+      
+      // Dynamic pagination limit for "Sync All" (9999)
+      if (page === 1 && limitPages === 9999) {
+        const paginationObj = listData.paginate || listData.pagination || {};
+        const totalPages = parseInt(paginationObj.total_page || paginationObj.totalPages || paginationObj.total_pages || '1000', 10);
+        actualLimit = totalPages;
+        scraperState.total = totalPages;
+        addScraperLog(`Cài đặt chế độ đồng bộ tất cả: Tổng cộng ${totalPages} trang.`);
+      }
+
+      const items = listData.items || listData.data || [];
+      addScraperLog(`Trang ${page} có ${items.length} phim mới cập nhật.`);
+
+      for (const item of items) {
+        if (!scraperState.isRunning) break;
+
+        const slug = item.slug;
+        let detailsUrl = `${baseUrl}/phim/${slug}`;
+        if (source === 'nguonc' || baseUrl.includes('nguonc.com')) {
+          detailsUrl = `${baseUrl}/film/${slug}`;
+        }
+        
+        let detailRes;
+        try {
+          detailRes = await fetch(detailsUrl);
+        } catch (err) {
+          addScraperLog(`Lỗi tải chi tiết phim '${slug}': ${err.message}`);
+          continue;
+        }
+
+        if (!detailRes.ok) {
+          addScraperLog(`Lỗi tải chi tiết phim '${slug}': HTTP ${detailRes.status}`);
+          continue;
+        }
+
+        const detailData = await detailRes.json();
+        const movie = detailData.movie;
+        const episodes = detailData.episodes || [];
+
+        if (!movie) continue;
+
+        // Lưu thông tin phim vào bộ sưu tập movies
+        await moviesCol.updateOne(
+          { slug: movie.slug },
+          { 
+            $set: {
+              title: movie.name,
+              originTitle: movie.origin_name,
+              slug: movie.slug,
+              thumbUrl: movie.thumb_url,
+              posterUrl: movie.poster_url,
+              type: movie.type || 'series',
+              status: movie.status || 'ongoing',
+              year: movie.year || new Date().getFullYear(),
+              updatedAt: new Date()
+            }
+          },
+          { upsert: true }
+        );
+
+        // Lưu thông tin luồng phát vào bộ sưu tập streams
+        let addedEpisodesCount = 0;
+        for (const epGroup of episodes) {
+          const serverName = epGroup.server_name;
+          const serverData = epGroup.server_data || epGroup.items || [];
+          for (const ep of serverData) {
+            const streamUrl = ep.link_m3u8 || ep.m3u8 || ep.embed || '';
+            if (streamUrl) {
+              await streamsCol.updateOne(
+                { slug: movie.slug, server: serverName, episode: ep.name },
+                {
+                  $set: {
+                    title: movie.name,
+                    slug: movie.slug,
+                    server: serverName,
+                    episode: ep.name,
+                    streamUrl: streamUrl,
+                    updatedAt: new Date()
+                  }
+                },
+                { upsert: true }
+              );
+              addedEpisodesCount++;
+            }
+          }
+        }
+
+        addScraperLog(`Đã đồng bộ phim '${movie.name}' (${addedEpisodesCount} tập).`);
+        await new Promise(r => setTimeout(r, 200));
+      }
+
+      scraperState.processed = page;
     }
-    
-    // Capture headers
-    const resHeaders = {};
-    for (const [key, val] of res.headers.entries()) {
-      resHeaders[key] = val;
+
+    if (scraperState.isRunning) {
+      addScraperLog("Đồng bộ hoàn tất thành công!");
     }
-    
-    return {
-      status,
-      body,
-      contentType,
-      isBinary,
-      resHeaders,
-    };
   } catch (err) {
-    console.error(`[dev-api proxy] Error routing ${pathname} to Cloudflare:`, err.message);
-    return {
-      status: 500,
-      body: Buffer.from(JSON.stringify({ error: err.message })),
-      contentType: 'application/json',
-      isBinary: false,
-    };
+    addScraperLog(`Lỗi hệ thống trong quá trình đồng bộ: ${err.message}`);
+    console.error(err);
+  } finally {
+    scraperState.isRunning = false;
+    scraperState.currentTask = 'Idle';
   }
+}
+
+async function handleLocalScraperStats() {
+  if (!db) {
+    return new Response(JSON.stringify({ 
+      connected: false,
+      moviesCount: 0,
+      streamsCount: 0,
+      error: "Chưa kết nối MongoDB"
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+  try {
+    const moviesCount = await db.collection('movies').countDocuments();
+    const streamsCount = await db.collection('streams').countDocuments();
+    return new Response(JSON.stringify({
+      connected: true,
+      moviesCount,
+      streamsCount
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
+async function handleLocalScraperStart(searchParams) {
+  const source = searchParams.get('source') || 'kkphim';
+  const limit = parseInt(searchParams.get('limit') || '2', 10);
+  const customUrl = searchParams.get('customUrl') || '';
+  
+  if (scraperState.isRunning) {
+    return new Response(JSON.stringify({ error: 'Máy đào đang hoạt động. Vui lòng dừng hoặc chờ hoàn thành.' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  // Chạy nền
+  startBackgroundSync(source, limit, customUrl);
+
+  return new Response(JSON.stringify({ ok: true, message: 'Đã kích hoạt máy đào chạy ngầm.' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
+
+async function handleLocalScraperStatus() {
+  return new Response(JSON.stringify(scraperState), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
+
+async function handleLocalScraperStop() {
+  if (scraperState.isRunning) {
+    scraperState.isRunning = false;
+    addScraperLog("Đang yêu cầu dừng máy đào...");
+  }
+  return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
+
+async function handleLocalScraperGetStreams(searchParams) {
+  if (!db) {
+    return new Response(JSON.stringify({ error: 'Chưa kết nối MongoDB' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  const title = searchParams.get('title') || '';
+  const titleVi = searchParams.get('titleVi') || '';
+  const year = parseInt(searchParams.get('year') || '0', 10);
+  const episode = searchParams.get('episode') || '1';
+
+  try {
+    const queryConds = [];
+    if (title) {
+      queryConds.push({ title: { $regex: new RegExp(`^${escapeRegex(title)}$`, 'i') } });
+      queryConds.push({ originTitle: { $regex: new RegExp(`^${escapeRegex(title)}$`, 'i') } });
+      queryConds.push({ title: { $regex: new RegExp(escapeRegex(title), 'i') } });
+      queryConds.push({ originTitle: { $regex: new RegExp(escapeRegex(title), 'i') } });
+    }
+    if (titleVi) {
+      queryConds.push({ title: { $regex: new RegExp(`^${escapeRegex(titleVi)}$`, 'i') } });
+      queryConds.push({ originTitle: { $regex: new RegExp(`^${escapeRegex(titleVi)}$`, 'i') } });
+      queryConds.push({ title: { $regex: new RegExp(escapeRegex(titleVi), 'i') } });
+      queryConds.push({ originTitle: { $regex: new RegExp(escapeRegex(titleVi), 'i') } });
+    }
+
+    if (queryConds.length === 0) {
+      return new Response(JSON.stringify({ streams: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    const movies = await db.collection('movies').find({
+      $or: queryConds
+    }).toArray();
+
+    if (movies.length === 0) {
+      return new Response(JSON.stringify({ streams: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    let bestMovie = movies[0];
+    if (year > 0) {
+      const matchYear = movies.find(m => parseInt(m.year) === year);
+      if (matchYear) bestMovie = matchYear;
+    }
+
+    const streams = await db.collection('streams').find({
+      slug: bestMovie.slug
+    }).toArray();
+
+    const getEpNum = (str) => {
+      const num = String(str).toLowerCase().replace(/\D/g, '');
+      return num ? parseInt(num, 10) : str;
+    };
+    const targetEpNum = getEpNum(episode);
+
+    const matchedStreams = streams.filter(s => {
+      const sEpNum = getEpNum(s.episode);
+      return sEpNum === targetEpNum || String(s.episode).toLowerCase() === String(episode).toLowerCase();
+    });
+
+    return new Response(JSON.stringify({
+      ok: true,
+      movie: bestMovie,
+      streams: matchedStreams
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
+function escapeRegex(string) {
+  return string.replace(/[/\-\\^$*+?.()|[\]{}]/g, '\\$&');
 }
 
 // ---------------------------------------------------------------------------
 // HTTP server
 // ---------------------------------------------------------------------------
-const server = http.createServer(async (req, res) => {
-  const parsed = urlModule.parse(req.url, true);
-  const pathname = parsed.pathname || '/';
-  const searchParams = new URLSearchParams(parsed.search || '');
+async function main() {
+  // Dynamically import the Cloudflare Worker module (must be ES module format)
+  const workerPath = path.join(__dirname, '..', 'cloudflare-worker.js');
+  const workerModule = await import(urlModule.pathToFileURL(workerPath).href);
+  const worker = workerModule.default;
 
-  // CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Api-Key, Range');
+  const server = http.createServer(async (req, res) => {
+    const parsed = urlModule.parse(req.url, true);
+    const pathname = parsed.pathname || '/';
+    const searchParams = new URLSearchParams(parsed.search || '');
 
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204);
-    res.end();
-    return;
-  }
+    // CORS Headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Api-Key, Range');
 
-  if (!pathname.startsWith('/api/') && !pathname.startsWith('/tmdb/') && !pathname.startsWith('/img/')) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not an allowed path' }));
-    return;
-  }
-
-  const isM3u8Proxy = pathname.startsWith('/api/m3u8-proxy');
-  const isBinaryLikely = isM3u8Proxy;
-
-  // Log (shorter for binary proxy to avoid spam)
-  if (!isBinaryLikely || process.env.VERBOSE_API) {
-    console.log(`[dev-api] ${req.method} ${pathname}${parsed.search ? parsed.search.slice(0, 80) + '...' : ''}`);
-  }
-
-  const result = await routeRequest(pathname, searchParams, req.method, req.headers);
-
-  // Build response headers
-  const headers = {
-    'Content-Type': result.contentType,
-    'Access-Control-Allow-Origin': '*',
-  };
-
-  // Pass through specific upstream headers for m3u8/stream content
-  if (result.resHeaders) {
-    const passThrough = ['Content-Range', 'Accept-Ranges', 'X-Proxy-Source'];
-    for (const h of passThrough) {
-      if (result.resHeaders[h] || result.resHeaders[h.toLowerCase()]) {
-        headers[h] = result.resHeaders[h] || result.resHeaders[h.toLowerCase()];
-      }
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
     }
-  }
 
-  res.writeHead(result.status, headers);
-  res.end(result.body);
-});
+    // Handled local scraper endpoints
+    if (pathname === '/api/admin/scraper/stats') {
+      const response = await handleLocalScraperStats();
+      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+      res.end(Buffer.from(await response.arrayBuffer()));
+      return;
+    }
+    if (pathname === '/api/admin/scraper/start') {
+      const response = await handleLocalScraperStart(searchParams);
+      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+      res.end(Buffer.from(await response.arrayBuffer()));
+      return;
+    }
+    if (pathname === '/api/admin/scraper/status') {
+      const response = await handleLocalScraperStatus();
+      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+      res.end(Buffer.from(await response.arrayBuffer()));
+      return;
+    }
+    if (pathname === '/api/admin/scraper/stop') {
+      const response = await handleLocalScraperStop();
+      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+      res.end(Buffer.from(await response.arrayBuffer()));
+      return;
+    }
+    if (pathname === '/api/admin/scraper/streams') {
+      const response = await handleLocalScraperGetStreams(searchParams);
+      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+      res.end(Buffer.from(await response.arrayBuffer()));
+      return;
+    }
 
-server.listen(PORT, () => {
-  console.log(`\n[CINEMAX dev-api] Running on http://localhost:${PORT}`);
-  console.log('[CINEMAX dev-api] Routes:');
-  console.log(`  /api/cinepro-proxy?type=movie&tmdbId=550`);
-  console.log(`  /api/cinepro-proxy?type=tv&tmdbId=1396&season=1&episode=1`);
-  console.log(`  /api/m3u8-proxy?url=<encoded_url>&referer=<encoded_referer>`);
-  console.log(`  /api/sub-proxy?provider=subdl&tmdb_id=123&type=movie&lang=vi`);
-  console.log(`  /api/tmdb?path=/movie/popular`);
-  console.log('\n  Run Vite in a separate terminal: npm run dev\n');
+    if (!pathname.startsWith('/api/') && !pathname.startsWith('/tmdb/') && !pathname.startsWith('/img/')) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not an allowed path' }));
+      return;
+    }
+
+    // Convert Node req to WHATWG Request for Cloudflare Worker fetch()
+    const url = `http://localhost:${PORT}${req.url}`;
+    
+    // Read request body for POST/PUT if present
+    let body = null;
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      const chunks = [];
+      for await (const chunk of req) {
+        chunks.push(chunk);
+      }
+      body = Buffer.concat(chunks);
+    }
+
+    const headers = { ...req.headers };
+    // Remove host header to let Request constructor resolve it to local
+    delete headers['host'];
+
+    const request = new Request(url, {
+      method: req.method,
+      headers: headers,
+      body: body,
+      duplex: 'half'
+    });
+
+    const env = {
+      ...wranglerVars,
+      ...process.env,
+    };
+
+    const ctx = {
+      waitUntil(promise) {
+        promise.catch(err => console.error('[dev-api worker-ctx] Error in waitUntil:', err));
+      }
+    };
+
+    try {
+      const response = await worker.fetch(request, env, ctx);
+      
+      const resHeaders = {};
+      for (const [key, val] of response.headers.entries()) {
+        resHeaders[key] = val;
+      }
+      // Access-Control-Allow-Origin is already added by our server CORS logic or the worker
+      resHeaders['Access-Control-Allow-Origin'] = '*';
+
+      res.writeHead(response.status, resHeaders);
+      const arrayBuffer = await response.arrayBuffer();
+      res.end(Buffer.from(arrayBuffer));
+    } catch (err) {
+      console.error(`[dev-api worker] Error handling ${req.method} ${pathname}:`, err.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+  });
+
+  server.listen(PORT, () => {
+    console.log(`\n[CINEMAX dev-api] Running on http://localhost:${PORT}`);
+    console.log('[CINEMAX dev-api] Routes:');
+    console.log(`  /api/cinepro-proxy?type=movie&tmdbId=550`);
+    console.log(`  /api/cinepro-proxy?type=tv&tmdbId=1396&season=1&episode=1`);
+    console.log(`  /api/m3u8-proxy?url=<encoded_url>&referer=<encoded_referer>`);
+    console.log(`  /api/sub-proxy?provider=subdl&tmdb_id=123&type=movie&lang=vi`);
+    console.log(`  /api/tmdb?path=/movie/popular`);
+    console.log('\n  Run Vite in a separate terminal: npm run dev\n');
+  });
+}
+
+main().catch(err => {
+  console.error('[CINEMAX dev-api] Server startup failure:', err);
+  process.exit(1);
 });

@@ -1,4 +1,7 @@
 
+import { tmdbSearchMulti, tmdbGetTrending } from './tmdbApi';
+import { computeMatchScore, getStringSimilarity } from '../utils/movieMatcher';
+
 export const fetchMultiSource = async (type: string, page: number = 1) => {
   const isNew = type === 'phim-moi-cap-nhat';
   const isCategory = type.startsWith('the-loai/') || type.startsWith('quoc-gia/');
@@ -74,6 +77,41 @@ export const fetchMultiSource = async (type: string, page: number = 1) => {
   return Array.from(unique.values());
 };
 
+const isForeignWord = (word: string): boolean => {
+  const cleanWord = word.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]/g, '');
+  if (!cleanWord) return false;
+  
+  if (/[fjwz]/.test(cleanWord)) return true;
+  
+  const last = cleanWord[cleanWord.length - 1];
+  if (/[a-z]/.test(last) && !/[aeiouy]/.test(last)) {
+    const lastTwo = cleanWord.slice(-2);
+    if (!['c', 'm', 'n', 'p', 't'].includes(last) && lastTwo !== 'ch' && lastTwo !== 'ng' && lastTwo !== 'nh') {
+      return true;
+    }
+  }
+
+  if (/[bcdfghjklmnpqrstvwxyz]{3,}/.test(cleanWord)) return true;
+  if (/[aeiou]{3,}/.test(cleanWord)) return true;
+  if (/(?<!t)r(?![aeiouyđ])|[blcfgs][rl]|[rtldp]s|st|mp|nk|nd|ld|lt/i.test(cleanWord)) return true;
+  
+  return false;
+};
+
+const STOP_WORDS = new Set([
+  'cua', 'va', 'cac', 'nhung', 'phim', 'bo', 'le', 'tap', 'hoat', 'hinh', 
+  'anime', 'vietsub', 'thuyet', 'minh', 'long', 'tieng', 'ban', 'dep', 
+  'hd', 'full', 'raw', 'viet', 'sub', 'tron', 'bo', 'chieu', 'rap'
+]);
+
+const cleanVietnameseTones = (str: string): string => {
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D');
+};
+
 export const fetchSearch = async (keyword: string) => {
   if (!keyword) return [];
   const encodedKw = encodeURIComponent(keyword);
@@ -82,16 +120,87 @@ export const fetchSearch = async (keyword: string) => {
     { name: 'OPhim', url: `https://ophim1.com/v1/api/tim-kiem?keyword=${encodedKw}&limit=30` }
   ];
 
-  const results = await Promise.allSettled(
-    sources.map(s => 
-      fetchWithTimeout(s.url, {}, 5000)
-        .then(r => r.json())
-        .then(data => ({ sourceName: s.name, data }))
-    )
-  );
+  const tmdbPromise = tmdbSearchMulti(keyword)
+    .then(async (data) => {
+      if (data && data.results && data.results.length > 0) {
+        return data;
+      }
+
+      const words = keyword.split(/\s+/);
+      if (words.length <= 1) return data;
+
+      const foreignWords: string[] = [];
+      const vietnameseWords: string[] = [];
+
+      words.forEach(word => {
+        const cleanWord = word.replace(/[^\p{L}\p{N}]/gu, '');
+        if (!cleanWord) return;
+
+        if (isForeignWord(cleanWord)) {
+          if (!STOP_WORDS.has(cleanVietnameseTones(cleanWord).toLowerCase())) {
+            foreignWords.push(cleanWord);
+          }
+        } else {
+          const normalized = cleanVietnameseTones(cleanWord).toLowerCase();
+          if (!STOP_WORDS.has(normalized) && cleanWord.length >= 3) {
+            vietnameseWords.push(cleanWord);
+          }
+        }
+      });
+
+      const fallbacks: string[] = [];
+
+      const combined = [...vietnameseWords, ...foreignWords].join(' ');
+      if (combined && combined.toLowerCase() !== keyword.toLowerCase()) {
+        fallbacks.push(combined);
+      }
+
+      if (vietnameseWords.length > 2) {
+        const subsetCombined = [...vietnameseWords.slice(0, 2), ...foreignWords].join(' ');
+        fallbacks.push(subsetCombined);
+      }
+
+      if (foreignWords.length > 0) {
+        fallbacks.push(foreignWords.join(' '));
+      }
+
+      if (vietnameseWords.length > 0) {
+        fallbacks.push(vietnameseWords.slice(0, 2).join(' '));
+      }
+
+      for (const q of fallbacks) {
+        try {
+          const res = await tmdbSearchMulti(q);
+          if (res && res.results && res.results.length > 0) {
+            console.log(`[TMDB Fallback] Succeeded for "${q}" (original: "${keyword}")`);
+            return res;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      return data;
+    })
+    .catch(err => {
+      console.warn("TMDB search in fetchSearch failed:", err);
+      return { results: [] };
+    });
+
+  const [localResults, tmdbResults] = await Promise.all([
+    Promise.allSettled(
+      sources.map(s => 
+        fetchWithTimeout(s.url, {}, 5000)
+          .then(r => r.json())
+          .then(data => ({ sourceName: s.name, data }))
+      )
+    ),
+    tmdbPromise
+  ]);
+
   const merged: any[] = [];
   
-  results.forEach(res => {
+  localResults.forEach(res => {
     if (res.status === 'fulfilled') {
       const v = res.value.data;
       const pathImage = v?.data?.APP_DOMAIN_CDN_IMAGE || v?.pathImage || 'https://phimimg.com/';
@@ -116,6 +225,7 @@ export const fetchSearch = async (keyword: string) => {
     if (tmdbId) {
       const isTv = item.type === 'series' || item.type === 'hoathinh' || item.type === 'tvshows' || item.tmdb?.type === 'tv' || item.tmdb?.media_type === 'tv';
       const key = `tmdb_${tmdbId}`;
+      item.originalSlug = item.slug;
       item.slug = `tmdb-${tmdbId}-${isTv ? 'tv' : 'movie'}`;
 
       const existing = unique.get(key);
@@ -149,15 +259,149 @@ export const fetchSearch = async (keyword: string) => {
     }
   });
 
-  return Array.from(unique.values()).map((item: any) => {
+  const addTmdbItem = (tmdbItem: any, isActorMatch = false) => {
+    const tmdbId = String(tmdbItem.id);
+    const key = `tmdb_${tmdbId}`;
+
+    // If already added by local database (since we mapped it above)
+    if (unique.has(key)) {
+      const existing = unique.get(key);
+      if (isActorMatch) {
+        existing.isActorMatch = true;
+      }
+      if (tmdbItem.popularity) {
+        existing.popularity = tmdbItem.popularity;
+      }
+      return;
+    }
+
+    const title = tmdbItem.title || tmdbItem.name;
+    const originalTitle = tmdbItem.original_title || tmdbItem.original_name || '';
+    const year = String(parseInt((tmdbItem.release_date || tmdbItem.first_air_date || '').substring(0, 4)) || '');
+
+    const normOrigin = originalTitle.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+    const normName = title.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+
+    const originKey = normOrigin && normOrigin.length > 2 ? `origin_${normOrigin}_${year}` : '';
+    const nameKey = normName && normName.length > 2 ? `name_${normName}_${year}` : '';
+
+    // Prevent duplicates by title/original title and year
+    if (originKey && seenKeys.has(originKey)) return;
+    if (nameKey && seenKeys.has(nameKey)) return;
+
+    const posterUrl = tmdbItem.poster_path ? `https://image.tmdb.org/t/p/w500${tmdbItem.poster_path}` : '';
+    const thumbUrl = tmdbItem.backdrop_path ? `https://image.tmdb.org/t/p/w780${tmdbItem.backdrop_path}` : '';
+
+    const item: any = {
+      name: title,
+      origin_name: originalTitle,
+      slug: `tmdb-${tmdbId}-${tmdbItem.media_type || (tmdbItem.release_date ? 'movie' : 'tv')}`,
+      type: (tmdbItem.media_type === 'tv' || tmdbItem.first_air_date) ? 'series' : 'single',
+      poster_url: posterUrl,
+      thumb_url: thumbUrl,
+      year: year,
+      tmdb_id: tmdbItem.id,
+      popularity: tmdbItem.popularity || 0,
+      isTmdbOnly: true, // Mark as virtual TMDB-only item
+      isActorMatch,
+      tmdb: {
+        id: tmdbItem.id,
+        media_type: tmdbItem.media_type || (tmdbItem.release_date ? 'movie' : 'tv')
+      }
+    };
+
+    unique.set(key, item);
+    if (originKey) seenKeys.add(originKey);
+    if (nameKey) seenKeys.add(nameKey);
+  };
+
+  // Merge TMDB results
+  if (tmdbResults && Array.isArray(tmdbResults.results)) {
+    tmdbResults.results.forEach((tmdbItem: any) => {
+      if (tmdbItem.media_type === 'person' && Array.isArray(tmdbItem.known_for)) {
+        tmdbItem.known_for.forEach((knownItem: any) => {
+          if (knownItem.media_type === 'movie' || knownItem.media_type === 'tv') {
+            addTmdbItem(knownItem, true);
+          }
+        });
+      } else if (tmdbItem.media_type === 'movie' || tmdbItem.media_type === 'tv') {
+        addTmdbItem(tmdbItem, false);
+      }
+    });
+  }
+
+  const keywordCleaned = keyword.toLowerCase().trim();
+  const maxPopularity = Math.max(...Array.from(unique.values()).map((item: any) => item.popularity || 0), 1);
+
+  const results = Array.from(unique.values()).map((item: any) => {
     const poster = typeof item.poster_url === 'string' ? item.poster_url : '';
     const thumb = typeof item.thumb_url === 'string' ? item.thumb_url : '';
+    
+    // Compute similarity score
+    const simName = getStringSimilarity(keywordCleaned, item.name || '');
+    const simOrigin = getStringSimilarity(keywordCleaned, item.origin_name || '');
+    let maxSim = Math.max(simName, simOrigin);
+    
+    if (item.isActorMatch) {
+      maxSim = Math.max(maxSim, 0.8); // Baseline score for direct actor matches
+    }
+
+    const normPopularity = (item.popularity || 0) / maxPopularity;
+    
+    // Combined score: 80% similarity, 20% popularity
+    // Reduce popularity impact heavily if there's no name similarity at all to prevent unrelated spam
+    const relevanceWeight = maxSim < 0.15 ? 0.05 : 0.2;
+    const combinedScore = (maxSim * 0.8) + (normPopularity * relevanceWeight);
+
     return {
       ...item,
       poster_url: poster.startsWith('http') ? poster : `https://phimimg.com/${poster}`,
-      thumb_url: thumb.startsWith('http') ? thumb : `https://phimimg.com/${thumb}`
+      thumb_url: thumb.startsWith('http') ? thumb : `https://phimimg.com/${thumb}`,
+      _similarity: maxSim,
+      _popularity: item.popularity || 0,
+      _combinedScore: combinedScore
     };
   });
+
+  // Sort by combined score descending
+  results.sort((a, b) => b._combinedScore - a._combinedScore);
+
+  return results;
+};
+
+export const fetchTrendingMovies = async () => {
+  try {
+    const data = await tmdbGetTrending('all', 'day');
+    if (data && Array.isArray(data.results)) {
+      return data.results
+        .filter((item: any) => item.media_type === 'movie' || item.media_type === 'tv')
+        .map((item: any) => {
+          const title = item.title || item.name;
+          const originalTitle = item.original_title || item.original_name || '';
+          const year = String(parseInt((item.release_date || item.first_air_date || '').substring(0, 4)) || '');
+          const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : '';
+          const thumbUrl = item.backdrop_path ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}` : '';
+          return {
+            name: title,
+            origin_name: originalTitle,
+            slug: `tmdb-${item.id}-${item.media_type}`,
+            type: item.media_type === 'tv' ? 'series' : 'single',
+            poster_url: posterUrl,
+            thumb_url: thumbUrl,
+            year: year,
+            tmdb_id: item.id,
+            isTmdbOnly: true,
+            tmdb: {
+              id: item.id,
+              media_type: item.media_type
+            }
+          };
+        });
+    }
+  } catch (err) {
+    console.error("fetchTrendingMovies failed:", err);
+  }
+  return [];
 };
 
 const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 15000) => {
@@ -173,7 +417,15 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout 
   }
 };
 
-const findAlternativeSlug = async (sourceName: string, title: string, originTitle: string, year: number) => {
+const findAlternativeSlug = async (
+  sourceName: string,
+  title: string,
+  originTitle: string,
+  year: number,
+  tmdbId?: string | number,
+  imdbId?: string,
+  casts?: string[]
+) => {
   try {
     let searchUrl = '';
     const keyword = originTitle || title;
@@ -182,6 +434,8 @@ const findAlternativeSlug = async (sourceName: string, title: string, originTitl
 
     if (sourceName === 'OPhim') {
       searchUrl = `https://ophim1.com/v1/api/tim-kiem?keyword=${encodedKw}&limit=10`;
+    } else if (sourceName === 'NguonC') {
+      searchUrl = `https://phim.nguonc.com/api/films/search?keyword=${encodedKw}`;
     } else {
       searchUrl = `https://phimapi.com/v1/api/tim-kiem?keyword=${encodedKw}&limit=10`;
     }
@@ -194,28 +448,16 @@ const findAlternativeSlug = async (sourceName: string, title: string, originTitl
 
     if (!items || items.length === 0) return null;
 
-    // Score the items to find the best match
+    // Score the items to find the best match using the unified computeMatchScore
     const scored = items.map((item: any) => {
-      const itemTitle = item.name || '';
-      const itemOrigin = item.origin_name || item.original_name || '';
-      const itemYear = parseInt(item.year) || 0;
-      
-      // Simple similarity score
-      let score = 0;
-      if (itemTitle.toLowerCase() === title.toLowerCase() || itemOrigin.toLowerCase() === originTitle.toLowerCase()) {
-        score += 80;
-      } else if (itemTitle.toLowerCase().includes(title.toLowerCase()) || itemOrigin.toLowerCase().includes(originTitle.toLowerCase())) {
-        score += 50;
-      }
-      
-      if (year && itemYear) {
-        if (Math.abs(itemYear - year) <= 1) {
-          score += 20;
-        } else {
-          score -= 30;
-        }
-      }
-      
+      const score = computeMatchScore(item, {
+        title,
+        original_title: originTitle,
+        year,
+        id: tmdbId,
+        imdb_id: imdbId,
+        casts
+      });
       return { slug: item.slug, score };
     });
 
@@ -232,7 +474,8 @@ const findAlternativeSlug = async (sourceName: string, title: string, originTitl
 export const fetchDetail = async (slug: string) => {
   const sources = [
     { name: 'OPhim', url: `https://ophim1.com/phim/${slug}` },
-    { name: 'KKPhim', url: `https://phimapi.com/phim/${slug}` }
+    { name: 'KKPhim', url: `https://phimapi.com/phim/${slug}` },
+    { name: 'NguonC', url: `https://phim.nguonc.com/api/film/${slug}` }
   ];
   
   const results = await Promise.allSettled(
@@ -247,7 +490,7 @@ export const fetchDetail = async (slug: string) => {
   const serverResultsMap: Record<string, any> = {};
   
   results.forEach(res => {
-    const sourceName = (res as any).value?.sourceName || ['OPhim', 'KKPhim'][results.indexOf(res)];
+    const sourceName = (res as any).value?.sourceName || ['OPhim', 'KKPhim', 'NguonC'][results.indexOf(res)];
     if (res.status === 'fulfilled' && res.value?.data) {
       const v = res.value.data;
       const movieObj = v.movie || v.film || v.data?.item;
@@ -269,6 +512,20 @@ export const fetchDetail = async (slug: string) => {
   // Normalize origin_name for NguonC base movies
   baseMovie.origin_name = baseMovie.origin_name || baseMovie.original_name || '';
 
+  // Extract metadata fields to pass for advanced matching
+  const tmdbId = baseMovie.tmdb?.id || '';
+  const imdbId = baseMovie.imdb?.id || '';
+  
+  // Cast list
+  let casts: string[] = [];
+  if (baseMovie.actor) {
+    if (Array.isArray(baseMovie.actor)) {
+      casts = baseMovie.actor.map(a => typeof a === 'string' ? a : (a.name || ''));
+    } else if (typeof baseMovie.actor === 'string') {
+      casts = baseMovie.actor.split(',').map(s => s.trim());
+    }
+  }
+
   // For failed sources, try searching for alternative slugs in parallel
   const title = baseMovie.name || "";
   const originTitle = baseMovie.origin_name || "";
@@ -278,12 +535,13 @@ export const fetchDetail = async (slug: string) => {
     const statusObj = serverResultsMap[sourceName];
     if (statusObj.success) return; // already succeeded
 
-    // Try finding alternative slug
-    const altSlug = await findAlternativeSlug(sourceName, title, originTitle, year);
+    // Try finding alternative slug with ID and cast matching
+    const altSlug = await findAlternativeSlug(sourceName, title, originTitle, year, tmdbId, imdbId, casts);
     if (altSlug) {
       try {
         let altUrl = '';
         if (sourceName === 'OPhim') altUrl = `https://ophim1.com/phim/${altSlug}`;
+        else if (sourceName === 'NguonC') altUrl = `https://phim.nguonc.com/api/film/${altSlug}`;
         else if (sourceName === 'KKPhim') altUrl = `https://phimapi.com/phim/${altSlug}`;
 
         const res = await fetchWithTimeout(altUrl, {}, 2500);
@@ -308,13 +566,25 @@ export const fetchDetail = async (slug: string) => {
     const statusObj = serverResultsMap[s.name];
     if (statusObj.success && statusObj.data) {
       const v = statusObj.data;
-      const eps = v.episodes || v.items || v.movie?.episodes || v.data?.item?.episodes;
+      let eps = v.episodes || v.items || v.movie?.episodes || v.data?.item?.episodes;
+      if (s.name === 'NguonC') {
+        eps = v.movie?.episodes || v.episodes || [];
+      }
       if (Array.isArray(eps) && eps.length > 0) {
         eps.forEach((ep: any) => {
           let server_data = ep.server_data;
-          // NguonC is removed
+          if (s.name === 'NguonC' && ep.items) {
+            server_data = ep.items.map((item: any) => ({
+              name: item.name,
+              slug: item.slug,
+              filename: item.filename || `Tập ${item.name}`,
+              link_embed: item.embed || item.link_embed || '',
+              link_m3u8: item.m3u8 || item.link_m3u8 || '',
+            }));
+          }
+          const cleanServerName = (ep.server_name || 'VIP').replace(/\s*#\d+/g, '');
           allEpisodes.push({
-            server_name: `${s.name} - ${ep.server_name || 'VIP'}`,
+            server_name: `${s.name} - ${cleanServerName}`,
             server_data: server_data,
             status: 'ok'
           });

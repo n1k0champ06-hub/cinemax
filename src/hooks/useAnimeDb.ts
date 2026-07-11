@@ -1,5 +1,27 @@
 import { useQuery } from '@tanstack/react-query';
 
+function getCurrentSeasonAndYear() {
+  const date = new Date();
+  const month = date.getMonth(); // 0-indexed (0 is Jan, 11 is Dec)
+  const year = date.getFullYear();
+  
+  let season = 'SPRING';
+  if (month === 11 || month === 0 || month === 1) {
+    season = 'WINTER';
+  } else if (month >= 2 && month <= 4) {
+    season = 'SPRING';
+  } else if (month >= 5 && month <= 7) {
+    season = 'SUMMER';
+  } else if (month >= 8 && month <= 10) {
+    season = 'FALL';
+  }
+  
+  // Adjust year for Winter (December belongs to Winter of the next year in AniList model)
+  const seasonYear = (month === 11) ? year + 1 : year;
+  
+  return { season, year: seasonYear };
+}
+
 export const useAnimeDbRanking = (page = 1, size = 15, enabled = true) => {
   return useQuery({
     queryKey: ['animeDb', 'ranking', page, size],
@@ -61,7 +83,7 @@ export const useAnimeDbSearch = (params: { q?: string; genres?: string; type?: s
   });
 };
 
-export const useAniListCover = (title: string, enabled = true) => {
+export const useAniListCover = (title: string, options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: ['anilist', 'cover', title],
     queryFn: async () => {
@@ -69,8 +91,16 @@ export const useAniListCover = (title: string, enabled = true) => {
       return fetchAniListCover(title);
     },
     staleTime: 1000 * 60 * 60 * 24, // 24 hours
-    enabled: enabled && !!title,
+    enabled: (options?.enabled !== false) && !!title,
   });
 };
 
-
+export const useAnilistBulkCovers = (titles: string[], options?: { enabled?: boolean }) => {
+  return useQuery({
+    queryKey: ['anilist', 'bulk', 'empty'],
+    queryFn: async () => {
+      return {};
+    },
+    enabled: true,
+  });
+};

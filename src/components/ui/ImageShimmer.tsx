@@ -6,14 +6,43 @@ import { cn } from '../../lib/utils';
 
 export const SafeImage = ({ src, alt, className, priority }: { src: string | null | undefined, alt: string, className?: string, priority?: boolean }) => {
   const [hasError, setHasError] = useState(false);
-  const finalSrc = src ? proxyImage(src) : null;
+  const [displayedSrc, setDisplayedSrc] = useState<string | null>(() => src ? proxyImage(src) : null);
 
-  // Reset error state if src changes
   useEffect(() => {
+    const finalSrc = src ? proxyImage(src) : null;
     setHasError(false);
+
+    if (!finalSrc) {
+      setDisplayedSrc(null);
+      return;
+    }
+
+    if (!displayedSrc) {
+      setDisplayedSrc(finalSrc);
+      return;
+    }
+
+    if (finalSrc === displayedSrc) {
+      return;
+    }
+
+    let active = true;
+    const img = new Image();
+    img.src = finalSrc;
+    img.onload = () => {
+      if (active) {
+        setDisplayedSrc(finalSrc);
+      }
+    };
+
+    return () => {
+      active = false;
+      img.onload = null;
+      img.onerror = null;
+    };
   }, [src]);
 
-  if (hasError || !finalSrc) {
+  if (hasError || !displayedSrc) {
     return (
       <div className={cn("flex flex-col items-center justify-center bg-gradient-to-br from-neutral-900 via-[#161616] to-[#0d0d0d] border border-white/5 text-neutral-500 gap-2 w-full h-full select-none absolute inset-0", className)}>
         <div className="p-3 bg-white/5 rounded-full border border-white/10 shadow-lg text-neutral-400">
@@ -28,7 +57,7 @@ export const SafeImage = ({ src, alt, className, priority }: { src: string | nul
 
   return (
     <img 
-      src={finalSrc} 
+      src={displayedSrc} 
       alt={alt} 
       className={className} 
       loading={priority ? undefined : "lazy"} 

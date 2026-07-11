@@ -1,4 +1,4 @@
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useQuery, keepPreviousData, useQueryClient } from '@tanstack/react-query';
 import {
   tmdbSearchMulti,
   tmdbSearchMovie,
@@ -13,9 +13,13 @@ import {
   tmdbDiscover,
   tmdbFindByExternalId,
   tmdbGetExternalIds,
+  TMDB_BASE_URL,
 } from '../api/tmdbApi';
 
-export const useTmdbRanking = (type: 'top250-movies' | 'top250-tv' | 'popular-movies' | 'popular-tv' | 'now-playing') => {
+export const useTmdbRanking = (
+  type: 'top250-movies' | 'top250-tv' | 'popular-movies' | 'popular-tv' | 'now-playing',
+  options?: { enabled?: boolean }
+) => {
   return useQuery({
     queryKey: ['tmdb', 'ranking', type],
     queryFn: () => {
@@ -26,8 +30,9 @@ export const useTmdbRanking = (type: 'top250-movies' | 'top250-tv' | 'popular-mo
       if (type === 'now-playing') return tmdbGetTrending('movie', 'week');
       return tmdbGetTrending('all');
     },
-    staleTime: 60 * 60 * 1000,
-    placeholderData: keepPreviousData
+    staleTime: 24 * 60 * 60 * 1000,
+    placeholderData: keepPreviousData,
+    enabled: options?.enabled !== false,
   });
 };
 
@@ -35,7 +40,7 @@ export const useTmdbDiscover = (mediaType: 'movie' | 'tv', params: Record<string
   return useQuery({
     queryKey: ['tmdb', 'discover', mediaType, params],
     queryFn: () => tmdbDiscover(mediaType, params),
-    staleTime: 60 * 60 * 1000,
+    staleTime: 24 * 60 * 60 * 1000,
     enabled: options?.enabled,
   });
 };
@@ -134,7 +139,7 @@ export const useTmdbSearchAdvanced = (query: string, mediaType: 'movie' | 'tv' |
       return { results: [] };
     },
     enabled: !!query,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 };
 
@@ -147,10 +152,15 @@ export const useTmdbSearch = (query: string, type: 'multi' | 'movie' | 'tv' = 'm
       return tmdbSearchMulti(query, page);
     },
     enabled: !!query,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 };
 
-export const useTmdbDetails = (id: string | number | null | undefined, type: 'movie' | 'tv') => {
+export const useTmdbDetails = (
+  id: string | number | null | undefined, 
+  type: 'movie' | 'tv', 
+  options?: { enabled?: boolean }
+) => {
   const isIdValid = !!id && id !== 0 && id !== '0' && id !== 'undefined' && id !== 'null' && String(id).trim() !== '';
   return useQuery({
     queryKey: ['tmdb', 'details', type, id],
@@ -158,8 +168,43 @@ export const useTmdbDetails = (id: string | number | null | undefined, type: 'mo
       if (type === 'movie') return tmdbGetMovieDetails(id!);
       return tmdbGetTvDetails(id!);
     },
-    enabled: isIdValid,
-    staleTime: 60 * 60 * 1000,
+    enabled: isIdValid && (options?.enabled !== false),
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+};
+
+export const useTmdbBulkDetails = (
+  requests: Array<{ id: string | number; type: 'movie' | 'tv' }>,
+  options?: { enabled?: boolean }
+) => {
+  const queryClient = useQueryClient();
+  const validRequests = requests.filter(r => r.id && r.id !== 0 && r.id !== '0' && r.id !== 'undefined' && r.id !== 'null' && String(r.id).trim() !== '');
+  const requestsKey = validRequests.map(r => `${r.type}:${r.id}`).sort().join(',');
+
+  return useQuery({
+    queryKey: ['tmdb', 'bulk', requestsKey],
+    queryFn: async () => {
+      if (validRequests.length === 0) return {};
+      const requestsParam = validRequests.map(r => `${r.type}:${r.id}`).join(',');
+      
+      const response = await fetch(`${TMDB_BASE_URL}/bulk?requests=${encodeURIComponent(requestsParam)}`);
+      if (!response.ok) {
+        throw new Error(`TMDB bulk error: ${response.status}`);
+      }
+      const data = await response.json();
+      
+      // Populate individual query caches for each movie/show
+      Object.entries(data).forEach(([key, value]) => {
+        if (value) {
+          const [type, id] = key.split(':');
+          queryClient.setQueryData(['tmdb', 'details_en', type, id], value);
+        }
+      });
+      
+      return data;
+    },
+    enabled: (options?.enabled !== false) && validRequests.length > 0,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 };
 
@@ -170,7 +215,7 @@ export const useTmdbTvSeason = (tvId: string | number | null | undefined, season
     queryKey: ['tmdb', 'season', tvId, seasonNumber],
     queryFn: () => tmdbGetTvSeason(tvId!, seasonNumber!),
     enabled: isIdValid && isSeasonValid,
-    staleTime: 60 * 60 * 1000,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 };
 
@@ -183,7 +228,7 @@ export const useTmdbCollection = (collectionId: string | number | null | undefin
       return tmdbGetCollection(collectionId!);
     },
     enabled: isIdValid,
-    staleTime: 60 * 60 * 1000,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 };
 
@@ -193,7 +238,7 @@ export const useTmdbPerson = (personId: string | number | null | undefined) => {
     queryKey: ['tmdb', 'person', personId],
     queryFn: () => tmdbGetPersonDetails(personId!),
     enabled: isIdValid,
-    staleTime: 60 * 60 * 1000,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 };
 
@@ -201,7 +246,7 @@ export const useTmdbTrending = (mediaType: 'all' | 'movie' | 'tv' = 'all', timeW
   return useQuery({
     queryKey: ['tmdb', 'trending', mediaType, timeWindow],
     queryFn: () => tmdbGetTrending(mediaType, timeWindow),
-    staleTime: 60 * 60 * 1000,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 };
 

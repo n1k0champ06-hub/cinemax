@@ -13,12 +13,14 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { aggregateStreams } from '../api/streamAggregator';
 import type { AggregatorState, StreamQuery, StreamItem } from '../api/streamAggregator';
 import { VI_PROVIDERS } from '../api/streamProviders/viProviders';
+import { animapperProvider } from '../api/streamProviders/animapperProvider';
 import { cineproProvider } from '../api/streamProviders/cineproProvider';
 import { EMBED_PROVIDERS } from '../api/streamProviders/embedProviders';
 import { allmangaProvider } from '../api/streamProviders/allmangaProvider';
-import { kvFallbackProvider } from '../api/streamProviders/kvFallbackProvider';
+import { hianimeProvider } from '../api/streamProviders/hianimeProvider';
 import type { StreamProvider } from '../api/streamProviders/types';
 import { computeScore } from '../api/streamProviders/types';
+import { buildProxiedM3u8Url } from '../api/cineproApi';
 
 // CinemaOS VIP Embed Provider (Backup Embed Source)
 const cinemaosProvider: StreamProvider = {
@@ -30,8 +32,8 @@ const cinemaosProvider: StreamProvider = {
     if (!query.tmdbId) return [];
 
     const url = (query.type === 'movie')
-      ? `https://cinemaos.tech/player/${query.tmdbId}?theme=ffffff&autoPlay=true`
-      : `https://cinemaos.tech/player/${query.tmdbId}/${query.season ?? 1}/${query.episode ?? 1}?theme=ffffff&autoPlay=true`;
+      ? `https://cinemaos.tech/player/${query.tmdbId}?theme=ffffff`
+      : `https://cinemaos.tech/player/${query.tmdbId}/${query.season ?? 1}/${query.episode ?? 1}?theme=ffffff`;
 
     const partial: Omit<StreamItem, 'score'> = {
       id: `cinemaos:${url}`,
@@ -98,6 +100,17 @@ export function useStreamAggregator({
 
   const abortRef = useRef<AbortController | null>(null);
 
+  const activeEpisodeObj = useMemo(() => {
+    if (!servers || servers.length === 0 || !activeEpName) return null;
+    for (const server of servers) {
+      if (server && Array.isArray(server.server_data)) {
+        const found = server.server_data.find((ep: any) => ep.name === activeEpName);
+        if (found) return { ...found, server_name: server.server_name };
+      }
+    }
+    return null;
+  }, [servers, activeEpName]);
+
   // Stable query key — only re-run when media identity or episode changes
   const queryKey = useMemo(() => JSON.stringify({
     tmdbId: query.tmdbId,
@@ -108,7 +121,8 @@ export function useStreamAggregator({
     viSlug: query.viSlug,
     ep: activeEpName,
     retry: retryCount,
-  }), [query.tmdbId, query.imdbId, query.type, query.season, query.episode, query.viSlug, activeEpName, retryCount]);
+    hianimeEpisodeId: query.hianimeEpisodeId || activeEpisodeObj?.hianime_episode_id
+  }), [query.tmdbId, query.imdbId, query.type, query.season, query.episode, query.viSlug, activeEpName, retryCount, query.hianimeEpisodeId, activeEpisodeObj?.hianime_episode_id]);
 
   const prevRef = useRef<{ queryKey: string; enabled: boolean }>({ queryKey: '', enabled: false });
 
@@ -149,8 +163,8 @@ export function useStreamAggregator({
     // 1. Vietnamese providers (OPhim, KKPhim direct API calls)
     allProviders.push(...VI_PROVIDERS);
 
-    // 1.5. KV Cache Fallback (lowest priority — only wins when live VI providers fail)
-    allProviders.push(kvFallbackProvider);
+    // 1.1. AniMapper Provider (Vietnamese Anime streams)
+    allProviders.push(animapperProvider);
 
     // 2. CinePro HLS (provides all international HLS and embeds dynamically)
     allProviders.push(cineproProvider);
@@ -160,6 +174,9 @@ export function useStreamAggregator({
 
     // 3.5. AllManga Anime Provider (only queries for Anime)
     allProviders.push(allmangaProvider);
+
+    // 3.6. HiAnime Provider (queries Cloudflare Worker MegaCloud Decryptor)
+    allProviders.push(hianimeProvider);
 
     // 4. International Embed providers (VidSrc, VidSrc Embed, etc.)
     allProviders.push(...EMBED_PROVIDERS);
@@ -177,7 +194,12 @@ export function useStreamAggregator({
       autoSelected: null,
     });
 
-    aggregateStreams(allProviders, query, {
+    const queryWithEpId = {
+      ...query,
+      hianimeEpisodeId: query.hianimeEpisodeId || activeEpisodeObj?.hianime_episode_id
+    };
+
+    aggregateStreams(allProviders, queryWithEpId, {
       onUpdate: (newState) => {
         if (controller.signal.aborted) return;
         setState(newState);
@@ -194,9 +216,102 @@ export function useStreamAggregator({
     return () => {
       controller.abort();
     };
-  }, [queryKey, enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [queryKey, enabled, activeEpisodeObj, query]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const activeStream = selectedStream ?? state.autoSelected;
+  // Dynamically inject direct streams from loaded servers
+  const finalStreams = useMemo(() => {
+    let updatedList = [...state.streams];
+    if (servers && servers.length > 0 && activeEpName) {
+      // Iterate in reverse order to prepend in the original order of servers
+      for (let i = servers.length - 1; i >= 0; i--) {
+        const server = servers[i];
+        if (server && Array.isArray(server.server_data)) {
+          const epObj = server.server_data.find((ep: any) => ep.name === activeEpName);
+          if (epObj) {
+            const serverLabel = server.server_name || 'Nguồn Việt Nam';
+
+            if (epObj.link_m3u8) {
+              const directUrl = epObj.link_m3u8;
+              
+              let providerId = 'direct';
+              let referer = '';
+              if (serverLabel.toLowerCase().includes('ophim')) {
+                providerId = 'ophim';
+                referer = 'https://ophim1.com/';
+              } else if (serverLabel.toLowerCase().includes('kkphim')) {
+                providerId = 'kkphim';
+                referer = 'https://phimapi.com/';
+              } else if (serverLabel.toLowerCase().includes('nguonc')) {
+                providerId = 'nguonc';
+                referer = 'https://phim.nguonc.com/';
+              }
+
+              const proxiedUrl = buildProxiedM3u8Url(directUrl, referer);
+              const normDirectUrl = directUrl.trim().toLowerCase();
+              const normProxiedUrl = proxiedUrl.trim().toLowerCase();
+
+              const exists = updatedList.some(s => {
+                const u = s.url.trim().toLowerCase();
+                return u === normDirectUrl || u === normProxiedUrl;
+              });
+
+              if (!exists) {
+                const directStream: StreamItem = {
+                  id: `direct:${serverLabel}:${directUrl}`,
+                  provider: providerId,
+                  providerLabel: serverLabel,
+                  type: 'hls',
+                  url: proxiedUrl, // Use proxied URL to filter ads and bypass CORS/403
+                  quality: 'auto',
+                  lang: 'vi',
+                  label: `${serverLabel} · auto (Direct)`,
+                  score: 98, // fallback, computed below
+                  category: 'vi',
+                  episodeName: activeEpName,
+                  subtitles: epObj.subtitles || []
+                };
+                directStream.score = computeScore(directStream);
+                updatedList = [directStream, ...updatedList];
+              }
+            }
+
+            // Inject NguonC direct embed stream
+            if (serverLabel.toLowerCase().includes('nguonc') && epObj.link_embed) {
+              const embedUrl = epObj.link_embed;
+              const existsEmbed = updatedList.some(s => s.url === embedUrl);
+              if (!existsEmbed) {
+                const directEmbedStream: StreamItem = {
+                  id: `direct:${serverLabel}:embed:${embedUrl}`,
+                  provider: 'nguonc',
+                  providerLabel: `${serverLabel} (Embed)`,
+                  type: 'embed',
+                  url: embedUrl,
+                  quality: 'auto',
+                  lang: 'vi',
+                  label: `${serverLabel} · Embed (Direct)`,
+                  score: 95, // fallback, computed below
+                  category: 'vi',
+                  episodeName: activeEpName,
+                  subtitles: []
+                };
+                directEmbedStream.score = computeScore(directEmbedStream);
+                updatedList = [directEmbedStream, ...updatedList];
+              }
+            }
+          }
+        }
+      }
+    }
+    return updatedList;
+  }, [state.streams, servers, activeEpName]);
+
+  const autoSelected = useMemo(() => {
+    return finalStreams.length > 0
+      ? (finalStreams.find(s => s.latencyLabel !== 'Offline') ?? finalStreams[0])
+      : null;
+  }, [finalStreams]);
+
+  const activeStream = selectedStream ?? autoSelected;
 
   // Log active stream selection only when it changes
   useEffect(() => {
@@ -218,27 +333,29 @@ export function useStreamAggregator({
 
   // Log complete aggregation results summary when loading completes
   useEffect(() => {
-    if (!state.isLoading && state.streams.length > 0) {
+    if (!state.isLoading && finalStreams.length > 0) {
       console.log(
-        `%c[STREAM AGGREGATOR] Completed! Resolved ${state.streams.length} streams.`,
+        `%c[STREAM AGGREGATOR] Completed! Resolved ${finalStreams.length} streams.`,
         'background: #10B981; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
         {
           title: query.titleVi || query.title,
-          streamsFound: state.streams.map(s => ({
+          streamsFound: finalStreams.map(s => ({
             label: s.label,
             provider: s.provider,
             type: s.type,
             score: s.score
           })),
-          autoSelected: state.autoSelected?.providerLabel || 'none',
+          autoSelected: autoSelected?.providerLabel || 'none',
           timestamp: new Date().toISOString()
         }
       );
     }
-  }, [state.isLoading, state.streams.length]);
+  }, [state.isLoading, finalStreams.length, autoSelected?.providerLabel]);
 
   return {
     ...state,
+    streams: finalStreams,
+    autoSelected,
     selectedStream,
     selectStream: setSelectedStream,
     activeStream,

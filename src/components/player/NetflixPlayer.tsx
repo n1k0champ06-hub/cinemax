@@ -5,15 +5,17 @@ import {
   Settings, ArrowLeft, Loader2, Check, PictureInPicture, RotateCcw, RotateCw, 
   List, ShieldCheck, Sparkles, Palette, Eye, EyeOff, Sliders, Maximize2, Users, 
   Cast, Download, X, ChevronDown, ChevronRight, CheckSquare, Square, Tv, Film,
-  Minimize2, Expand, Sun, Subtitles, Plus, Minus, Wifi, Server, Database, AlertCircle, AlertTriangle
+  Minimize2, Expand, Sun, Subtitles, Plus, Minus, Wifi, Server, Database, AlertCircle, AlertTriangle, HelpCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Hls from 'hls.js';
 import { useWatchProgress } from '../../hooks/useStorage';
 import { cn } from '../../lib/utils';
 import { PlayerSelect } from './PlayerSelect';
-import { SubtitleOverlay } from './SubtitleOverlay';
+import { SubtitleOverlay, usePlaybackTimer } from './SubtitleOverlay';
 import { StreamItem } from '../../api/streamProviders/types';
+import { godModeStore } from '../../lib/godmode';
+import { ReportModal } from '../ui/ReportModal';
 
 interface NetflixPlayerProps {
   url?: string;
@@ -43,6 +45,8 @@ interface NetflixPlayerProps {
   activeStream?: StreamItem | null;
   onStreamSelect?: (stream: StreamItem) => void;
   isAggregatorLoading?: boolean;
+  tmdbId?: string | number;
+  type?: string;
 }
 
 const getEpisodeNumber = (nameStr: string | number | undefined | null): number | null => {
@@ -121,7 +125,8 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   servers, selectedServerId, onServerChange,
   episodes = [], onEpisodeSelect,
   isTv = false, currentSeason = 1, activeEpSeason = 1, seasons = [], onSeasonChange, tmdbEpisodes = [],
-  streams = [], activeStream = null, onStreamSelect, isAggregatorLoading = false
+  streams = [], activeStream = null, onStreamSelect, isAggregatorLoading = false,
+  tmdbId, type
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -174,10 +179,14 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   // Settings & Navigation panels
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showAdWarning, setShowAdWarning] = useState(false);
+  const [isExtensionActive, setIsExtensionActive] = useState(false);
+  const [isIframeVideoConnected, setIsIframeVideoConnected] = useState(false);
+  const [isManualSyncFallback, setIsManualSyncFallback] = useState(true);
   const [pendingStream, setPendingStream] = useState<StreamItem | null>(null);
   const [hasShownAdWarningForUrl, setHasShownAdWarningForUrl] = useState<string | null>(null);
   const [isEpisodesOpen, setIsEpisodesOpen] = useState(false);
   const [isSeasonDropdownOpen, setIsSeasonDropdownOpen] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'main' | 'quality' | 'speed' | 'captions' | 'audioTrack' | 'appearance' | 'videoFit' | 'aspectRatio' | 'gestures' | 'subSettings'>('main');
  
   // Interactive controls & preferences
@@ -279,6 +288,12 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     return activeStream ? (activeStream.type === 'embed' ? activeStream.url : undefined) : embedUrl;
   }, [activeStream, embedUrl]);
 
+  const isNguonCEmbed = useMemo(() => {
+    const isNguonCProvider = activeStream?.provider === 'nguonc';
+    const isNguonCUrl = resolvedEmbedUrl?.toLowerCase().includes('nguonc');
+    return !!(isNguonCProvider || isNguonCUrl);
+  }, [activeStream, resolvedEmbedUrl]);
+
   const resolvedHeaders = useMemo(() => {
     return activeStream?.headers || headers;
   }, [activeStream?.headers, headers]);
@@ -288,34 +303,20 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   }, [resolvedHeaders]);
 
   const [isSourcesOpen, setIsSourcesOpen] = useState(false);
+  const [isEmbedSubMenuOpen, setIsEmbedSubMenuOpen] = useState(false);
 
   // Embedding
-  const [useEmbed, setUseEmbed] = useState(!resolvedUrl && !!resolvedEmbedUrl);
-  const isIframeMode = useEmbed || (!resolvedUrl && !!resolvedEmbedUrl);
+  const [useEmbed, setUseEmbed] = useState(false);
+  const isIframeMode = useEmbed || activeStream?.type === 'embed' || (!resolvedUrl && !!resolvedEmbedUrl);
   const [areIframeControlsVisible, setAreIframeControlsVisible] = useState(true);
 
   useEffect(() => {
-    setUseEmbed(!resolvedUrl && !!resolvedEmbedUrl);
+    setUseEmbed(false);
   }, [resolvedUrl, resolvedEmbedUrl]);
 
-  // Monitor resolvedEmbedUrl to auto-trigger ad warning popup for VidSrc/embed.su/vsrc.su
+  // Monitor resolvedEmbedUrl to auto-trigger ad/sync warning popup for any third-party embed
   useEffect(() => {
-    console.log("[NetflixPlayer debug] resolvedEmbedUrl useEffect fired:", {
-      resolvedEmbedUrl,
-      activeStreamProvider: activeStream?.provider,
-      hasShownAdWarningForUrl,
-      shouldTrigger: resolvedEmbedUrl && 
-        (resolvedEmbedUrl.includes('vidsrc') || resolvedEmbedUrl.includes('embed.su') || resolvedEmbedUrl.includes('vsrc.su')) && 
-        hasShownAdWarningForUrl !== resolvedEmbedUrl
-    });
-    if (resolvedEmbedUrl && 
-        (resolvedEmbedUrl.includes('vidsrc') || resolvedEmbedUrl.includes('embed.su') || resolvedEmbedUrl.includes('vsrc.su')) && 
-        hasShownAdWarningForUrl !== resolvedEmbedUrl) {
-      console.log("[NetflixPlayer debug] Setting showAdWarning to true");
-      setPendingStream(activeStream);
-      setShowAdWarning(true);
-      setHasShownAdWarningForUrl(resolvedEmbedUrl);
-    }
+    // Disabled: extension warning modal is hidden
   }, [resolvedEmbedUrl, activeStream, hasShownAdWarningForUrl]);
 
   // External subtitle offset state & timer
@@ -324,6 +325,22 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
   // Subtitle V3 & Audio source selection state
   const [selectedSubtitleId, setSelectedSubtitleId] = useState<number | string>('v3');
+  const [failedUrls, setFailedUrls] = useState<Set<string>>(new Set());
+  const lastInitialSubRef = useRef<string | null>(null);
+
+  // Reset failed URLs when the movie/episode changes
+  useEffect(() => {
+    setFailedUrls(new Set());
+  }, [slug, episodeName]);
+
+  const handleSubtitleError = useCallback((failedUrl: string) => {
+    console.warn('[NetflixPlayer] Subtitle failed to load:', failedUrl);
+    setFailedUrls(prev => {
+      const next = new Set(prev);
+      next.add(failedUrl);
+      return next;
+    });
+  }, []);
 
   const combinedSubtitleTracks = useMemo(() => {
     const list: { id: number | string; name: string }[] = [
@@ -351,8 +368,10 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
           seenUrls.add(track.downloadUrl);
           
           const lang = track.lang || 'vi';
+          if (lang !== 'vi') return; // Vietnamese only
+          
           langCounts[lang] = (langCounts[lang] || 0) + 1;
-          const langLabel = lang === 'en' ? 'Tiếng Anh' : 'Tiếng Việt';
+          const langLabel = 'Tiếng Việt';
           
           list.push({ id: `ext-${track.id || index}`, name: `${langLabel} #${langCounts[lang]}` });
         }
@@ -366,30 +385,100 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   }, [subtitleTracks, subtitleUrl, externalSubtitles]);
 
   useEffect(() => {
-    if (subtitleUrl) {
-      setSelectedSubtitleId('v3');
-      setSubEnabled(true);
-    } else if (externalSubtitles && externalSubtitles.length > 0) {
-      const firstExt = externalSubtitles[0];
-      setSelectedSubtitleId(`ext-${firstExt.id || 0}`);
-      setSubEnabled(true);
-    } else {
-      setSelectedSubtitleId('off');
-      setSubEnabled(false);
+    const subKey = `${subtitleUrl || ''}-${externalSubtitles?.length || 0}`;
+    if (lastInitialSubRef.current !== subKey) {
+      lastInitialSubRef.current = subKey;
+      
+      const isViSource = activeStream?.category === 'vi';
+      const storageKey = isViSource ? 'cinemax_sub_enabled_vi' : 'cinemax_sub_enabled_foreign';
+      const savedPreference = localStorage.getItem(storageKey);
+      
+      // Default to false (off) for Vietnamese streams, true (on) for foreign streams
+      const defaultEnabled = isViSource ? false : true;
+      const shouldEnableSubs = savedPreference !== null ? savedPreference === 'true' : defaultEnabled;
+
+      if (shouldEnableSubs && subtitleUrl) {
+        setSelectedSubtitleId('v3');
+        setSubEnabled(true);
+      } else if (shouldEnableSubs && externalSubtitles && externalSubtitles.length > 0) {
+        const firstExt = externalSubtitles[0];
+        setSelectedSubtitleId(`ext-${firstExt.id || 0}`);
+        setSubEnabled(true);
+      } else {
+        setSelectedSubtitleId('off');
+        setSubEnabled(false);
+      }
     }
-  }, [subtitleUrl, externalSubtitles]);
+  }, [subtitleUrl, externalSubtitles, activeStream]);
 
   const activeExternalSubUrl = useMemo(() => {
-    if (typeof selectedSubtitleId === 'string' && selectedSubtitleId.startsWith('ext-')) {
+    // If user explicitly turned off subtitles, return null
+    if (selectedSubtitleId === 'off') {
+      return null;
+    }
+
+    const isFailed = (url: string | null | undefined) => url ? failedUrls.has(url) : false;
+
+    // Do not load or show external subtitles for third-party embeds if neither the extension nor manual fallback is active
+    if (isIframeMode && !isExtensionActive && !isManualSyncFallback) {
+      return null;
+    }
+
+    // Check currently selected first
+    let currentUrl = null;
+    if (selectedSubtitleId === 'v3') {
+      currentUrl = subtitleUrl || null;
+    } else if (typeof selectedSubtitleId === 'string' && selectedSubtitleId.startsWith('ext-')) {
       const targetId = selectedSubtitleId.substring(4);
       const match = externalSubtitles?.find(t => `ext-${t.id}` === selectedSubtitleId || String(t.id) === targetId);
-      return match ? match.downloadUrl : null;
+      currentUrl = match ? match.downloadUrl : null;
     }
-    if (selectedSubtitleId === 'v3') {
-      return subtitleUrl || null;
+
+    if (currentUrl && !isFailed(currentUrl)) {
+      return currentUrl;
     }
+
+    // Fall back to first working subtitle
+    if (subtitleUrl && !isFailed(subtitleUrl)) {
+      return subtitleUrl;
+    }
+
+    if (externalSubtitles && externalSubtitles.length > 0) {
+      const firstWorking = externalSubtitles.find(t => t.downloadUrl && !isFailed(t.downloadUrl));
+      if (firstWorking) {
+        return firstWorking.downloadUrl;
+      }
+    }
+
     return null;
-  }, [selectedSubtitleId, externalSubtitles, subtitleUrl]);
+  }, [selectedSubtitleId, externalSubtitles, subtitleUrl, failedUrls, isIframeMode, isExtensionActive, isManualSyncFallback]);
+
+  // Auto-switch selected subtitle ID to match the active working URL
+  useEffect(() => {
+    if (!activeExternalSubUrl) {
+      if (selectedSubtitleId === 'v3' || (typeof selectedSubtitleId === 'string' && selectedSubtitleId.startsWith('ext-'))) {
+        setSelectedSubtitleId('off');
+      }
+      return;
+    }
+
+    if (activeExternalSubUrl === subtitleUrl) {
+      if (selectedSubtitleId !== 'v3') {
+        setSelectedSubtitleId('v3');
+      }
+      return;
+    }
+
+    if (externalSubtitles) {
+      const match = externalSubtitles.find(t => t.downloadUrl === activeExternalSubUrl);
+      if (match) {
+        const extId = `ext-${match.id}`;
+        if (selectedSubtitleId !== extId) {
+          setSelectedSubtitleId(extId);
+        }
+      }
+    }
+  }, [activeExternalSubUrl, subtitleUrl, externalSubtitles, selectedSubtitleId]);
 
   useEffect(() => {
     if (hlsRef.current) {
@@ -408,17 +497,61 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   // Iframe sync
   const [iframePlayStart, setIframePlayStart] = useState<number | null>(null);
   const [iframeBase, setIframeBase] = useState(0);
-  const iframeCurrentMs = useMemo(() => {
-    if (!iframePlayStart) return iframeBase;
-    return iframeBase + (Date.now() - iframePlayStart);
-  }, [iframePlayStart, iframeBase]);
+  const [extensionTimeMs, setExtensionTimeMs] = useState(0);
+
+  // Active Extension Frame tracking refs to prevent conflict from ad frames
+  const activeExtensionFrameIdRef = useRef<string | null>(null);
+  const activeExtensionFrameDurationRef = useRef<number>(0);
+  const lastFrameMessageTimeRef = useRef<number>(0);
+
+  const isExtensionActiveRef = useRef(false);
+  useEffect(() => {
+    isExtensionActiveRef.current = isExtensionActive;
+  }, [isExtensionActive]);
+
+  // Smooth interpolation for extension time updates
+  const [extensionPlayStart, setExtensionPlayStart] = useState<number | null>(null);
+  const [extensionBaseMs, setExtensionBaseMs] = useState(0);
+
+  const fallbackTimerMs = usePlaybackTimer({
+    isPlaying: isPlaying && isIframeMode && isManualSyncFallback,
+    playStartedAt: iframePlayStart,
+    startTimeMs: iframeBase
+  });
+
+  const smoothExtensionTimeMs = usePlaybackTimer({
+    isPlaying: isPlaying && isIframeMode && isExtensionActive,
+    playStartedAt: extensionPlayStart,
+    startTimeMs: extensionBaseMs
+  });
+
+  const iframeCurrentMs = isExtensionActive ? smoothExtensionTimeMs : fallbackTimerMs;
+
+  const iframeCurrentMsRef = useRef(0);
+  useEffect(() => {
+    iframeCurrentMsRef.current = iframeCurrentMs;
+  }, [iframeCurrentMs]);
+
+  const lastExtensionLogRef = useRef<{ isPlaying: boolean; subtitleOffset: number; timestamp: number }>({
+    isPlaying: false,
+    subtitleOffset: 0,
+    timestamp: 0
+  });
 
   useEffect(() => {
     if (isIframeMode) {
       setIframePlayStart(Date.now());
       setIframeBase(0);
+      setExtensionTimeMs(0);
+      setExtensionPlayStart(null);
+      setExtensionBaseMs(0);
+      activeExtensionFrameIdRef.current = null;
+      activeExtensionFrameDurationRef.current = 0;
+      lastFrameMessageTimeRef.current = 0;
+      setIsIframeVideoConnected(false);
     } else {
       setIframePlayStart(null);
+      setExtensionPlayStart(null);
     }
   }, [resolvedEmbedUrl, isIframeMode]);
 
@@ -435,6 +568,42 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   useEffect(() => {
     loadProgressHistory();
   }, [isEpisodesOpen, episodeName]);
+
+  // Post complete player status to window periodically for content.js to cache and pass to extension popup
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const currentStatus = {
+        source: 'cinemax-player-status',
+        currentTime: isIframeMode ? iframeCurrentMs / 1000 : currentTime,
+        duration: isIframeMode ? 0 : duration,
+        isPlaying: isPlaying,
+        subtitleOffset: subtitleOffset
+      };
+
+      window.postMessage(currentStatus, '*');
+
+      // Throttled logging to godModeStore (on state change, or every 5 seconds)
+      const now = Date.now();
+      const lastLog = lastExtensionLogRef.current;
+      const stateChanged = lastLog.isPlaying !== isPlaying || lastLog.subtitleOffset !== subtitleOffset;
+      const timeElapsed = now - lastLog.timestamp > 5000;
+
+      if (stateChanged || timeElapsed) {
+        godModeStore.addLog(
+          'EXTENSION',
+          'INFO',
+          `Sent status update to extension: isPlaying=${isPlaying}, currentTime=${currentStatus.currentTime.toFixed(1)}s, subtitleOffset=${subtitleOffset}ms${stateChanged ? ' (state changed)' : ' (periodic heartbeat)'}`
+        );
+        lastExtensionLogRef.current = {
+          isPlaying,
+          subtitleOffset,
+          timestamp: now
+        };
+      }
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [iframeCurrentMs, currentTime, duration, isPlaying, subtitleOffset, isIframeMode]);
 
   // Sync state preferences with localStorage
   useEffect(() => {
@@ -551,6 +720,8 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       }
     };
 
+    let mediaRecoveryAttempts = 0;
+    let networkRecoveryAttempts = 0;
     let hls: Hls | null = null;
     
     if (Hls.isSupported() && resolvedUrl) {
@@ -580,6 +751,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
       hls.on(Hls.Events.MEDIA_ATTACHED, () => {
         console.log("[NetflixPlayer debug] HLS.js media attached successfully to video element");
+        godModeStore.addLog('PLAYER', 'INFO', 'HLS Engine initialized. Attaching to <video>.');
       });
 
       hls.loadSource(resolvedUrl);
@@ -587,6 +759,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
       hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
         console.log(`[NetflixPlayer debug] HLS.js manifest parsed. Level count: ${data.levels?.length || 0}`);
+        godModeStore.addLog('PLAYER', 'INFO', `Vietnamese <track> automatically selected. Levels: ${data.levels?.length || 0}`);
         handleReady();
         if (hls) {
           const lvls = hls.levels.map((lvl, index) => {
@@ -620,10 +793,21 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
       hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, (event, data) => {
         if (hls) {
-          const subs = hls.subtitleTracks.map((sub, index) => ({
-            id: index,
-            name: getCleanSubName(sub.name, sub.lang, index)
-          }));
+          const subs = hls.subtitleTracks
+            .map((sub, index) => ({
+              id: index,
+              name: getCleanSubName(sub.name, sub.lang, index),
+              lang: sub.lang || sub.name || ''
+            }))
+            .filter(sub => {
+              const lower = sub.lang.toLowerCase();
+              return lower.includes('vi') || lower.includes('viet');
+            })
+            .map(sub => ({
+              id: sub.id,
+              name: sub.name
+            }));
+          godModeStore.addLog('PLAYER', 'INFO', `HLS subtitle tracks updated. Count: ${subs.length}`);
           setSubtitleTracks([{ id: -1, name: 'Tắt phụ đề' }, ...subs]);
           setActiveSubtitle(hls.subtitleTrack);
         }
@@ -631,10 +815,51 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
       hls.on(Hls.Events.ERROR, (event, data) => {
         console.warn(`[NetflixPlayer debug] HLS.js error event: ${data.type} (${data.details}), fatal: ${data.fatal}`, data);
+        
+        // Extract player context metrics
+        let timeStr = '00:00';
+        if (hls && hls.media) {
+          const secs = hls.media.currentTime;
+          const h = Math.floor(secs / 3600);
+          const m = Math.floor((secs % 3600) / 60);
+          const s = Math.floor(secs % 60);
+          const pad = (num: number) => String(num).padStart(2, '0');
+          timeStr = h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+        }
+
+        const bw = hls && hls.bandwidthEstimate ? `${(hls.bandwidthEstimate / 1000000).toFixed(1)} Mbps` : 'Unknown';
+        
+        const fragUrl = data.frag?.relurl || data.frag?.url || '';
+        const fragName = fragUrl ? fragUrl.split('?')[0].split('/').pop() : '';
+        const fragStr = fragName ? `. Frag: ${fragName}` : '';
+
+        const metricsInfo = ` at ${timeStr}. Bandwidth: ${bw}${fragStr}`;
+
+        // Detailed log classification
         if (data.fatal) {
-          console.error("[NetflixPlayer debug] HLS fatal error, falling back to Iframe embed:", data);
-          if (resolvedEmbedUrl) {
-            setUseEmbed(true);
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveryAttempts < 3) {
+            mediaRecoveryAttempts++;
+            console.warn(`[NetflixPlayer debug] Fatal media error: ${data.details}. Attempting recovery (${mediaRecoveryAttempts}/3)...`);
+            hls.recoverMediaError();
+            godModeStore.addLog('PLAYER', 'WARN', `Fatal media error: ${data.details}. Attempting recovery (${mediaRecoveryAttempts}/3)...`);
+          } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRecoveryAttempts < 3) {
+            networkRecoveryAttempts++;
+            console.warn(`[NetflixPlayer debug] Fatal network error: ${data.details}. Attempting load retry (${networkRecoveryAttempts}/3)...`);
+            hls.startLoad();
+            godModeStore.addLog('PLAYER', 'WARN', `Fatal network error: ${data.details}. Attempting load retry (${networkRecoveryAttempts}/3)...`);
+          } else {
+            godModeStore.addLog('PLAYER', 'ERROR', `HLS fatal error: ${data.details} (${data.type})${metricsInfo}. Falling back to Iframe.`);
+            console.error("[NetflixPlayer debug] HLS fatal error, falling back to Iframe embed:", data);
+            if (resolvedEmbedUrl) {
+              setUseEmbed(true);
+            }
+          }
+        } else {
+          // Check for fragment parsing dropouts
+          if (data.details === 'fragParsingError') {
+            godModeStore.addLog('PLAYER', 'ERROR', `Lỗi rớt đoạn stream (fragParsingError): ${data.type}${metricsInfo}`);
+          } else {
+            godModeStore.addLog('PLAYER', 'WARN', `HLS non-fatal error: ${data.details} (${data.type})${metricsInfo}`);
           }
         }
       });
@@ -658,7 +883,9 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
             posterUrl: posterUrl || '',
             thumbUrl: thumbUrl || '',
             movieName: movieName || '',
-            season: isTv ? currentSeason : undefined
+            season: isTv ? currentSeason : undefined,
+            tmdbId,
+            type: type || (isTv ? 'series' : 'single')
           };
           localStorage.setItem('cinemax_progress', JSON.stringify(parsed));
         } catch (e) {}
@@ -733,7 +960,9 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
           posterUrl,
           thumbUrl,
           movieName,
-          season: isTv ? currentSeason : undefined
+          season: isTv ? currentSeason : undefined,
+          tmdbId,
+          type: type || (isTv ? 'series' : 'single')
         });
         return;
       }
@@ -748,7 +977,9 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
           posterUrl,
           thumbUrl,
           movieName,
-          season: isTv ? currentSeason : undefined
+          season: isTv ? currentSeason : undefined,
+          tmdbId,
+          type: type || (isTv ? 'series' : 'single')
         });
       }
     };
@@ -763,15 +994,64 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       clearInterval(interval);
       save();
     };
-  }, [slug, episodeName, posterUrl, thumbUrl, movieName, saveProgress, isIframeMode, isTv, currentSeason]);
+  }, [slug, episodeName, posterUrl, thumbUrl, movieName, saveProgress, isIframeMode, isTv, currentSeason, tmdbId, type]);
+
+  // Log VTT subtitle track loading status
+  useEffect(() => {
+    if (activeExternalSubUrl) {
+      const cleanUrl = activeExternalSubUrl.split('?')[0];
+      godModeStore.addLog('PLAYER', 'INFO', `Nạp file phụ đề VTT: ${cleanUrl}`);
+    } else if (selectedSubtitleId === 'off') {
+      godModeStore.addLog('PLAYER', 'INFO', 'Tắt phụ đề');
+    }
+  }, [activeExternalSubUrl, selectedSubtitleId]);
+
+  const togglePlay = useCallback((e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (isIframeMode) {
+      if (isPlaying) {
+        setIsPlaying(false);
+        setIframeBase(iframeCurrentMsRef.current);
+        setIframePlayStart(null);
+      } else {
+        setIframePlayStart(Date.now());
+        setIsPlaying(true);
+      }
+      return;
+    }
+    const video = videoRef.current;
+    if (video) {
+      if (isPlaying) {
+        video.pause();
+        setIsPlaying(false);
+      } else {
+        const playPromise = video.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((error) => {
+            if (error.name !== 'AbortError') {
+              console.warn("Không phát được video:", error);
+              setIsPlaying(false);
+            }
+          });
+        }
+        setIsPlaying(true);
+      }
+    }
+  }, [isPlaying, isIframeMode]);
 
   // Keyboard Shortcuts Effect
   useEffect(() => {
-    if (isIframeMode) return;
-    
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger if user is typing in an input
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) return;
+
+      if (isIframeMode) {
+        if (e.key === ' ' || e.key.toLowerCase() === 'k') {
+          e.preventDefault();
+          togglePlay();
+        }
+        return;
+      }
 
       const video = videoRef.current;
       if (!video) return;
@@ -780,9 +1060,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
         case ' ':
         case 'k':
           e.preventDefault();
-          if (isPlaying) video.pause();
-          else video.play();
-          setIsPlaying(!isPlaying);
+          togglePlay();
           break;
         case 'arrowleft':
         case 'j':
@@ -887,7 +1165,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isIframeMode, isPlaying, isMuted, playbackRate, activeSubtitle]);
+  }, [isIframeMode, isPlaying, isMuted, playbackRate, activeSubtitle, togglePlay]);
   // Control overlay hiding timer
   const resetControlsTimeout = useCallback(() => {
     setShowControls(true);
@@ -902,27 +1180,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [resetControlsTimeout]);
 
-  const togglePlay = useCallback((e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    const video = videoRef.current;
-    if (video) {
-      if (isPlaying) {
-        video.pause();
-        setIsPlaying(false);
-      } else {
-        const playPromise = video.play();
-        if (playPromise !== undefined) {
-          playPromise.catch((error) => {
-            if (error.name !== 'AbortError') {
-              console.warn("Không phát được video:", error);
-              setIsPlaying(false);
-            }
-          });
-        }
-        setIsPlaying(true);
-      }
-    }
-  }, [isPlaying]);
+
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>, direction: 'fwd' | 'rev') => {
     if (e.detail === 2 && videoRef.current) {
@@ -977,7 +1235,8 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     const container = containerRef.current;
     const video = videoRef.current;
     
-    if (!container || !video) return;
+    if (!container) return;
+    if (!video && !isIframeMode) return;
 
     const doc = document as any;
     const isFull = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
@@ -988,7 +1247,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
           await container.requestFullscreen();
         } else if ((container as any).webkitRequestFullscreen) {
           await (container as any).webkitRequestFullscreen();
-        } else if ((video as any).webkitEnterFullscreen) {
+        } else if (video && (video as any).webkitEnterFullscreen) {
           await (video as any).webkitEnterFullscreen();
         }
         setIsFullscreen(true);
@@ -1038,6 +1297,31 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
   const handleSubtitleTrackChange = (id: number | string) => {
     setSelectedSubtitleId(id);
+    
+    // Save user's preference when they explicitly change subtitle state
+    const isViSource = activeStream?.category === 'vi';
+    const storageKey = isViSource ? 'cinemax_sub_enabled_vi' : 'cinemax_sub_enabled_foreign';
+    localStorage.setItem(storageKey, id === 'off' ? 'false' : 'true');
+    
+    // Clear failed state for the selected track so the user can force retry it
+    if (id === 'v3' && subtitleUrl) {
+      setFailedUrls(prev => {
+        const next = new Set(prev);
+        next.delete(subtitleUrl);
+        return next;
+      });
+    } else if (typeof id === 'string' && id.startsWith('ext-') && externalSubtitles) {
+      const targetId = id.substring(4);
+      const match = externalSubtitles.find(t => `ext-${t.id}` === id || String(t.id) === targetId);
+      if (match && match.downloadUrl) {
+        setFailedUrls(prev => {
+          const next = new Set(prev);
+          next.delete(match.downloadUrl);
+          return next;
+        });
+      }
+    }
+
     if (id === 'off') {
       setSubEnabled(false);
       if (hlsRef.current) hlsRef.current.subtitleTrack = -1;
@@ -1068,6 +1352,31 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     const handleFullscreenChange = () => {
       const doc = document as any;
       const isFull = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
+      const fullscreenElem = doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement;
+
+      // If the fullscreen element is an iframe, promote the parent container to fullscreen instead
+      if (isFull && fullscreenElem && fullscreenElem.tagName === 'IFRAME') {
+        const container = containerRef.current;
+        if (container) {
+          if (container.requestFullscreen) {
+            container.requestFullscreen().then(() => {
+              if (screen.orientation && (screen.orientation as any).lock) {
+                (screen.orientation as any).lock('landscape').catch(() => {});
+              }
+            }).catch((err) => {
+              console.warn('[Cinemax] Failed to promote fullscreen to container:', err);
+            });
+          } else if ((container as any).webkitRequestFullscreen) {
+            try {
+              (container as any).webkitRequestFullscreen();
+              if (screen.orientation && (screen.orientation as any).lock) {
+                (screen.orientation as any).lock('landscape').catch(() => {});
+              }
+            } catch (err) {}
+          }
+        }
+      }
+
       setIsFullscreen(isFull);
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -1097,6 +1406,146 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
         if (!data) return;
 
+        // Support telemetry logs sent from the extension/popup via content script
+        if (data.source === 'cinemax-extension-telemetry') {
+          const level = (data.level || 'INFO').toUpperCase() as 'INFO' | 'WARN' | 'ERROR';
+          godModeStore.addLog('EXTENSION', level, data.message || '');
+          return;
+        }
+
+        const isFromExtension = data.source === 'cinemax-extension' || data.source === 'cinemax-helper';
+        if (!isFromExtension && isExtensionActiveRef.current) {
+          return;
+        }
+
+        // Support messages sent from our Cinemax Browser Extension / Helper
+        if (isFromExtension) {
+          setIsExtensionActive(true);
+
+          // Lock onto the main movie player frame (filter out ad/background iframes)
+          const msgFrameId = data.frameId || 'legacy';
+          const msgDuration = data.duration || 0;
+          const msgIsPlaying = data.isPlaying || false;
+          const msgCurrentTime = data.currentTime !== undefined ? Number(data.currentTime) : -1;
+          const now = Date.now();
+          const lastFrameTime = lastFrameMessageTimeRef.current;
+          const isLockedFrameDead = now - lastFrameTime > 5000;
+
+          // Pre-filter: Reject completely idle frames (no duration, not playing, time at 0)
+          // These are blank iframes, tracking pixels or not-yet-started embeds.
+          const isIdleFrame = msgDuration === 0 && !msgIsPlaying && (msgCurrentTime <= 0 || msgCurrentTime === -1);
+          // Only allow idle frames to become the active frame if no other frame has been seen
+          // and it's a ping/init event (we haven't seen any real video yet)
+          if (isIdleFrame && activeExtensionFrameIdRef.current && activeExtensionFrameIdRef.current !== msgFrameId) {
+            // Silent ignore — another frame is already locked and this one is idle
+            return;
+          }
+
+          // Frame Switch/Lock conditions:
+          // 1. No active frame yet (and this frame is not purely idle)
+          // 2. This message is from the already-active frame
+          // 3. The incoming frame has a significantly larger duration (>= 30s more) — movie > ad
+          // 4. Our locked frame is dead (>5s no message) AND this new frame is actively playing
+          const shouldAcceptFrame =
+            (!activeExtensionFrameIdRef.current && !isIdleFrame) ||
+            (!activeExtensionFrameIdRef.current && data.event === 'ping') ||
+            activeExtensionFrameIdRef.current === msgFrameId ||
+            (msgDuration > 0 && msgDuration > activeExtensionFrameDurationRef.current + 30) ||
+            (isLockedFrameDead && msgIsPlaying && msgDuration > 0);
+
+          if (shouldAcceptFrame) {
+            if (activeExtensionFrameIdRef.current !== msgFrameId && !isIdleFrame) {
+              // Switching to a new frame — log it
+              godModeStore.addLog('EXTENSION', 'INFO', `Frame lock switched from "${activeExtensionFrameIdRef.current || 'none'}" to "${msgFrameId}" (duration=${msgDuration}s, isPlaying=${msgIsPlaying})`);
+            }
+            activeExtensionFrameIdRef.current = msgFrameId;
+            if (msgDuration > 0) {
+              activeExtensionFrameDurationRef.current = msgDuration;
+            }
+            lastFrameMessageTimeRef.current = now;
+          } else {
+            // Ignore messages from other non-active frames (likely ads or idle iframes)
+            return;
+          }
+
+          // Log detail of incoming command/event
+          godModeStore.addLog(
+            'EXTENSION',
+            'INFO',
+            `Received event from extension content script: event="${data.event || ''}", action="${data.action || ''}", currentTime=${data.currentTime !== undefined ? data.currentTime.toFixed(1) + 's' : 'N/A'}, isPlaying=${data.isPlaying !== undefined ? data.isPlaying : 'N/A'}, offset=${data.offset !== undefined ? data.offset + 's' : 'N/A'}`
+          );
+
+          if (data.event === 'adjustOffset' && data.offset !== undefined) {
+            setSubtitleOffset(prev => prev + Math.round(Number(data.offset) * 1000));
+            return;
+          }
+          if (data.event === 'setOffset' && data.offset !== undefined) {
+            setSubtitleOffset(Math.round(Number(data.offset) * 1000));
+            return;
+          }
+          if (data.event === 'togglePlay') {
+            setIsPlaying(prev => !prev);
+            return;
+          }
+          
+          const newPlaying = data.isPlaying;
+          const hasPlayingChanged = newPlaying !== undefined && newPlaying !== isPlaying;
+
+          if (hasPlayingChanged) {
+            setIsPlaying(newPlaying);
+          }
+
+          if (data.currentTime !== undefined && !isNaN(Number(data.currentTime))) {
+            setIsIframeVideoConnected(true);
+            const timeMs = Math.round(Number(data.currentTime) * 1000);
+            setExtensionTimeMs(timeMs);
+
+            const localTime = iframeCurrentMsRef.current;
+            const diff = Math.abs(localTime - timeMs);
+
+            // Determine if this is a seek/jump event or a play-state change that requires
+            // resetting the smooth interpolation timer. For normal playback updates (diff small,
+            // no state change) we do NOT reset the timer to avoid flicker.
+            const isSeekOrJump = diff > 800 || data.event === 'init' || data.event === 'seeked';
+            const isCurrentlyPlaying = newPlaying !== undefined ? newPlaying : isPlaying;
+
+            if (isSeekOrJump || hasPlayingChanged) {
+              // Reset smooth timer to new position
+              setExtensionBaseMs(timeMs);
+              if (isCurrentlyPlaying) {
+                setExtensionPlayStart(Date.now());
+              } else {
+                setExtensionPlayStart(null);
+              }
+
+              // Also reset fallback timer
+              setIframeBase(timeMs);
+              if (isCurrentlyPlaying) {
+                setIframePlayStart(Date.now());
+              } else {
+                setIframePlayStart(null);
+              }
+            }
+            // For normal playback (small diff, same play state): do NOT reset timers.
+            // The smooth interpolation timer continues from where it was,
+            // avoiding the flicker caused by repeated timer resets.
+          } else if (hasPlayingChanged) {
+            if (newPlaying) {
+              setIframePlayStart(Date.now());
+              setExtensionPlayStart(Date.now());
+            } else {
+              setIframePlayStart(null);
+              setExtensionPlayStart(null);
+            }
+          }
+
+          if (data.event === 'ended' || data.type === 'ended') {
+            console.log('[Cinemax] Video ended message received from Extension');
+            handleVideoEnded();
+          }
+          return; // Skip standard parsing if it's from the extension
+        }
+
         // Common ended flags in postMessage from embed providers
         const isEnded = 
           data.event === 'ended' || 
@@ -1114,6 +1563,55 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
         if (isEnded) {
           console.log('[Cinemax] Detected video ended from iframe message:', data);
           handleVideoEnded();
+          return;
+        }
+
+        // Try to intercept player time updates to sync subtitles
+        let receivedTime = null;
+        let receivedPlaying = null;
+
+        if (data.event === 'timeupdate' || data.type === 'timeupdate') {
+          receivedTime = data.time || data.currentTime || data.seconds || data.value;
+        } else if (data.event === 'time' || data.type === 'time') {
+          receivedTime = data.value || data.seconds || data.data;
+        } else if (data.name === 'timeUpdate' && data.data) {
+          receivedTime = data.data.seconds || data.data.currentTime;
+        } else if (data.type === 'MEDIA_DATA' && data.data && (data.data.event === 'timeupdate' || data.data.event === 'time')) {
+          receivedTime = data.data.time || data.data.currentTime;
+        } else if (data.currentTime !== undefined) {
+          receivedTime = data.currentTime;
+        } else if (data.time !== undefined) {
+          receivedTime = data.time;
+        } else if (data.seconds !== undefined) {
+          receivedTime = data.seconds;
+        }
+
+        if (
+          data.event === 'play' || data.event === 'playing' ||
+          data.type === 'play' || data.type === 'playing' ||
+          data.action === 'play' || data.action === 'playing'
+        ) {
+          receivedPlaying = true;
+        } else if (
+          data.event === 'pause' || data.type === 'pause' || data.action === 'pause'
+        ) {
+          receivedPlaying = false;
+        }
+
+        if (receivedTime !== null && !isNaN(Number(receivedTime))) {
+          const timeMs = Math.round(Number(receivedTime) * 1000);
+          setIframeBase(timeMs);
+          setIframePlayStart(Date.now());
+        }
+
+        if (receivedPlaying !== null) {
+          if (receivedPlaying) {
+            setIframePlayStart(Date.now());
+            setIsPlaying(true);
+          } else {
+            setIframePlayStart(null);
+            setIsPlaying(false);
+          }
         }
       } catch (err) {
         // Ignore JSON parse errors
@@ -1344,7 +1842,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className={cn(
-              "z-[99999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm pointer-events-auto",
+              "z-[99999] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm pointer-events-auto",
               isFullscreen ? "absolute inset-0" : "fixed inset-0"
             )}
             onClick={() => {
@@ -1357,20 +1855,122 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               transition={{ type: 'spring', damping: 25, stiffness: 180 }}
-              className="w-full max-w-md bg-[#0c0c0e]/95 backdrop-blur-md border border-white/10 rounded-2xl p-6 sm:p-8 flex flex-col items-center text-center shadow-[0_24px_60px_rgba(0,0,0,0.8)]"
+              className="w-full max-w-xl bg-[#0d0d10]/95 backdrop-blur-md border border-white/10 rounded-2xl p-6 sm:p-8 flex flex-col shadow-[0_24px_60px_rgba(0,0,0,0.9)] text-left"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500 mb-5 border border-amber-500/20">
-                <AlertTriangle size={32} className="animate-pulse" />
+              {/* Header */}
+              <div className="flex items-center gap-4 border-b border-white/5 pb-4 mb-5">
+                <div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 border border-amber-500/20 shrink-0">
+                  <AlertTriangle size={24} className="animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-lg sm:text-xl font-black text-white tracking-wide uppercase">
+                    Thông tin nguồn &amp; Phụ đề
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-0.5">Vui lòng đọc kỹ lưu ý để có trải nghiệm tốt nhất</p>
+                </div>
               </div>
-              <h3 className="text-lg sm:text-xl md:text-2xl font-extrabold uppercase tracking-wide text-white mb-3">
-                Nguồn phát có quảng cáo
-              </h3>
-              <p className="text-sm md:text-base text-gray-300 leading-relaxed mb-6 font-medium">
-                Nguồn phát này từ nhà cung cấp bên thứ ba có chứa nhiều quảng cáo. Để có trải nghiệm tốt nhất, chúng tôi khuyên bạn nên cài đặt tiện ích chặn quảng cáo <strong className="text-emerald-400">uBlock Origin</strong> hoặc sử dụng trình duyệt <strong className="text-emerald-400">Cốc Cốc</strong>.
-              </p>
-              
-              <div className="flex flex-col sm:flex-row gap-3 w-full">
+
+              <div className="space-y-4 mb-6 overflow-y-auto max-h-[60vh] pr-1">
+                {/* 1. Ad Warning Info */}
+                <div className="bg-amber-500/[0.03] border border-amber-500/10 rounded-xl p-4 flex gap-3.5">
+                  <AlertCircle size={20} className="text-amber-500 shrink-0 mt-0.5" />
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <span className="text-sm font-bold text-amber-500 uppercase tracking-wider text-xs">Cảnh báo quảng cáo</span>
+                    <p className="text-xs sm:text-sm text-gray-300 leading-relaxed font-medium">
+                      Nguồn này phát từ bên thứ ba nên chứa nhiều quảng cáo chuyển hướng (ngoại trừ nguồn <strong className="text-emerald-400">OPhim</strong> và <strong className="text-emerald-400">KKPhim</strong> phát trực tiếp không quảng cáo). Khuyên dùng <strong className="text-emerald-400">uBlock Origin</strong> hoặc trình duyệt <strong className="text-emerald-400">Cốc Cốc / Brave</strong> để chặn quảng cáo.
+                    </p>
+                  </div>
+                </div>
+
+                {/* 2. Subtitle Sync Instructions */}
+                <div className="bg-emerald-500/[0.02] border border-emerald-500/15 rounded-xl p-4 flex flex-col gap-3.5">
+                  <div className="flex items-center gap-3">
+                    <Subtitles size={20} className="text-emerald-400 shrink-0" />
+                    <span className="text-sm font-bold text-emerald-400 uppercase tracking-wider text-xs">Hỗ trợ đồng bộ Phụ đề</span>
+                  </div>
+                  <p className="text-xs sm:text-sm text-gray-300 leading-relaxed font-medium -mt-1">
+                    Vì các trình duyệt chặn CORS với trình phát Iframe bên thứ ba, chúng tôi cung cấp 3 phương pháp đồng bộ phụ đề:
+                  </p>
+                  
+                  <div className="grid gap-2.5 mt-1">
+                    {/* Method A */}
+                    <div className="bg-white/[0.02] border border-white/5 rounded-lg p-3 flex gap-3 items-start hover:bg-white/[0.04] transition-colors">
+                      <div className="w-5 h-5 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-400 text-xs font-bold shrink-0 mt-0.5">1</div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-xs sm:text-sm font-bold text-white/90">Đồng bộ tự động qua postMessage API</span>
+                        <span className="text-xs text-gray-400 mt-0.5 leading-relaxed">
+                          Tự động đồng bộ nếu nhà cung cấp iframe truyền dữ liệu thời gian phát (đã tích hợp ngầm).
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Method B - Extension with detailed instructions */}
+                    <div className="bg-white/[0.02] border border-white/5 rounded-lg p-3 flex flex-col gap-2 hover:bg-white/[0.04] transition-colors">
+                      <div className="flex gap-3 items-start">
+                        <div className="w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-400 text-xs font-bold shrink-0 mt-0.5">2</div>
+                        <div className="flex flex-col min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs sm:text-sm font-bold text-white/90">Cài Tiện ích Phụ đề (Khuyên dùng)</span>
+                            <span className="bg-emerald-500/10 text-emerald-400 text-[10px] font-extrabold px-1.5 py-0.5 rounded-md border border-emerald-500/20 uppercase tracking-wider">Tự động 100%</span>
+                          </div>
+                          <span className="text-xs text-gray-400 mt-0.5 leading-relaxed">
+                            Đồng bộ phụ đề mượt mà và chính xác tuyệt đối cho tất cả nguồn phát.
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {/* Step-by-step instructions */}
+                      <div className="mt-3 ml-8 space-y-3 text-xs text-gray-300 font-medium">
+                        <div className="flex gap-2.5 items-start">
+                          <span className="bg-emerald-500/20 text-emerald-400 font-bold rounded px-1.5 py-0.5 text-[10px] tracking-wide shrink-0">B1</span>
+                          <p>Tải file hỗ trợ này về máy và giải nén ra thư mục: <a href="/cinemax-extension.zip" download className="text-emerald-400 underline hover:text-emerald-300 font-extrabold inline-flex items-center gap-1">Tải tiện ích phụ đề (.zip) <Download size={11} className="inline" /></a>.</p>
+                        </div>
+                        <div className="flex gap-2.5 items-start">
+                          <span className="bg-emerald-500/20 text-emerald-400 font-bold rounded px-1.5 py-0.5 text-[10px] tracking-wide shrink-0">B2</span>
+                          <p>Mở trình duyệt (Chrome, Cốc Cốc, Brave...) và gõ địa chỉ: <code className="bg-white/5 border border-white/10 px-1.5 py-0.5 rounded text-emerald-400 font-mono text-[10px]">chrome://extensions</code>.</p>
+                        </div>
+                        <div className="flex gap-2.5 items-start">
+                          <span className="bg-emerald-500/20 text-emerald-400 font-bold rounded px-1.5 py-0.5 text-[10px] tracking-wide shrink-0">B3</span>
+                          <p>Gạt bật công tắc <strong className="text-white">Chế độ dành cho nhà phát triển</strong> (Developer Mode) ở phía góc trên bên phải.</p>
+                        </div>
+                        <div className="flex gap-2.5 items-start">
+                          <span className="bg-emerald-500/20 text-emerald-400 font-bold rounded px-1.5 py-0.5 text-[10px] tracking-wide shrink-0">B4</span>
+                          <p>Bấm nút <strong className="text-white">Tải tiện ích đã giải nén</strong> (Load unpacked) ở góc trên bên trái và chọn thư mục vừa giải nén ở Bước 1.</p>
+                        </div>
+                        
+                        {/* Visual Guide Illustration */}
+                        <div className="mt-3.5 rounded-xl overflow-hidden border border-white/10 bg-black/50 shadow-inner flex flex-col p-1">
+                          <img 
+                            src="/extension_guide_steps.png" 
+                            alt="Hình ảnh hướng dẫn cài đặt tiện ích" 
+                            className="w-full h-auto object-cover rounded-lg max-h-[200px]"
+                          />
+                        </div>
+
+                        <div className="text-[10px] text-emerald-400 font-extrabold flex items-center gap-1.5 bg-emerald-500/[0.05] border border-emerald-500/10 rounded-lg p-2 mt-2">
+                          <Check size={12} className="shrink-0 text-emerald-400 animate-pulse" />
+                          <span>✓ Sau khi cài xong, hãy tải lại trang xem phim (nhấn F5) để bắt đầu xem phim có phụ đề tự động.</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Method C */}
+                    <div className="bg-white/[0.02] border border-white/5 rounded-lg p-3 flex gap-3 items-start hover:bg-white/[0.04] transition-colors">
+                      <div className="w-5 h-5 rounded-full bg-purple-500/10 flex items-center justify-center text-purple-400 text-xs font-bold shrink-0 mt-0.5">3</div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-xs sm:text-sm font-bold text-white/90">Tự căn chỉnh thủ công</span>
+                        <span className="text-xs text-gray-400 mt-0.5 leading-relaxed">
+                          Nếu sub chạy lệch so với lời thoại, bạn có thể bấm nút chỉnh nhanh/chậm phụ đề (-0.5s / +0.5s) ở thanh điều khiển bên dưới trình phát để tự khớp theo ý muốn.
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row gap-3 w-full border-t border-white/5 pt-4">
                 <button
                   onClick={() => {
                     setShowAdWarning(false);
@@ -1379,12 +1979,14 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                       onClose();
                     }
                   }}
-                  className="w-full sm:flex-1 h-12 rounded-xl border border-white/10 hover:bg-white/5 text-sm font-bold text-gray-300 transition-colors cursor-pointer flex items-center justify-center"
+                  className="w-full sm:flex-1 h-11 rounded-xl border border-white/10 hover:bg-white/5 text-sm font-bold text-gray-300 transition-colors cursor-pointer flex items-center justify-center"
                 >
                   Quay lại
                 </button>
                 <button
                   onClick={() => {
+                    localStorage.setItem('cinemax_has_seen_embed_warning', 'true');
+                    setIsManualSyncFallback(true);
                     if (pendingStream && onStreamSelect) {
                       if (pendingStream.url) {
                         setHasShownAdWarningForUrl(pendingStream.url);
@@ -1395,13 +1997,31 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                     setPendingStream(null);
                     setIsSourcesOpen(false);
                   }}
-                  className="w-full sm:flex-1 h-12 rounded-xl hover:opacity-90 text-sm font-bold tracking-wide text-white transition-all shadow-lg cursor-pointer active:scale-95 flex items-center justify-center text-center"
+                  className="w-full sm:flex-1 h-11 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-sm font-bold text-amber-400 transition-colors cursor-pointer flex items-center justify-center"
+                >
+                  Đồng bộ thủ công
+                </button>
+                <button
+                  onClick={() => {
+                    localStorage.setItem('cinemax_has_seen_embed_warning', 'true');
+                    setIsManualSyncFallback(false);
+                    if (pendingStream && onStreamSelect) {
+                      if (pendingStream.url) {
+                        setHasShownAdWarningForUrl(pendingStream.url);
+                      }
+                      onStreamSelect(pendingStream);
+                    }
+                    setShowAdWarning(false);
+                    setPendingStream(null);
+                    setIsSourcesOpen(false);
+                  }}
+                  className="w-full sm:flex-1 h-11 rounded-xl hover:opacity-90 text-sm font-bold tracking-wide text-white transition-all shadow-lg cursor-pointer active:scale-95 flex items-center justify-center text-center"
                   style={{
                     backgroundColor: activeColor,
                     boxShadow: `0 4px 20px ${activeColor}33`
                   }}
                 >
-                  Tôi đã hiểu, tiếp tục
+                  Dùng Extension
                 </button>
               </div>
             </motion.div>
@@ -1868,14 +2488,8 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                     'color: #ffffff; font-weight: bold;',
                     clickDetails
                   );
-                  const isThirdPartyEmbed = stream.type === 'embed' && !stream.url?.includes('cinemaos.tech');
-                  if (isThirdPartyEmbed) {
-                    setPendingStream(stream);
-                    setShowAdWarning(true);
-                  } else {
-                    if (onStreamSelect) {
-                      onStreamSelect(stream);
-                    }
+                  if (onStreamSelect) {
+                    onStreamSelect(stream);
                   }
                 }}
                 className={cn(
@@ -1956,6 +2570,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
         <video
           ref={videoRef}
           playsInline
+          crossOrigin="anonymous"
           onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
           onDurationChange={() => setDuration(videoRef.current?.duration || 0)}
           onPlay={() => setIsPlaying(true)}
@@ -1985,7 +2600,8 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
             "w-full transition-all duration-350",
              (aspectRatio === 'default' || videoFit === 'cover' || videoFit === 'fill') ? "h-full" : "h-auto max-h-full m-auto" 
           )}
-        />
+        >
+        </video>
       )}
 
       {/* External Subtitle Overlay */}
@@ -1994,7 +2610,17 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
         videoRef={!isIframeMode ? videoRef : undefined}
         currentTimeMs={isIframeMode ? iframeCurrentMs : undefined}
         offsetMs={subtitleOffset}
-        enabled={activeStream?.category !== 'vi' && subEnabled && (selectedSubtitleId === 'v3' || (typeof selectedSubtitleId === 'string' && selectedSubtitleId.startsWith('ext-')))}
+        enabled={
+          subEnabled &&
+          !showAdWarning &&
+          !isAggregatorLoading &&
+          !!(isIframeMode ? resolvedEmbedUrl : resolvedUrl) &&
+          (selectedSubtitleId === 'v3' || (typeof selectedSubtitleId === 'string' && selectedSubtitleId.startsWith('ext-'))) &&
+          (!isIframeMode || (isExtensionActive && isIframeVideoConnected) || isManualSyncFallback)
+        }
+        fontSize={subSize}
+        color={subColor}
+        onError={handleSubtitleError}
       />
 
       {/* Subtitles custom styling mock renderer for full aesthetics if enabled */}
@@ -2119,6 +2745,50 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       </AnimatePresence>
 
       <AnimatePresence>
+        {activeStream?.intro && currentTime >= activeStream.intro.start && currentTime <= activeStream.intro.end && (
+          <motion.button
+            key="skip-intro"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (videoRef.current) {
+                videoRef.current.currentTime = activeStream.intro.end;
+                setCurrentTime(activeStream.intro.end);
+              }
+            }}
+            className="absolute bottom-24 right-8 z-[120] bg-black/85 hover:bg-black text-white px-5 py-2.5 rounded-md border border-white/20 font-medium text-sm flex items-center gap-2 cursor-pointer transition-all hover:scale-105 pointer-events-auto shadow-lg"
+          >
+            <FastForward size={16} />
+            Bỏ qua Intro
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {activeStream?.outro && currentTime >= activeStream.outro.start && currentTime <= activeStream.outro.end && (
+          <motion.button
+            key="skip-outro"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (videoRef.current) {
+                videoRef.current.currentTime = activeStream.outro.end;
+                setCurrentTime(activeStream.outro.end);
+              }
+            }}
+            className="absolute bottom-24 right-8 z-[120] bg-black/85 hover:bg-black text-white px-5 py-2.5 rounded-md border border-white/20 font-medium text-sm flex items-center gap-2 cursor-pointer transition-all hover:scale-105 pointer-events-auto shadow-lg"
+          >
+            <FastForward size={16} />
+            Bỏ qua Outro
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {!isIframeMode && activeGestureHUD && (
           <motion.div
             initial={{ opacity: 0, y: -15, scale: 0.9 }}
@@ -2152,37 +2822,56 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
       {/* Title Bar inside Custom Player controls */}
       <AnimatePresence>
-        {((!isIframeMode && showControls) || (!isPlaying && !isIframeMode) || (isIframeMode && areIframeControlsVisible && isFullscreen)) && !(isMobile && isPortrait && !isFullscreen) && (
+        {((!isIframeMode && showControls) || (!isPlaying && !isIframeMode)) && !(isMobile && isPortrait && !isFullscreen) && (
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="absolute top-0 w-full bg-gradient-to-b from-black/90 via-black/40 to-transparent p-4 md:p-6 z-30 pointer-events-auto flex items-center justify-between text-white">
             <h2 className="font-extrabold text-sm md:text-lg drop-shadow-md truncate pr-8 cursor-default flex items-center gap-2">
               <span className="inline-block w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: activeColor }} />
               <span>{title}</span>
             </h2>
 
-            {/* Episode List Selection Button inside top-right of player (Only visible when fullscreen) */}
-            {isFullscreen && episodes && episodes.length > 0 && onEpisodeSelect && (
-              <button 
-                onClick={(e) => { 
-                  e.stopPropagation(); 
-                  const newOpen = !isEpisodesOpen;
-                  setIsEpisodesOpen(newOpen); 
-                  setIsSettingsOpen(false); 
-                  setIsSourcesOpen(false);
-                  if (newOpen && videoRef.current) {
+            <div className="flex items-center gap-3">
+              {/* Report button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowReportModal(true);
+                  if (videoRef.current && isPlaying) {
                     videoRef.current.pause();
                     setIsPlaying(false);
                   }
-                }} 
-                className={cn(
-                  "hover:opacity-100 transition-[transform,background-color,border-color,color] duration-150 flex items-center gap-1.5 md:gap-2 rounded-full active:scale-95 cursor-pointer px-4 py-2 md:px-5 md:py-2.5 bg-black/80 border border-white/15 hover:bg-black hover:border-white/30 text-white text-xs md:text-sm font-bold shadow-2xl select-none",
-                  isEpisodesOpen ? "text-[#E50914] border-red-500/50 bg-black shadow-[0_0_15px_rgba(229,9,20,0.15)]" : "text-white"
-                )}
-                title="Chọn tập phim"
+                }}
+                className="hover:opacity-100 transition-all flex items-center gap-1.5 md:gap-2 rounded-full active:scale-95 cursor-pointer px-4 py-2 bg-red-600/15 border border-red-500/30 hover:bg-red-600/25 hover:border-red-500/50 text-red-400 text-xs md:text-sm font-bold shadow-2xl select-none"
+                title="Báo cáo lỗi phim"
               >
-                <List size={16} />
-                <span>Chọn tập phim</span>
+                <AlertTriangle size={15} />
+                <span>Báo lỗi</span>
               </button>
-            )}
+
+              {/* Episode List Selection Button inside top-right of player (Only visible when fullscreen) */}
+              {isFullscreen && episodes && episodes.length > 0 && onEpisodeSelect && (
+                <button 
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    const newOpen = !isEpisodesOpen;
+                    setIsEpisodesOpen(newOpen); 
+                    setIsSettingsOpen(false); 
+                    setIsSourcesOpen(false);
+                    if (newOpen && videoRef.current) {
+                      videoRef.current.pause();
+                      setIsPlaying(false);
+                    }
+                  }} 
+                  className={cn(
+                    "hover:opacity-100 transition-[transform,background-color,border-color,color] duration-150 flex items-center gap-1.5 md:gap-2 rounded-full active:scale-95 cursor-pointer px-4 py-2 md:px-5 md:py-2.5 bg-black/80 border border-white/15 hover:bg-black hover:border-white/30 text-white text-xs md:text-sm font-bold shadow-2xl select-none",
+                    isEpisodesOpen ? "text-[#E50914] border-red-500/50 bg-black shadow-[0_0_15px_rgba(229,9,20,0.15)]" : "text-white"
+                  )}
+                  title="Chọn tập phim"
+                >
+                  <List size={16} />
+                  <span>Chọn tập phim</span>
+                </button>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -2706,80 +3395,14 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Embed bottom controls bar */}
-      {isIframeMode && areIframeControlsVisible && isFullscreen && (
-        <div className="absolute bottom-0 left-0 w-full p-4 md:p-6 z-30 pointer-events-none flex items-center justify-between text-white">
-          <div className="flex items-center gap-3 sm:gap-4 pointer-events-auto bg-[#0a0a0c]/85 backdrop-blur-md px-3.5 py-2.5 rounded-2xl border border-white/10 shadow-[rgba(0,0,0,0.8)_0px_8px_30px]">
-            {/* Subtitle offset */}
-            <div className="flex items-center gap-1.5 bg-white/5 rounded-xl px-2.5 py-1 border border-white/10">
-              <Subtitles size={14} className="text-white/40" />
-              <button 
-                onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev - 250); }} 
-                className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-white/60 cursor-pointer"
-                title="Sub nhanh hơn [-250ms]"
-              >
-                <Minus size={11} />
-              </button>
-              <span className={cn('text-xs font-mono font-bold min-w-[36px] text-center', subtitleOffset === 0 ? 'text-white/30' : 'text-emerald-400')}>
-                {subtitleOffset >= 0 ? '+' : ''}{(subtitleOffset / 1000).toFixed(2)}s
-              </span>
-              <button 
-                onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev + 250); }} 
-                className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-white/60 cursor-pointer"
-                title="Sub chậm hơn [+250ms]"
-              >
-                <Plus size={11} />
-              </button>
-              {subtitleOffset !== 0 && (
-                <button 
-                  onClick={(e) => { e.stopPropagation(); setSubtitleOffset(0); }} 
-                  className="w-4 h-4 flex items-center justify-center text-white/20 hover:text-white transition-colors cursor-pointer"
-                  title="Reset delay"
-                >
-                  <RotateCcw size={10} />
-                </button>
-              )}
-            </div>
 
-
-          </div>
-
-          <div className="flex items-center gap-4 pointer-events-auto bg-[#0a0a0c]/85 backdrop-blur-md px-3.5 py-2.5 rounded-2xl border border-white/10 shadow-[rgba(0,0,0,0.8)_0px_8px_30px]">
-            {/* Video Sources / Server selection list for iframe embed */}
-            {streams && streams.length > 0 && (
-              <button 
-                onClick={(e) => { 
-                  e.stopPropagation(); 
-                  setIsSourcesOpen(!isSourcesOpen); 
-                  setIsEpisodesOpen(false); 
-                }} 
-                className={cn(
-                  "hover:opacity-100 transition-all flex items-center gap-2 rounded-xl active:scale-95 cursor-pointer px-3 py-1.5 bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.1]",
-                  isSourcesOpen ? "text-emerald-400 opacity-100 font-bold border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.15)]" : "opacity-85 text-white"
-                )}
-                title="Nguồn phát video"
-              >
-                <Wifi size={18} />
-                <span className="font-sans text-xs">Nguồn phát</span>
-              </button>
-            )}
-
-
-
-            {/* Fullscreen button */}
-            <button onClick={toggleFullscreen} className="hover:text-gray-300 hover:scale-110 active:scale-95 transition-all cursor-pointer">
-              <Maximize size={20} />
-            </button>
-          </div>
-        </div>
-      )}
 
       {renderAdWarningModal()}
       </div>
 
       {/* Embed bottom controls bar when NOT fullscreen (outside the viewport) */}
       {isIframeMode && !isFullscreen && (
-        <div className="w-full bg-[#0a0a0c] border border-white/[0.06] rounded-b-2xl p-3 sm:p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4 select-none">
+        <div className="w-full bg-[#0a0a0c] border border-white/[0.06] rounded-b-2xl p-3 sm:p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4 select-none" onClick={() => setIsEmbedSubMenuOpen(false)}>
           {/* Title and source status */}
           <div className="flex items-center gap-3 min-w-0">
             <span className="inline-block w-2.5 h-2.5 rounded-full animate-pulse bg-emerald-400 shrink-0" />
@@ -2790,37 +3413,114 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
           </div>
 
           {/* Controls button actions */}
-          <div className="grid grid-cols-2 gap-2.5 w-full sm:flex sm:flex-wrap sm:w-auto sm:gap-2.5">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-start sm:justify-end">
+            {/* Play/Pause Subtitle Timer for sync - Only show if extension is active */}
+            <button
+              onClick={(e) => togglePlay(e)}
+              className={cn(
+                "hover:bg-white/[0.1] transition-all flex items-center justify-center rounded-xl active:scale-95 cursor-pointer h-8 w-8 sm:h-9 sm:w-9 bg-white/[0.04] border border-white/[0.08] shrink-0",
+                isPlaying ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/[0.02]" : "text-amber-400 border-amber-500/30 bg-amber-500/[0.02]"
+              )}
+              title={isPlaying ? "Tạm dừng chạy phụ đề" : "Bắt đầu chạy phụ đề"}
+            >
+              {isPlaying ? <Pause size={15} /> : <Play size={15} />}
+            </button>
+
             {/* Subtitle Offset adjustment */}
-            <div className="flex items-center justify-center gap-1.5 bg-white/[0.04] hover:bg-white/[0.06] rounded-xl px-2 py-1 sm:px-2.5 sm:py-1.5 border border-white/[0.08] transition-all h-8 sm:h-9 w-full sm:w-auto shrink-0">
-              <Subtitles size={14} className="text-white/40" />
+            <div className="flex items-center justify-center gap-1 bg-white/[0.04] rounded-xl px-1.5 py-0.5 border border-white/[0.08] h-8 sm:h-9 shrink-0">
               <button 
-                onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev - 250); }} 
-                className="w-5.5 h-5.5 sm:w-6 sm:h-6 flex items-center justify-center rounded hover:bg-white/10 text-white/60 active:scale-90 transition-all cursor-pointer"
-                title="Sub nhanh hơn [-250ms]"
+                onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev - 500); }} 
+                className="w-7 h-6 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/60 hover:text-white active:scale-90 transition-all cursor-pointer"
+                title="Sub nhanh hơn [-0.5s]"
               >
-                <Minus size={11} />
+                <Minus size={13} />
               </button>
-              <span className={cn('text-xs font-mono font-bold min-w-[38px] text-center', subtitleOffset === 0 ? 'text-white/30' : 'text-emerald-400')}>
-                {subtitleOffset >= 0 ? '+' : ''}{(subtitleOffset / 1000).toFixed(2)}s
+              <span className={cn('text-[11px] font-mono font-bold min-w-[34px] text-center', subtitleOffset === 0 ? 'text-white/30' : 'text-emerald-400')}>
+                {subtitleOffset >= 0 ? '+' : ''}{(subtitleOffset / 1000).toFixed(1)}s
               </span>
               <button 
-                onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev + 250); }} 
-                className="w-5.5 h-5.5 sm:w-6 sm:h-6 flex items-center justify-center rounded hover:bg-white/10 text-white/60 active:scale-90 transition-all cursor-pointer"
-                title="Sub chậm hơn [+250ms]"
+                onClick={(e) => { e.stopPropagation(); setSubtitleOffset(prev => prev + 500); }} 
+                className="w-7 h-6 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/60 hover:text-white active:scale-90 transition-all cursor-pointer"
+                title="Sub chậm hơn [+0.5s]"
               >
-                <Plus size={11} />
+                <Plus size={13} />
               </button>
               {subtitleOffset !== 0 && (
                 <button 
                   onClick={(e) => { e.stopPropagation(); setSubtitleOffset(0); }} 
-                  className="w-4 h-4 flex items-center justify-center text-white/25 hover:text-white transition-colors cursor-pointer"
+                  className="w-5 h-5 flex items-center justify-center rounded-md hover:bg-white/10 text-white/40 hover:text-white active:scale-90 transition-all cursor-pointer ml-0.5"
                   title="Reset delay"
                 >
                   <RotateCcw size={10} />
                 </button>
               )}
             </div>
+
+            {/* Subtitle track picker */}
+            {combinedSubtitleTracks.length > 1 && (!isIframeMode || isExtensionActive || isManualSyncFallback) && (
+              <div className="relative shrink-0 w-full sm:w-auto">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setIsEmbedSubMenuOpen(v => !v); }}
+                  className={cn(
+                    "hover:opacity-100 transition-all flex items-center justify-center gap-2 rounded-xl active:scale-95 cursor-pointer h-8 sm:h-9 px-3 w-full sm:w-auto bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-xs font-bold tracking-wide",
+                    isEmbedSubMenuOpen
+                      ? "text-violet-400 border-violet-500/50 bg-violet-500/10 shadow-[0_0_10px_rgba(139,92,246,0.2)]"
+                      : subEnabled && selectedSubtitleId !== 'off'
+                        ? "text-violet-300 border-violet-500/30"
+                        : "text-white/80"
+                  )}
+                  title="Chọn phụ đề"
+                >
+                  <Subtitles size={15} className={subEnabled && selectedSubtitleId !== 'off' ? "text-violet-400" : "text-white/50"} />
+                  <span className="truncate max-w-[80px] sm:max-w-[120px]">
+                    {selectedSubtitleId === 'off'
+                      ? 'Phụ đề'
+                      : combinedSubtitleTracks.find(t => t.id === selectedSubtitleId)?.name ?? 'Phụ đề'}
+                  </span>
+                </button>
+
+                {/* Dropdown */}
+                {isEmbedSubMenuOpen && (
+                  <div
+                    className="absolute bottom-full mb-2 right-0 min-w-[180px] bg-[#111116] border border-white/[0.08] rounded-xl shadow-2xl overflow-hidden z-50"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="px-3 pt-2.5 pb-1 text-[10px] text-white/30 font-bold uppercase tracking-widest">Phụ đề</div>
+                    {combinedSubtitleTracks.map((track) => (
+                      <button
+                        key={String(track.id)}
+                        onClick={() => {
+                          setSelectedSubtitleId(track.id);
+                          setSubEnabled(track.id !== 'off');
+                          setIsEmbedSubMenuOpen(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-left transition-colors hover:bg-white/[0.06] cursor-pointer",
+                          track.id === selectedSubtitleId ? "text-violet-400" : "text-white/70"
+                        )}
+                      >
+                        {track.id === selectedSubtitleId && <Check size={12} className="text-violet-400 shrink-0" />}
+                        {track.id !== selectedSubtitleId && <span className="w-3 shrink-0" />}
+                        {track.name}
+                      </button>
+                    ))}
+                    <div className="border-t border-white/[0.06] my-1" />
+                    <a
+                      href="/cinemax-extension.zip"
+                      download
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsEmbedSubMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[11px] font-bold text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/[0.03] transition-colors cursor-pointer"
+                    >
+                      <Download size={12} className="shrink-0 text-emerald-400" />
+                      <span>Tải Extension (.zip)</span>
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Select source selection panel */}
             {streams && streams.length > 0 && (
@@ -2837,12 +3537,32 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                 title="Chọn nguồn phát"
               >
                 <Wifi size={15} className={isSourcesOpen ? "text-emerald-400" : "text-white/60"} />
-                <span>Chọn nguồn</span>
+                <span>Nguồn</span>
               </button>
             )}
+
+
           </div>
         </div>
       )}
+
+      <ReportModal
+        isOpen={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        movieTitle={movieName || title || "Phim"}
+        movieSlug={slug || ""}
+        tmdbId={tmdbId}
+        mediaType={type === 'series' || isTv ? 'tv' : 'movie'}
+        season={currentSeason}
+        episodeName={episodeName}
+        serverName={activeStream?.providerLabel || (selectedServerId !== undefined && servers ? servers[selectedServerId]?.server_name : undefined) || "Nguồn chưa xác định"}
+        streamUrl={activeStream?.url || url}
+        streamType={activeStream?.type || (embedUrl ? 'embed' : 'hls')}
+        quality={activeStream?.quality || 'auto'}
+        currentTime={currentTime}
+        duration={duration}
+        isFullscreen={isFullscreen}
+      />
     </div>
   );
 };

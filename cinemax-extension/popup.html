@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Cinemax Helper</title>
+  <style>
+    :root {
+      --bg-color: #0c0c0e;
+      --card-bg: #16161a;
+      --primary: #e50914;
+      --primary-hover: #b80710;
+      --text: #ffffff;
+      --text-muted: #9ca3af;
+      --success: #10b981;
+      --success-glow: rgba(16, 185, 129, 0.4);
+      --danger: #ef4444;
+      --danger-glow: rgba(239, 68, 68, 0.4);
+      --border: rgba(255, 255, 255, 0.08);
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    
+    body {
+      width: 320px;
+      background: var(--bg-color);
+      color: var(--text);
+      padding: 16px;
+      overflow-x: hidden;
+    }
+    
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+    }
+    
+    .logo {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--primary);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      text-shadow: 0 0 10px rgba(229, 9, 20, 0.2);
+    }
+    
+    .version {
+      font-size: 10px;
+      color: var(--text-muted);
+      background: rgba(255, 255, 255, 0.05);
+      padding: 2px 6px;
+      border-radius: 20px;
+    }
+    
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    
+    .status-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--danger);
+      box-shadow: 0 0 8px var(--danger-glow);
+      transition: all 0.3s ease;
+    }
+    
+    .indicator.connected {
+      background: var(--success);
+      box-shadow: 0 0 12px var(--success-glow);
+    }
+    
+    .status-text {
+      font-size: 13px;
+      font-weight: 600;
+    }
+    
+    .time-display {
+      font-size: 16px;
+      font-weight: 700;
+      margin-top: 8px;
+      color: #38bdf8;
+      display: none;
+    }
+    
+    .section-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      letter-spacing: 0.5px;
+    }
+    
+    .btn-group {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    
+    button {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 4px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    
+    button:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    
+    button:active {
+      transform: scale(0.95);
+    }
+    
+    .btn-primary {
+      background: var(--primary);
+      border: none;
+    }
+    
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+    
+    .btn-reset {
+      grid-column: span 4;
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+    }
+    
+    .btn-reset:hover {
+      background: rgba(239, 68, 68, 0.2);
+    }
+    
+    .custom-offset {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    
+    .custom-offset input {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 6px 8px;
+      font-size: 12px;
+      outline: none;
+    }
+    
+    .custom-offset input:focus {
+      border-color: var(--primary);
+    }
+    
+    .custom-offset button {
+      padding: 6px 12px;
+    }
+    
+    .play-controls {
+      display: flex;
+      justify-content: center;
+      margin-top: 8px;
+    }
+    
+    .btn-play {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      padding: 10px;
+      font-size: 13px;
+      background: #ffffff;
+      color: #000000;
+      border: none;
+      border-radius: 8px;
+      font-weight: 700;
+    }
+    
+    .btn-play:hover {
+      background: rgba(255, 255, 255, 0.85);
+    }
+    
+    .footer {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-align: center;
+      margin-top: 16px;
+      line-height: 1.4;
+    }
+    
+    .footer a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+    
+    .footer a:hover {
+      text-decoration: underline;
+    }
+    
+    /* Display state gating */
+    .connected-only {
+      display: none;
+    }
+    
+    body.is-connected .connected-only {
+      display: block;
+    }
+    
+    body.is-connected .disconnected-only {
+      display: none;
+    }
+
+    /* ── Ad Blocker Toggle Card ── */
+    .adblocker-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .adblocker-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1;
+    }
+
+    .adblocker-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .adblocker-subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .adblocker-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 20px;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      transition: all 0.3s;
+    }
+
+    .adblocker-badge.off {
+      background: rgba(239, 68, 68, 0.1);
+      color: #fca5a5;
+      border-color: rgba(239, 68, 68, 0.2);
+    }
+
+    /* Toggle Switch */
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 24px;
+      transition: all 0.3s ease;
+    }
+
+    .toggle-slider:before {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      left: 3px;
+      top: 3px;
+      background: rgba(255,255,255,0.5);
+      border-radius: 50%;
+      transition: all 0.3s ease;
+    }
+
+    .toggle-switch input:checked + .toggle-slider {
+      background: rgba(16, 185, 129, 0.3);
+      border-color: var(--success);
+      box-shadow: 0 0 8px var(--success-glow);
+    }
+
+    .toggle-switch input:checked + .toggle-slider:before {
+      transform: translateX(20px);
+      background: var(--success);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">Cinemax</div>
+    <div class="version">v2.0</div>
+  </header>
+  
+  <!-- Ad Blocker Toggle -->
+  <div class="card adblocker-card">
+    <div class="adblocker-info">
+      <div class="adblocker-title">
+        🛡️ Chặn quảng cáo
+        <span id="adBlockerBadge" class="adblocker-badge">BẬT</span>
+      </div>
+      <div class="adblocker-subtitle" id="adBlockerSubtitle">Đang chặn popup &amp; quảng cáo</div>
+    </div>
+    <label class="toggle-switch">
+      <input type="checkbox" id="adBlockerToggle" checked />
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+
+  <!-- Connection Status -->
+  <div class="card">
+    <div class="status-container">
+      <div id="statusIndicator" class="indicator"></div>
+      <div id="statusText" class="status-text">Đang kết nối...</div>
+    </div>
+    <div id="timeDisplay" class="time-display">00:00 / 00:00</div>
+  </div>
+  
+  <!-- Controls (visible only when connected) -->
+  <div class="connected-only">
+    <!-- Playback Controls -->
+    <div class="card">
+      <div class="section-title">Trình phát</div>
+      <div class="play-controls">
+        <button id="btnPlay" class="btn-play">
+          <span id="playIcon">⏸</span> <span id="playText">Tạm dừng</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Subtitle Sync controls -->
+    <div class="card">
+      <div class="section-title">Đồng bộ phụ đề</div>
+      <div class="btn-group">
+        <button id="btnSubMinus1" title="Nhanh hơn 1s">-1.0s</button>
+        <button id="btnSubMinus05" title="Nhanh hơn 0.5s">-0.5s</button>
+        <button id="btnSubPlus05" title="Chậm hơn 0.5s">+0.5s</button>
+        <button id="btnSubPlus1" title="Chậm hơn 1s">+1.0s</button>
+      </div>
+      
+      <div class="custom-offset">
+        <input type="number" id="txtOffset" step="0.1" placeholder="Số giây lệch... (ví dụ: -1.5)" />
+        <button id="btnApplyOffset" class="btn-primary">Áp dụng</button>
+      </div>
+      
+      <div style="margin-top: 8px;">
+        <button id="btnReset" class="btn-reset">Đặt lại đồng bộ (0s)</button>
+      </div>
+    </div>
+  </div>
+  
+  <div class="disconnected-only card" style="text-align: center; padding: 16px;">
+    <p style="font-size: 12px; line-height: 1.5; color: var(--text-muted);">
+      Chưa kết nối với đầu phát phim. Hãy mở một bộ phim trên website Cinemax và bấm nút phát để đồng bộ phụ đề.
+    </p>
+  </div>
+  
+  <div class="footer">
+    Cinemax Helper v2.0 — Subtitle Sync + Ad Blocker<br/>
+    Phát triển bởi <a href="https://github.com/rezarahiminia/worldcup2026" target="_blank">Antigravity Team</a>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

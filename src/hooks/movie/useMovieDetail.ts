@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
-import { fetchDetail } from "../../api/phimApi";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchDetail, fetchSearch } from "../../api/phimApi";
 import { useMyList } from "../useStorage";
 import { useTmdbDetails, useTmdbSearch } from "../useTmdb";
 import { computeMatchScore } from "../../utils/movieMatcher";
@@ -10,7 +10,7 @@ const cleanSearchQuery = (str: string): string => {
   return str
     .replace(/\s*[\(\[].*?[\)\]]/g, "") // remove brackets/parentheses contents
     .replace(/\b(vietsub|thuyet minh|long tieng|longtieng|thuyetminh|vtv\d|htv\d|vtv|htv|subviet|sub|raw|cam|hd|full|fhd|sd|ultrahd|4k|ban dep|ban thuyet minh|longtieng vietsub|full vietsub)\b/gi, "")
-    .replace(/[^a-zA-Z0-9\sÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂÂÊÔƠưăâêôơ]/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 };
@@ -20,96 +20,76 @@ export const useMovieDetail = (rawSlug: string) => {
 
   const slug = rawSlug.replace(/^resolved-/, '');
   const isTmdbSlug = slug.startsWith('tmdb-');
-  const slugParts = isTmdbSlug ? slug.split('-') : [];
+  const isAnilistSlug = slug.startsWith('anilist-');
+  const slugParts = (isTmdbSlug || isAnilistSlug) ? slug.split('-') : [];
   const slugTmdbId = isTmdbSlug ? slugParts[1] : null;
+  const slugAnilistId = isAnilistSlug ? slugParts[1] : null;
+  const slugAnilistMediaType = isAnilistSlug ? (slugParts[2] || 'tv') : undefined;
   const slugMediaType = isTmdbSlug ? (slugParts[2] || 'movie') : undefined;
 
-  const { data: detailData, isLoading: detailLoading, isFetching } = useQuery({
-    queryKey: ["detail", slug],
-    queryFn: () => fetchDetail(slug),
-    enabled: !isTmdbSlug && !slug.startsWith('mal-'), // Don't fetch from phimApi if it's explicitly a tmdb/mal slug we know we don't have
+  // 1. If starts with anilist-slug, load AniList details first to get the title
+  const { data: anilistDetailData, isLoading: anilistDetailLoading } = useQuery({
+    queryKey: ["anilistDetail", slugAnilistId],
+    queryFn: async () => {
+      if (!slugAnilistId) return null;
+      const { fetchAnimeDetailsClient } = await import('../../api/anilistApi');
+      const data = await fetchAnimeDetailsClient(slugAnilistId);
+      if (!data) {
+        throw new Error(`Failed to fetch anime details`);
+      }
+      return data;
+    },
+    enabled: !!isAnilistSlug && !!slugAnilistId,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 
-  const originName = detailData?.movie?.origin_name || detailData?.movie?.name;
-
   const englishQuery = useMemo(() => {
-    if (!detailData?.movie) return "";
-    return cleanSearchQuery(detailData.movie.origin_name || "");
-  }, [detailData?.movie]);
-
-  const vietQuery = useMemo(() => {
-    if (!detailData?.movie) return "";
-    return cleanSearchQuery(detailData.movie.name || "");
-  }, [detailData?.movie]);
-
-  // TMDB Integration
-  const tmdbRawId = detailData?.movie?.tmdb?.id || detailData?.movie?.tmdb_id || slugTmdbId;
-  const tmdbId = (tmdbRawId && tmdbRawId !== 0 && tmdbRawId !== '0' && tmdbRawId !== 'undefined' && tmdbRawId !== 'null' && String(tmdbRawId).trim() !== '') ? tmdbRawId : null;
-
-  const isSingleMovie = useMemo(() => {
-    if (!detailData?.movie) {
-      return slugMediaType === 'movie';
+    if (isAnilistSlug) {
+      return cleanSearchQuery(anilistDetailData?.title || "");
     }
-    const type = detailData.movie.type;
-    if (type === "single" || type === "phimle") return true;
-    if (type === "series" || type === "tvshows") return false;
-    
-    // Evaluate animation ("hoathinh") or other custom types
-    const episodes = detailData.episodes || [];
-    let maxServerEpisodes = 0;
-    if (Array.isArray(episodes)) {
-      episodes.forEach((srv: any) => {
-        if (srv && Array.isArray(srv.server_data)) {
-          maxServerEpisodes = Math.max(maxServerEpisodes, srv.server_data.length);
-        }
-      });
-    }
-    if (maxServerEpisodes === 1) {
-      return true;
-    }
-    
-    const timeStr = String(detailData.movie.time || "").toLowerCase();
-    if (timeStr.includes("phút") || timeStr.includes("m") || timeStr.match(/^\d+$/)) {
-      if (!timeStr.includes("tập") && !timeStr.includes("mùa")) {
-        return true;
-      }
-    }
-    
-    return false;
-  }, [detailData, slugMediaType]);
+    return "";
+  }, [isAnilistSlug, anilistDetailData?.title]);
 
-  const mediaType: "movie" | "tv" = (slugMediaType || (isSingleMovie ? "movie" : "tv")) as "movie" | "tv";
-  
-  const { data: tmdbDetails, isLoading: tmdbLoading } = useTmdbDetails(tmdbId, mediaType);
-  
-  // Try search by English/Original name first
+  // 2. Resolve TMDB ID
+  const tmdbRawId = isAnilistSlug ? null : slugTmdbId;
+  const tmdbId = (tmdbRawId && tmdbRawId !== '0' && tmdbRawId !== 'undefined' && tmdbRawId !== 'null' && String(tmdbRawId).trim() !== '') ? tmdbRawId : null;
+
+  const mediaType: "movie" | "tv" = (slugMediaType || slugAnilistMediaType || "movie") as "movie" | "tv";
+
+  const { data: tmdbDetails, isLoading: tmdbDetailsLoading } = useTmdbDetails(tmdbId, mediaType);
+
+  // Search TMDB for AniList title to resolve its TMDB ID
   const { data: tmdbSearchEnglish } = useTmdbSearch(!tmdbId && englishQuery ? englishQuery : "", mediaType, 1);
-  // If search for English/Original name fails/returns nothing AND we have a Vietnamese name, try searching with Vietnamese name
-  const { data: tmdbSearchViet } = useTmdbSearch(!tmdbId && (!tmdbSearchEnglish?.results || tmdbSearchEnglish.results.length === 0) && vietQuery ? vietQuery : "", mediaType, 1);
-
-  const tmdbSearchResults = tmdbSearchEnglish?.results?.length ? tmdbSearchEnglish.results : (tmdbSearchViet?.results || []);
+  const tmdbSearchResults = tmdbSearchEnglish?.results || [];
 
   const bestSearchMatchId = useMemo(() => {
     if (!tmdbSearchResults || tmdbSearchResults.length === 0) return null;
-    const movieInfo = detailData?.movie;
-    if (!movieInfo) return tmdbSearchResults[0].id;
-
-    const scored = tmdbSearchResults.map((res: any) => {
-      const score = computeMatchScore(movieInfo, {
-        title: res.title || res.name,
-        original_title: res.original_title || res.original_name,
-        year: parseInt((res.release_date || res.first_air_date || '').substring(0, 4)) || 0,
-        type: mediaType
+    if (isAnilistSlug) {
+      const scored = tmdbSearchResults.map((r: any) => {
+        let score = 0;
+        const isAnimation = r.genre_ids?.includes(16);
+        if (isAnimation) score += 100;
+        
+        const tmdbYear = parseInt((r.release_date || r.first_air_date || '').substring(0, 4)) || 0;
+        const aniYear = anilistDetailData?.year || 0;
+        if (aniYear && tmdbYear) {
+          const yearDiff = Math.abs(tmdbYear - aniYear);
+          if (yearDiff === 0) score += 50;
+          else if (yearDiff <= 1) score += 30;
+          else if (yearDiff <= 3) score += 10;
+        }
+        return { result: r, score };
       });
-      return { id: res.id, score };
-    });
-
-    scored.sort((a, b) => b.score - a.score);
-    return scored[0].id;
-  }, [tmdbSearchResults, detailData?.movie, mediaType]);
+      scored.sort((a, b) => b.score - a.score);
+      if (scored[0] && scored[0].score > 0) {
+        return scored[0].result.id;
+      }
+    }
+    return tmdbSearchResults[0].id;
+  }, [tmdbSearchResults, isAnilistSlug, anilistDetailData?.year]);
 
   const resolvedTmdbId = tmdbId || bestSearchMatchId;
-  const { data: tmdbDetailsFallback } = useTmdbDetails(resolvedTmdbId && !tmdbId ? resolvedTmdbId : 0, mediaType);
+  const { data: tmdbDetailsFallback, isLoading: tmdbDetailsFallbackLoading } = useTmdbDetails(resolvedTmdbId && !tmdbId ? resolvedTmdbId : 0, mediaType);
 
   const rawTmdbData = tmdbDetails || tmdbDetailsFallback;
 
@@ -119,16 +99,9 @@ export const useMovieDetail = (rawSlug: string) => {
     const vi = translations.find((t: any) => t.iso_639_1 === 'vi')?.data;
     const en = translations.find((t: any) => t.iso_639_1 === 'en')?.data;
 
-    // Check if Vietnamese translation is present and not empty
     const hasVi = vi && (vi.title || vi.name);
-
-    const title = hasVi
-      ? (vi.title || vi.name)
-      : (en?.title || en?.name || rawTmdbData.title || rawTmdbData.name);
-
-    const overview = hasVi
-      ? vi.overview
-      : (en?.overview || rawTmdbData.overview);
+    const title = hasVi ? (vi.title || vi.name) : (en?.title || en?.name || rawTmdbData.title || rawTmdbData.name);
+    const overview = hasVi ? vi.overview : (en?.overview || rawTmdbData.overview);
 
     return {
       ...rawTmdbData,
@@ -137,6 +110,114 @@ export const useMovieDetail = (rawSlug: string) => {
       overview: overview || rawTmdbData.overview
     };
   }, [rawTmdbData]);
+
+  // 3. Determine if media is an Anime
+  const isAnime = useMemo(() => {
+    if (isAnilistSlug) return true;
+    if (finalTmdbData) {
+      const isJa = finalTmdbData.original_language === 'ja';
+      const hasAnimGenre = finalTmdbData.genres?.some((g: any) => g.id === 16 || g.name?.toLowerCase() === 'animation' || g.name?.toLowerCase() === 'hoạt hình');
+      if (isJa && hasAnimGenre) return true;
+    }
+    return false;
+  }, [isAnilistSlug, finalTmdbData]);
+
+  // 4. Resolve AniList ID for TMDB Anime
+  const { data: resolvedAnilistId } = useQuery({
+    queryKey: ["resolvedAnilistId", resolvedTmdbId, finalTmdbData?.title],
+    queryFn: async () => {
+      if (!finalTmdbData) return null;
+      const title = finalTmdbData.original_name || finalTmdbData.original_title || finalTmdbData.title || finalTmdbData.name;
+      if (!title) return null;
+      
+      try {
+        const searchUrl = `https://api.animapper.net/api/v1/search?title=${encodeURIComponent(title)}&mediaType=ANIME&limit=1`;
+        const res = await fetch(searchUrl);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.results && data.results.length > 0) {
+            return data.results[0].id;
+          }
+        }
+      } catch (err) {
+        console.warn(`[useMovieDetail] Failed to search AniList ID for "${title}":`, err);
+      }
+      return null;
+    },
+    enabled: isAnime && !slugAnilistId && !!finalTmdbData,
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+
+  const activeAnilistId = slugAnilistId || resolvedAnilistId;
+
+  // Fetch AniList details for TMDB Anime (to get HiAnime episodes)
+  const { data: tmdbAnimeDetailData, isLoading: tmdbAnimeDetailLoading } = useQuery({
+    queryKey: ["anilistDetail", activeAnilistId],
+    queryFn: async () => {
+      if (!activeAnilistId) return null;
+      const { fetchAnimeDetailsClient } = await import('../../api/anilistApi');
+      const data = await fetchAnimeDetailsClient(activeAnilistId);
+      return data;
+    },
+    enabled: isAnime && !!activeAnilistId && !isAnilistSlug,
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+
+  const finalAnilistData = anilistDetailData || tmdbAnimeDetailData;
+
+  // 5. Query matching phimApi item by searching OPhim/KKPhim with the title
+  const { data: searchedPhimItem } = useQuery({
+    queryKey: ["searchedPhimItem", resolvedTmdbId, finalTmdbData?.title],
+    queryFn: async () => {
+      if (!finalTmdbData) return null;
+      const title = finalTmdbData.title || finalTmdbData.name;
+      const originalTitle = finalTmdbData.original_title || finalTmdbData.original_name;
+      if (!title && !originalTitle) return null;
+
+      const keyword = title || originalTitle;
+      const results = await fetchSearch(keyword);
+      if (!results || results.length === 0) return null;
+
+      // Filter out virtual TMDB-only items
+      const localResults = results.filter((item: any) => !item.isTmdbOnly);
+      if (localResults.length === 0) return null;
+
+      const tmdbInfo = {
+        title,
+        original_title: originalTitle,
+        year: parseInt((finalTmdbData.release_date || finalTmdbData.first_air_date || '').substring(0, 4)) || 0,
+        type: mediaType,
+        id: resolvedTmdbId,
+        imdb_id: resolvedImdbId,
+        casts: finalTmdbData?.credits?.cast?.slice(0, 8).map((c: any) => c.name || c.original_name) || []
+      };
+
+      const scored = localResults.map((item: any) => {
+        const score = computeMatchScore(item, tmdbInfo);
+        return { item, score };
+      });
+
+      scored.sort((a, b) => b.score - a.score);
+      if (scored[0] && scored[0].score >= 40) {
+        return scored[0].item;
+      }
+      return null;
+    },
+    enabled: (isTmdbSlug || isAnilistSlug) && !!finalTmdbData,
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+
+  const phimApiSlug = useMemo(() => {
+    if (!isTmdbSlug && !isAnilistSlug) return slug;
+    return searchedPhimItem?.originalSlug || searchedPhimItem?.slug || null;
+  }, [isTmdbSlug, isAnilistSlug, slug, searchedPhimItem]);
+
+  const { data: detailData, isLoading: detailLoading, isFetching } = useQuery({
+    queryKey: ["detail", phimApiSlug],
+    queryFn: () => fetchDetail(phimApiSlug!),
+    enabled: !!phimApiSlug,
+    staleTime: 24 * 60 * 60 * 1000,
+  });
 
   // Fetch external IDs to resolve IMDb ID
   const { data: externalIdsData } = useQuery({
@@ -153,7 +234,7 @@ export const useMovieDetail = (rawSlug: string) => {
 
   // Fetch IMDb detailed metadata from proxy
   const { data: imdbApiData } = useQuery({
-    queryKey: ['imdbapi', resolvedImdbId],
+    queryKey: ['imdb', resolvedImdbId],
     queryFn: async () => {
       if (!resolvedImdbId) return null;
       const res = await fetch(`/api/imdb-proxy?imdbId=${resolvedImdbId}`);
@@ -166,7 +247,6 @@ export const useMovieDetail = (rawSlug: string) => {
 
   const tmdbBackdropUrl = useMemo(() => {
     if (!finalTmdbData) return null;
-    // Prioritize English or textless backdrops from tmdb images list
     const path = finalTmdbData.images?.backdrops?.[0]?.file_path || finalTmdbData.backdrop_path;
     if (!path) return null;
     return path.startsWith('http') ? path : `https://image.tmdb.org/t/p/original/${path.split('/').pop()}`;
@@ -174,63 +254,92 @@ export const useMovieDetail = (rawSlug: string) => {
 
   const tmdbPosterUrl = useMemo(() => {
     if (!finalTmdbData) return null;
-    // Prioritize English or textless posters from tmdb images list
     const path = finalTmdbData.images?.posters?.[0]?.file_path || finalTmdbData.poster_path;
     if (!path) return null;
     return path.startsWith('http') ? path : `https://image.tmdb.org/t/p/w780/${path.split('/').pop()}`;
   }, [finalTmdbData]);
 
-  // Synthesize common data structure and merge TMDB metadata for consistent fallback across OPhim/KKPhim APIs
+  // 6. Synthesize unified metadata
   const data = useMemo(() => {
-    if (!detailData && !finalTmdbData) return null;
+    if (!finalTmdbData && !finalAnilistData && !detailData?.movie) return null;
 
-    const base = detailData ? { ...detailData } : {
+    const name = finalTmdbData?.title || finalTmdbData?.name || finalAnilistData?.title || detailData?.movie?.name || "";
+    const origin_name = finalTmdbData?.original_title || finalTmdbData?.original_name || finalAnilistData?.title || detailData?.movie?.origin_name || "";
+    const content = finalTmdbData?.overview || finalAnilistData?.description || detailData?.movie?.content || "Chúng tôi đang cập nhật nội dung chi tiết cho bộ phim này.";
+    
+    const poster_url = tmdbPosterUrl || 
+      (finalAnilistData?.coverImage ? (typeof finalAnilistData.coverImage === 'string' ? finalAnilistData.coverImage : (finalAnilistData.coverImage.extraLarge || finalAnilistData.coverImage.large || "")) : "") ||
+      detailData?.movie?.poster_url || "";
+      
+    const thumb_url = tmdbBackdropUrl || 
+      finalAnilistData?.bannerImage || 
+      (finalAnilistData?.coverImage ? (typeof finalAnilistData.coverImage === 'string' ? finalAnilistData.coverImage : (finalAnilistData.coverImage.large || "")) : "") ||
+      detailData?.movie?.thumb_url || "";
+
+    const year = (finalTmdbData?.release_date || finalTmdbData?.first_air_date || '').substring(0, 4) ||
+      (finalAnilistData?.year ? String(finalAnilistData.year) : "") ||
+      detailData?.movie?.year || "";
+
+    const time = finalTmdbData?.runtime ? `${finalTmdbData.runtime} phút` :
+      (finalAnilistData?.episodesCount ? `${finalAnilistData.episodesCount} tập` :
+      detailData?.movie?.time || "");
+
+    const quality = detailData?.movie?.quality || "HD";
+    
+    const episode_current = finalTmdbData?.number_of_episodes ? `${finalTmdbData.number_of_episodes} tập` :
+      (finalAnilistData?.status === "FINISHED" ? "Full" : 
+      (detailData?.movie?.episode_current || "HD"));
+
+    const category = (finalTmdbData?.genres && finalTmdbData.genres.length > 0 ? finalTmdbData.genres : []) ||
+      (finalAnilistData?.genres || []).map((g: string) => ({ name: g })) ||
+      detailData?.movie?.category || [];
+
+    const actor = detailData?.movie?.actor || [];
+    const director = detailData?.movie?.director || "";
+    
+    const status = (finalTmdbData?.status === "Ended" || finalTmdbData?.status === "Canceled" ? "completed" :
+      (finalTmdbData?.status === "Returning Series" ? "ongoing" : "")) ||
+      (finalAnilistData?.status === "FINISHED" ? "completed" : (finalAnilistData?.status ? "ongoing" : "")) ||
+      detailData?.movie?.status || "";
+
+    return {
       movie: {
-        name: finalTmdbData.title || finalTmdbData.name,
-        origin_name: finalTmdbData.original_title || finalTmdbData.original_name,
-        content: finalTmdbData.overview,
-        poster_url: tmdbPosterUrl || '',
-        thumb_url: tmdbBackdropUrl || '',
-        year: (finalTmdbData.release_date || finalTmdbData.first_air_date || '').substring(0, 4),
-        time: finalTmdbData.runtime ? `${finalTmdbData.runtime} phút` : '',
-        quality: "HD",
-        episode_current: "Full",
-        category: finalTmdbData.genres || [],
+        name,
+        origin_name,
+        content,
+        poster_url,
+        thumb_url,
+        year,
+        time,
+        quality,
+        episode_current,
+        category,
+        actor,
+        director,
+        status
       },
       episodes: []
     };
-
-    if (base.movie && finalTmdbData) {
-      base.movie = {
-        ...base.movie,
-        name: finalTmdbData.title || finalTmdbData.name || base.movie.name,
-        content: finalTmdbData.overview || base.movie.content,
-      };
-    }
-
-    return base;
-  }, [detailData, finalTmdbData, tmdbPosterUrl, tmdbBackdropUrl]);
+  }, [finalTmdbData, finalAnilistData, detailData, tmdbPosterUrl, tmdbBackdropUrl]);
 
   const isDataValid = useMemo(() => {
-    if (isTmdbSlug) {
-      if (!finalTmdbData) return false;
-      const expectedId = String(slugTmdbId);
-      const actualId = String(finalTmdbData.id);
-      return actualId === expectedId;
-    } else {
-      if (!detailData?.movie) return false;
-      return detailData.movie.slug === slug;
-    }
-  }, [detailData, finalTmdbData, slug, isTmdbSlug, slugTmdbId]);
+    if (isAnilistSlug) return !!finalAnilistData;
+    if (isTmdbSlug) return !!finalTmdbData;
+    return !!detailData?.movie;
+  }, [isAnilistSlug, finalAnilistData, isTmdbSlug, finalTmdbData, detailData]);
 
   const validatedData = useMemo(() => {
     if (!isDataValid) return null;
     return data;
   }, [isDataValid, data]);
 
-  const isLoading = detailLoading || (!!tmdbId && tmdbLoading);
+  const tmdbLoading = tmdbDetailsLoading || tmdbDetailsFallbackLoading;
+  const isLoading = tmdbLoading || 
+    (isAnilistSlug && anilistDetailLoading) || 
+    (isAnime && tmdbAnimeDetailLoading) ||
+    ((!isTmdbSlug && !isAnilistSlug) && detailLoading && !detailData);
 
-  // Cast using TMDB with fallback to movie.actor
+  // Cast
   const actorsData = useMemo(() => {
     if (!isDataValid) return [];
     if (finalTmdbData?.credits?.cast?.length > 0) {
@@ -288,7 +397,6 @@ export const useMovieDetail = (rawSlug: string) => {
     return params.get("play") === "true";
   });
 
-  // Reset all movie-specific state immediately when slug changes to prevent leakage/mismatches
   useEffect(() => {
     setActiveEp(null);
     setSelectedServerId(0);
@@ -319,11 +427,13 @@ export const useMovieDetail = (rawSlug: string) => {
     }
   }, [validatedData?.movie, inList, slug, addToList, removeFromList, queryClient, tmdbPosterUrl, tmdbBackdropUrl, resolvedTmdbId, mediaType]);
 
+  // 7. Assemble Server List
   const servers = useMemo(() => {
-    if (!validatedData?.movie) return [];
-    let rawServers = Array.isArray(validatedData.episodes) ? validatedData.episodes : [];
+    if (!data?.movie) return [];
     
-    const mainNames = ['OPhim', 'KKPhim'];
+    let rawServers = (detailData && Array.isArray(detailData.episodes)) ? detailData.episodes : [];
+    
+    const mainNames = ['OPhim', 'KKPhim', 'NguonC'];
     let processedServers = mainNames.map(name => {
       const found = rawServers.find((s: any) => s.server_name?.startsWith(name) || s.name === name);
       if (found) {
@@ -344,7 +454,6 @@ export const useMovieDetail = (rawSlug: string) => {
         }) : [];
         
         return {
-          ...found,
           server_name: newName,
           server_data: sortedData,
           status: found.status || (sortedData.length > 0 ? 'ok' : 'empty')
@@ -358,6 +467,28 @@ export const useMovieDetail = (rawSlug: string) => {
       }
     });
 
+    // Merge HiAnime episodes if it's an Anime
+    if (isAnime && finalAnilistData?.episodes && finalAnilistData.episodes.length > 0) {
+      processedServers.push({
+        server_name: "HiAnime (MegaCloud)",
+        server_data: finalAnilistData.episodes.map((ep: any) => ({
+          name: ep.name,
+          filename: ep.title || `Tập ${ep.name}`,
+          link_embed: `/api/anime/stream?id=${ep.id}`,
+          link_m3u8: "",
+          hianime_episode_id: ep.id
+        })),
+        status: 'ok'
+      });
+    }
+
+    // Filter out OPhim/KKPhim servers if they are completely empty, but only if we have at least one other server (like HiAnime)
+    const hasAtLeastOneActiveServer = processedServers.some((s: any) => s.status === 'ok');
+    if (hasAtLeastOneActiveServer) {
+      processedServers = processedServers.filter((s: any) => s.status === 'ok');
+    }
+
+    // Add VIP Server (Hollysheesh) and Community Server (CinemaOS)
     if (finalTmdbData?.id) {
        let baseEps = [];
        const firstServerWithEps = processedServers.find((s: any) => s.server_data && s.server_data.length > 0);
@@ -367,9 +498,8 @@ export const useMovieDetail = (rawSlug: string) => {
            if (mediaType === 'movie') {
                baseEps = [{ name: 'Full', filename: 'Full' }];
            } else {
-               // Synthesize somewhat up to number_of_episodes or at least 1
                const epCount = finalTmdbData.number_of_episodes || 1;
-               baseEps = Array.from({length: Math.min(epCount, 50)}).map((_, i) => ({
+               baseEps = Array.from({length: Math.min(epCount, 100)}).map((_, i) => ({
                    name: `${i + 1}`,
                    filename: `Tập ${i + 1}`
                }));
@@ -377,10 +507,10 @@ export const useMovieDetail = (rawSlug: string) => {
        }
 
        const cinemaosServerData = baseEps.map((ep: any, index: number) => {
-           let cinemaosUrl = `https://cinemaos.tech/player/${finalTmdbData.id}?theme=ffffff&autoPlay=true`;
+           let cinemaosUrl = `https://cinemaos.tech/player/${finalTmdbData.id}?theme=ffffff`;
            if (mediaType === "tv") {
               const epNum = parseInt(ep.name) || (index + 1);
-              cinemaosUrl = `https://cinemaos.tech/player/${finalTmdbData.id}/1/${epNum}?theme=ffffff&autoPlay=true`;
+              cinemaosUrl = `https://cinemaos.tech/player/${finalTmdbData.id}/1/${epNum}?theme=ffffff`;
            }
            return {
                ...ep,
@@ -389,17 +519,32 @@ export const useMovieDetail = (rawSlug: string) => {
            }
        });
 
-        if (cinemaosServerData.length > 0) {
-            processedServers.push({
-                server_name: "VIP Server (CinemaOS)",
-                server_data: cinemaosServerData,
-                status: 'ok'
-            });
-        }
+       const hollysheeshServerData = baseEps.map((ep: any) => ({
+           ...ep,
+           link_embed: "",
+           link_m3u8: ""
+       }));
+
+       if (cinemaosServerData.length > 0) {
+           processedServers.push({
+               server_name: "Community Server (CinemaOS)",
+               server_data: cinemaosServerData,
+               status: 'ok'
+           });
+       }
+
+       if (hollysheeshServerData.length > 0) {
+           processedServers.unshift({
+               server_name: "VIP Server (Hollysheesh)",
+               server_data: hollysheeshServerData,
+               status: 'ok',
+               _isHollysheesh: true
+           });
+       }
     }
 
     return processedServers;
-  }, [validatedData, finalTmdbData?.id, mediaType]);
+  }, [detailData, isAnime, finalAnilistData, finalTmdbData?.id, mediaType]);
 
   const isEpValid = useMemo(() => {
     if (!activeEp) return false;
@@ -416,7 +561,7 @@ export const useMovieDetail = (rawSlug: string) => {
     }
   }, [activeEp, isEpValid]);
 
-  const isServerIdValid = selectedServerId >= 0 && selectedServerId < servers.length && servers[selectedServerId]?.status !== 'empty';
+  const isServerIdValid = selectedServerId >= 0 && (selectedServerId >= servers.length || servers[selectedServerId]?.status !== 'empty');
   const validatedSelectedServerId = isServerIdValid ? selectedServerId : 0;
 
   useEffect(() => {
@@ -432,7 +577,7 @@ export const useMovieDetail = (rawSlug: string) => {
 
     if (servers && servers.length > 0) {
       const isNewSlug = slug !== prevSlugRef.current;
-      const isInvalidIndex = selectedServerId < 0 || selectedServerId >= servers.length;
+      const isInvalidIndex = selectedServerId < 0;
       
       if (isNewSlug || isInvalidIndex) {
         prevSlugRef.current = slug;
@@ -455,9 +600,8 @@ export const useMovieDetail = (rawSlug: string) => {
   useEffect(() => {
     if (!isDataValid) return;
 
-    const hasEpisodes = (validatedData?.episodes?.length > 0) || (servers && servers.some((s: any) => s.server_data?.length > 0));
+    const hasEpisodes = (servers && servers.some((s: any) => s.server_data?.length > 0));
     if (hasEpisodes && !validatedActiveEp) {
-      // First try to restore from URL parameter 'ep'
       const params = new URLSearchParams(window.location.search);
       const urlEp = params.get("ep");
       if (urlEp) {
@@ -479,7 +623,6 @@ export const useMovieDetail = (rawSlug: string) => {
         }
       }
 
-      // Next try to restore from localStorage progress
       try {
         const stored = localStorage.getItem('cinemax_progress');
         if (stored) {
@@ -500,7 +643,7 @@ export const useMovieDetail = (rawSlug: string) => {
         setActiveEp(servers[validatedSelectedServerId].server_data[0]);
       }
     }
-  }, [validatedData, slug, servers, validatedSelectedServerId, validatedActiveEp, isDataValid]);
+  }, [data, slug, servers, validatedSelectedServerId, validatedActiveEp, isDataValid]);
 
   return {
     data: validatedData, isLoading, isFetching,

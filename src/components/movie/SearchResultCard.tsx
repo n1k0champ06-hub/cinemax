@@ -4,7 +4,7 @@ import { Play } from 'lucide-react';
 import { SafeImage } from '../ui/ImageShimmer';
 import { usePrefetchMovie } from '../../hooks/movie/usePrefetchMovie';
 
-export const SearchResultCard = ({ movie, onSelect, idx }: { key?: React.Key, movie: any, onSelect: (slug: string, autoPlay?: boolean) => void, idx: number }) => {
+export const SearchResultCard = React.memo(({ movie, onSelect, idx }: { key?: React.Key, movie: any, onSelect: (slug: string, autoPlay?: boolean) => void, idx: number }) => {
   const prefetch = usePrefetchMovie();
   const rawPoster = movie.poster_url;
   const safePoster = typeof rawPoster === 'string' && !rawPoster.startsWith('http') ? `https://phimimg.com/${rawPoster}` : rawPoster;
@@ -16,8 +16,7 @@ export const SearchResultCard = ({ movie, onSelect, idx }: { key?: React.Key, mo
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.3, delay: idx * 0.03 }}
-      whileHover={{ scale: 1.05, y: -4, zIndex: 10 }}
+      transition={{ duration: 0.3, delay: Math.min(idx, 15) * 0.03 }}
       onMouseEnter={() => prefetch(movie)}
       onTouchStart={() => prefetch(movie)}
       onClick={(e) => {
@@ -58,7 +57,7 @@ export const SearchResultCard = ({ movie, onSelect, idx }: { key?: React.Key, mo
           onSelect(movie.slug);
         }
       }}
-      className="cursor-pointer group relative"
+      className="cursor-pointer group relative card-spring-hover"
     >
       <div className="rounded-md overflow-hidden bg-[#111] relative shadow-lg ring-1 ring-white/5 group-hover:ring-white/20 transition-all" style={{ aspectRatio: '2/3' }}>
         <SafeImage src={finalPoster} alt={movie.name || 'Movie'} className="absolute inset-0 w-full h-full object-cover group-hover:brightness-[0.4] transition-all duration-300" />
@@ -125,4 +124,4 @@ export const SearchResultCard = ({ movie, onSelect, idx }: { key?: React.Key, mo
       </div>
     </motion.div>
   );
-};
+});

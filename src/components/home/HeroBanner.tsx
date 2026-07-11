@@ -8,7 +8,11 @@ import { useTmdbSearch } from '../../hooks/useTmdb';
 import { SafeImage, HeroShimmer } from '../ui/ImageShimmer';
 
 export const HeroBanner = ({ onSelect }: { onSelect: (slug: string) => void }) => {
-  const { data, isLoading } = useQuery({ queryKey: ["movies", "phim-moi-cap-nhat"], queryFn: () => fetchMultiSource("phim-moi-cap-nhat") });
+  const { data, isLoading } = useQuery({ 
+    queryKey: ["movies", "phim-moi-cap-nhat"], 
+    queryFn: () => fetchMultiSource("phim-moi-cap-nhat"),
+    staleTime: 24 * 60 * 60 * 1000,
+  });
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showVideo, setShowVideo] = useState(false);
   const [isVideoMuted, setIsVideoMuted] = useState(true);
@@ -26,6 +30,7 @@ export const HeroBanner = ({ onSelect }: { onSelect: (slug: string) => void }) =
       return maybeTv ? tmdbGetTvDetails(tmdbMeta?.id) : tmdbGetMovieDetails(tmdbMeta?.id);
     },
     enabled: !!tmdbMeta?.id,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 
   const maxItems = data ? Math.min(data.length, 10) : 0;
@@ -79,8 +84,14 @@ export const HeroBanner = ({ onSelect }: { onSelect: (slug: string) => void }) =
     : null;
 
   const bgImage = bestBackdropUrl || (tmdbMeta?.backdrop_path ? (tmdbMeta.backdrop_path?.startsWith('http') ? tmdbMeta.backdrop_path : `https://image.tmdb.org/t/p/original/${tmdbMeta.backdrop_path?.split('/').pop()}`) : null) || heroMovie.thumb_url || heroMovie.poster_url;
-  // Official transparent logo overlay
-  const logoFile = isDetailsForActiveMovie ? tmdbDetails?.images?.logos?.find((l: any) => l.iso_639_1 === 'en' || l.iso_639_1 === 'vi' || !l.iso_639_1)?.file_path : null;
+  // Official transparent logo overlay (prioritize English, fallback to neutral, Japanese, Korean, Vietnamese)
+  const logoFile = isDetailsForActiveMovie
+    ? (tmdbDetails?.images?.logos?.find((l: any) => l.iso_639_1 === 'en')?.file_path ||
+       tmdbDetails?.images?.logos?.find((l: any) => !l.iso_639_1)?.file_path ||
+       tmdbDetails?.images?.logos?.find((l: any) => l.iso_639_1 === 'ja')?.file_path ||
+       tmdbDetails?.images?.logos?.find((l: any) => l.iso_639_1 === 'ko')?.file_path ||
+       tmdbDetails?.images?.logos?.find((l: any) => l.iso_639_1 === 'vi')?.file_path)
+    : null;
   const logoUrl = logoFile ? `https://image.tmdb.org/t/p/w500/${logoFile}` : null;
 
   const description = localizedHero?.overview || (isDetailsForActiveMovie && tmdbDetails?.overview) || tmdbMeta?.overview || (typeof heroMovie.origin_name === 'string' && heroMovie.origin_name !== heroMovie.name ? heroMovie.origin_name : 'Trải nghiệm những bộ phim mới nhất và hấp dẫn nhất. Xem ngay hôm nay!');

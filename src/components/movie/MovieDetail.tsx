@@ -17,7 +17,8 @@ import {
   Tv,
   Clock,
   Star,
-  Film
+  Film,
+  AlertTriangle
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { SafeImage } from "../ui/ImageShimmer";
@@ -32,9 +33,9 @@ import { proxyImage } from "../../utils/proxyImage";
 import { fetchSearch, fetchDetail } from "../../api/phimApi";
 import { computeMatchScore } from "../../utils/movieMatcher";
 import { useTmdbExternalIds } from "../../hooks/useTmdb";
-import { UnifiedPlayer } from "../player/UnifiedPlayer";
 import { useStreamAggregator } from "../../hooks/useStreamAggregator";
 import { NetflixPlayer } from "../player/NetflixPlayer";
+import { ReportModal } from "../ui/ReportModal";
 const getEpisodeNumber = (nameStr: string | number | undefined | null): number | null => {
   if (nameStr === undefined || nameStr === null) return null;
   const cleaned = nameStr.toString().replace(/\D/g, '');
@@ -104,6 +105,8 @@ const formatCurrency = (amount: number | null | undefined): string => {
   return `$${amount.toLocaleString()}`;
 };
 
+const EMPTY_SUBTITLES: any[] = [];
+
 export const MovieDetail: React.FC<{
   slug: string;
   onClose: () => void;
@@ -154,6 +157,15 @@ export const MovieDetail: React.FC<{
   const [showMobileEpDropdown, setShowMobileEpDropdown] = useState(false);
   const [showMobileDetails, setShowMobileDetails] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+
+  // Lock body scroll when movie details are open
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, []);
 
   const handleShare = async () => {
     try {
@@ -333,7 +345,7 @@ export const MovieDetail: React.FC<{
   
   const cleanTitleForSeasonSearch = (title: string | undefined | null): string => {
     if (!title) return "";
-    return title
+    return String(title)
       .replace(/\s*[\(\[]?(Phần|Season|Mùa|SS|Part|Vol|Tập|Ep)\s*\d+[\)\]]?/gi, "")
       .replace(/\s+/g, " ")
       .trim();
@@ -383,8 +395,8 @@ export const MovieDetail: React.FC<{
             }
         }
 
-        // Fetch all search terms in parallel
-        const searchPromises = searchTerms.map(async (term) => {
+        // Fetch search terms sequentially and stop on the first match to avoid flooding requests
+        for (const term of searchTerms) {
             try {
                 const searchResults = await fetchSearch(term);
                 if (searchResults && searchResults.length > 0) {
@@ -393,24 +405,17 @@ export const MovieDetail: React.FC<{
                         return !isItemMovie;
                     });
                     if (tvResults.length > 0) {
-                        return { term, results: tvResults };
+                        results = tvResults;
+                        matchedTitle = term;
+                        break;
                     }
                 }
             } catch (err) {}
-            return null;
-        });
-
-        const allResults = await Promise.all(searchPromises);
-        const firstMatch = allResults.find(r => r !== null);
-        
-        if (firstMatch) {
-            results = firstMatch.results;
-            matchedTitle = firstMatch.term;
         }
 
-        // Fallback: search base titles without season suffix if no results found
+        // Fallback: search base titles without season suffix sequentially if no results found
         if (results.length === 0) {
-            const fallbackPromises = titlesToSearch.map(async (title) => {
+            for (const title of titlesToSearch) {
                 try {
                     const fallbackResults = await fetchSearch(title);
                     if (fallbackResults && fallbackResults.length > 0) {
@@ -419,22 +424,17 @@ export const MovieDetail: React.FC<{
                             return !isItemMovie;
                         });
                         if (tvResults.length > 0) {
-                            return { title, results: tvResults };
+                            results = tvResults;
+                            matchedTitle = title;
+                            break;
                         }
                     }
                 } catch (err) {}
-                return null;
-            });
-            
-            const allFallbacks = await Promise.all(fallbackPromises);
-            const firstFallback = allFallbacks.find(r => r !== null);
-            if (firstFallback) {
-                results = firstFallback.results;
-                matchedTitle = firstFallback.title;
             }
         }
 
         let seasonSlug = null;
+        let originalSlug = null;
         if (results.length > 0) {
             const tmdbYear = finalTmdbData?.first_air_date ? parseInt(finalTmdbData.first_air_date.substring(0,4)) : 0;
             const scoredMatches = results.map((item: any) => ({
@@ -443,10 +443,12 @@ export const MovieDetail: React.FC<{
                        + (currentSeason > 1 && (item.slug.includes(currentSeason.toString()) || item.name.includes(currentSeason.toString())) ? 50 : 0)
             })).sort((a: any, b: any) => b.score - a.score);
             seasonSlug = scoredMatches[0].slug;
+            originalSlug = scoredMatches[0].originalSlug;
         }
 
-        if (seasonSlug) {
-            const detail = await fetchDetail(seasonSlug);
+        const targetSlug = originalSlug || seasonSlug;
+        if (targetSlug) {
+            const detail = await fetchDetail(targetSlug);
             return detail?.episodes || [];
         }
         return [];
@@ -454,6 +456,14 @@ export const MovieDetail: React.FC<{
     enabled: isTv && !!finalTmdbData?.id && !!currentSeason && !isLoading && (isTmdbSlug || data?.movie?.slug === slug),
     staleTime: 1000 * 60 * 60 * 24 // 24h
   });
+
+  const isAnime = useMemo(() => {
+    return slug.startsWith('anilist-') || !!(
+      (finalTmdbData?.original_language === 'ja' &&
+        finalTmdbData?.genres?.some((g: any) => g.id === 16 || g.name?.toLowerCase() === 'animation' || g.name?.toLowerCase() === 'hoạt hình')) ||
+      data?.movie?.category?.some((c: any) => c.name?.toLowerCase() === 'hoạt hình' || c.name?.toLowerCase() === 'anime')
+    );
+  }, [slug, finalTmdbData, data?.movie]);
 
   const currentServers = useMemo(() => {
     if (isTv) {
@@ -478,8 +488,22 @@ export const MovieDetail: React.FC<{
           { server_name: 'KKPhim', server_data: [], status: isFetchingTmdbSeason ? 'loading' : 'empty' }
         ];
       }
+
+      // Merge HiAnime from useMovieDetail servers (which contains the resolved anime streams)
+      if (isAnime) {
+        const hianimeServer = servers.find((s: any) => s.server_name.includes("HiAnime"));
+        if (hianimeServer) {
+          list.push(hianimeServer);
+        }
+      }
+
+      // Filter out completely empty/error servers if we have at least one active server
+      const hasAtLeastOneActiveServer = list.some((s: any) => s.status === 'ok');
+      if (hasAtLeastOneActiveServer) {
+        list = list.filter((s: any) => s.status === 'ok');
+      }
       
-      // Thêm CinemaOS vào currentServers cho TV series
+      // Thêm CinemaOS và Hollysheesh vào currentServers cho TV series
       if (finalTmdbData?.id) {
           let baseEps: any[] = [];
           const firstServerWithEps = list.find((s: any) => s.server_data && s.server_data.length > 0);
@@ -490,38 +514,51 @@ export const MovieDetail: React.FC<{
               baseEps = Array.from({length: Math.min(epCount, 50)}).map((_, i) => ({
                   name: `${i + 1}`,
                   filename: `Tập ${i + 1}`
-              }));
+               }));
           }
           const cinemaosServerData = baseEps.map((ep: any, index: number) => {
              const epNum = parseInt(ep.name) || (index + 1);
              return {
                  ...ep,
-                 link_embed: `https://cinemaos.tech/player/${finalTmdbData.id}/${currentSeason}/${epNum}?theme=ffffff&autoPlay=true`,
+                 link_embed: `https://cinemaos.tech/player/${finalTmdbData.id}/${currentSeason}/${epNum}?theme=ffffff`,
                  link_m3u8: ""
              }
           });
           if (cinemaosServerData.length > 0) {
               list = [...list, {
-                  server_name: "VIP Server (CinemaOS)",
+                  server_name: "Community Server (CinemaOS)",
                   server_data: cinemaosServerData,
                   status: 'ok'
               }];
           }
+          const hollysheeshServerData = baseEps.map((ep: any) => ({
+              ...ep,
+              link_embed: "",
+              link_m3u8: ""
+          }));
+          if (hollysheeshServerData.length > 0) {
+              list = [{
+                  server_name: "VIP Server (Hollysheesh)",
+                  server_data: hollysheeshServerData,
+                  status: 'ok',
+                  _isHollysheesh: true
+              }, ...list];
+          }
 
-          // --- VidSrc HD + Sub Việt ---
-          const vidSrcServerData = baseEps.map((ep: any, index: number) => ({
+          // --- VidNest (VIP Server) + Sub Việt ---
+          const vidNestServerData = baseEps.map((ep: any, index: number) => ({
             ...ep,
             name: ep.name || `${index + 1}`,
             filename: ep.filename || `Tập ${index + 1}`,
             link_m3u8: '',
             link_embed: '',
           }));
-          if (vidSrcServerData.length > 0) {
+          if (vidNestServerData.length > 0) {
             list = [...list, {
-              server_name: "VidSrc HD — Sub Việt",
-              server_data: vidSrcServerData,
+              server_name: "VidNest (Community) — Sub Việt",
+              server_data: vidNestServerData,
               status: 'ok',
-              _isVidSrc: true,
+              _isVidNest: true,
               _tmdbId: finalTmdbData.id,
               _mediaType: 'tv' as const,
             }];
@@ -543,12 +580,27 @@ export const MovieDetail: React.FC<{
         },
       ];
       return [
-        ...servers,
         {
-          server_name: "VidSrc HD — Sub Việt",
+          server_name: "VIP Server (Hollysheesh)",
           server_data: movieEpPlaceholder,
           status: 'ok',
-          _isVidSrc: true,
+          _isHollysheesh: true
+        },
+        ...servers,
+        {
+          server_name: "Community Server (CinemaOS)",
+          server_data: movieEpPlaceholder.map(ep => ({
+             ...ep,
+             link_embed: `https://cinemaos.tech/player/${finalTmdbData.id}?theme=ffffff`,
+             link_m3u8: ""
+          })),
+          status: 'ok'
+        },
+        {
+          server_name: "VidNest (Community) — Sub Việt",
+          server_data: movieEpPlaceholder,
+          status: 'ok',
+          _isVidNest: true,
           _tmdbId: finalTmdbData.id,
           _mediaType: 'movie' as const,
         },
@@ -556,14 +608,25 @@ export const MovieDetail: React.FC<{
     }
     
     return servers;
-  }, [servers, isTv, seasonServerData, finalTmdbData?.id, currentSeason, isFetchingTmdbSeason]);
+  }, [servers, isTv, isAnime, seasonServerData, finalTmdbData?.id, currentSeason, isFetchingTmdbSeason]);
+
+  const isCinemaOS = useMemo(() => {
+    return currentServers?.[selectedServerId]?.server_name?.includes("CinemaOS");
+  }, [currentServers, selectedServerId]);
+
+  const isHollysheesh = useMemo(() => {
+    return currentServers?.[selectedServerId]?._isHollysheesh || currentServers?.[selectedServerId]?.server_name?.includes("Hollysheesh");
+  }, [currentServers, selectedServerId]);
 
 
   // Ensure selectedServerId doesn't get out of bounds when list sizes shift dynamically
   useEffect(() => {
     if (currentServers && currentServers.length > 0) {
       if (selectedServerId < 0 || selectedServerId >= currentServers.length) {
-        const firstFastIdx = currentServers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && !s.server_name.includes("CinemaOS"));
+        let firstFastIdx = currentServers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && s.server_name.includes("Hollysheesh"));
+        if (firstFastIdx === -1) {
+          firstFastIdx = currentServers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && !s.server_name.includes("CinemaOS"));
+        }
         if (firstFastIdx !== -1) {
           setSelectedServerId(firstFastIdx);
         } else {
@@ -575,30 +638,38 @@ export const MovieDetail: React.FC<{
   }, [currentServers, selectedServerId]);
 
   const streamQuery = useMemo(() => {
-    const isAnime = !!(
-      (finalTmdbData?.original_language === 'ja' &&
-        finalTmdbData?.genres?.some((g: any) => g.id === 16 || g.name?.toLowerCase() === 'animation' || g.name?.toLowerCase() === 'hoạt hình')) ||
-      data?.movie?.category?.some((c: any) => c.name?.toLowerCase() === 'hoạt hình' || c.name?.toLowerCase() === 'anime')
-    );
+    const translations = finalTmdbData?.translations?.translations || [];
+    const enData = translations.find((t: any) => t.iso_639_1 === 'en')?.data;
+    const enTitle = enData?.name || enData?.title || '';
 
     return {
       tmdbId: finalTmdbData?.id,
       imdbId: resolvedImdbId,
-      title: data?.movie?.origin_name || finalTmdbData?.original_title || finalTmdbData?.original_name || '',
+      year: finalTmdbData?.release_date 
+        ? finalTmdbData.release_date.split('-')[0] 
+        : (finalTmdbData?.first_air_date 
+           ? finalTmdbData.first_air_date.split('-')[0] 
+           : (data?.movie?.year || null)),
+      title: isAnime 
+        ? (enTitle || finalTmdbData?.name || finalTmdbData?.title || finalTmdbData?.original_name || finalTmdbData?.original_title || data?.movie?.origin_name || '')
+        : (data?.movie?.origin_name || finalTmdbData?.original_title || finalTmdbData?.original_name || ''),
       titleVi: finalTmdbData?.title || finalTmdbData?.name || data?.movie?.name || '',
       type: isTv ? 'tv' as const : 'movie' as const,
       season: isTv ? (currentSeason || 1) : undefined,
       episode: isTv ? (getEpisodeNumber(activeEp?.name) || 1) : undefined,
       viSlug: slug,
+      casts: finalTmdbData?.credits?.cast?.slice(0, 8).map((c: any) => c.name || c.original_name) || [],
       isAnime,
+      hianimeEpisodeId: activeEp?.hianime_episode_id,
     };
-  }, [finalTmdbData, resolvedImdbId, data?.movie, isTv, currentSeason, activeEp?.name, slug]);
+  }, [finalTmdbData, resolvedImdbId, data?.movie, isTv, currentSeason, activeEp?.name, activeEp?.hianime_episode_id, slug, isAnime]);
 
   const {
     streams,
     providers,
     isLoading: isAggregatorLoading,
     activeStream,
+    selectedStream,
     selectStream,
     retry: retryAggregate,
   } = useStreamAggregator({
@@ -620,20 +691,15 @@ export const MovieDetail: React.FC<{
       const { fetchSubtitles } = await import('../../api/subtitleApi');
       
       try {
-        const [viRes, enRes] = await Promise.all([
-          fetchSubtitles(tmdbId, mediaType, season, episode, 'vi', resolvedImdbId).catch(() => ({ tracks: [], source: 'none' as const })),
-          fetchSubtitles(tmdbId, mediaType, season, episode, 'en', resolvedImdbId).catch(() => ({ tracks: [], source: 'none' as const }))
-        ]);
-        
+        const viRes = await fetchSubtitles(tmdbId, mediaType, season, episode, 'vi', resolvedImdbId).catch(() => ({ tracks: [], source: 'none' as const }));
         const viTracks = (viRes?.tracks || []).map(t => ({ ...t, lang: 'vi' }));
-        const enTracks = (enRes?.tracks || []).map(t => ({ ...t, lang: 'en' }));
         
         return {
-          tracks: [...viTracks, ...enTracks],
-          source: viRes?.source || enRes?.source || 'none'
+          tracks: viTracks,
+          source: viRes?.source || 'none'
         };
       } catch (err) {
-        console.warn('[MovieDetail] Parallel fetchSubtitles failed:', err);
+        console.warn('[MovieDetail] fetchSubtitles failed:', err);
         return { tracks: [], source: 'none' };
       }
     },
@@ -649,12 +715,7 @@ export const MovieDetail: React.FC<{
         s => s.lang.toLowerCase().includes('viet') || s.lang.toLowerCase() === 'vi'
       );
       if (viSub) return viSub.url;
-      // Look for English second
-      const enSub = activeStream.subtitles.find(
-        s => s.lang.toLowerCase().includes('eng') || s.lang.toLowerCase() === 'en'
-      );
-      if (enSub) return enSub.url;
-      return activeStream.subtitles[0].url;
+      return null;
     }
 
     if (!subData?.tracks || subData.tracks.length === 0) return null;
@@ -666,16 +727,15 @@ export const MovieDetail: React.FC<{
       return sortedVi[0]?.downloadUrl || null;
     }
     
-    // Fallback to English
-    const enTracks = subData.tracks.filter(t => t.lang === 'en');
-    if (enTracks.length > 0) {
-      const sortedEn = [...enTracks].sort((a, b) => b.rating - a.rating);
-      return sortedEn[0]?.downloadUrl || null;
-    }
-
-    const sorted = [...subData.tracks].sort((a, b) => b.rating - a.rating);
-    return sorted[0]?.downloadUrl || null;
+    return null;
   }, [subData, activeStream]);
+
+  const limitedSubtitles = useMemo(() => {
+    if (!subData?.tracks) return EMPTY_SUBTITLES;
+    return [...subData.tracks]
+      .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+      .slice(0, 3);
+  }, [subData?.tracks]);
 
   // Sync player states to URL query parameters
   useEffect(() => {
@@ -745,37 +805,82 @@ export const MovieDetail: React.FC<{
     };
   }, [currentServers, setIsPlaying, setActiveEp, setActiveEpSeason]);
 
-  // Auto-select VidSrc stream when the virtual VidSrc server is chosen on details page
+  // Auto-select stream to match the selected virtual server
+  // Forward sync: only fires when selectedServerId explicitly changes (not when activeStream changes)
   useEffect(() => {
+    if (!isPlaying || streams.length === 0) return;
+    // Only run when selectedServerId actually changed
+    if (selectedServerId === prevSelectedServerIdRef.current) return;
+    prevSelectedServerIdRef.current = selectedServerId;
+
     const currentSrv = currentServers[selectedServerId] || currentServers[0];
-    if (isPlaying && currentSrv?._isVidSrc && streams.length > 0) {
-      // Check if activeStream is already a VidSrc stream
-      const isCurrentlyVidSrc = activeStream && (
-        activeStream.provider.startsWith('vidsrc') || 
-        activeStream.provider.startsWith('vsrc') || 
-        activeStream.url?.includes('vidsrc') || 
-        activeStream.url?.includes('vsrc.su')
-      );
-      
-      if (!isCurrentlyVidSrc) {
-        const vidsrcStream = streams.find(s => 
-          s.provider.startsWith('vidsrc') || 
-          s.provider.startsWith('vsrc') || 
-          s.url?.includes('vidsrc') || 
-          s.url?.includes('vsrc.su')
-        );
-        if (vidsrcStream) {
-          console.log("[MovieDetail] Auto-selecting VidSrc stream to match virtual VidSrc server:", vidsrcStream.providerLabel);
-          selectStream(vidsrcStream);
-        }
-      }
+    if (!currentSrv) return;
+
+    const srvName = currentSrv.server_name?.toLowerCase() || '';
+
+    let targetStream = null;
+    if (currentSrv._isHollysheesh || srvName.includes('hollysheesh')) {
+      targetStream = streams.find((s: any) => s.provider === 'hollysheesh');
+    } else if (currentSrv._isVidNest) {
+      targetStream = streams.find((s: any) => s.provider.startsWith('vidnest') || s.url?.includes('vidnest'));
+    } else if (srvName.includes('cinemaos')) {
+      targetStream = streams.find((s: any) => s.provider === 'cinemaos' || s.url?.includes('cinemaos.tech'));
+    } else if (srvName.includes('ophim')) {
+      targetStream = streams.find((s: any) => s.provider === 'ophim' || s.url?.includes('ophim'));
+    } else if (srvName.includes('kkphim')) {
+      targetStream = streams.find((s: any) => s.provider === 'kkphim' || s.url?.includes('kkphim'));
+    } else if (srvName.includes('nguonc')) {
+      targetStream = streams.find((s: any) => s.provider === 'nguonc' || s.url?.includes('nguonc'));
     }
-  }, [isPlaying, currentServers, selectedServerId, streams, activeStream, selectStream]);
+
+    // Read current activeStream from ref — does NOT create a dep-loop
+    if (targetStream && activeStreamRef.current?.id !== targetStream.id) {
+      console.log(`[MovieDetail] Server changed → switching stream to match (${currentSrv.server_name}):`, targetStream.providerLabel);
+      selectStream(targetStream);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, currentServers, selectedServerId, streams, selectStream]);
+
+  // Sync selectedServerId when selectedStream changes (e.g. user selects a source inside the player)
+  useEffect(() => {
+    if (!selectedStream || !currentServers || currentServers.length === 0) return;
+
+    const provider = selectedStream.provider?.toLowerCase() || '';
+    const label = selectedStream.providerLabel?.toLowerCase() || '';
+    const url = selectedStream.url?.toLowerCase() || '';
+
+    let targetIdx = -1;
+
+    if (provider.startsWith('vidnest') || url.includes('vidnest')) {
+      targetIdx = currentServers.findIndex((s: any) => s._isVidNest);
+    } else if (provider === 'ophim' || label.includes('ophim') || url.includes('ophim1.com') || url.includes('opstream')) {
+      targetIdx = currentServers.findIndex((s: any) => s.server_name?.toLowerCase().includes('ophim'));
+    } else if (provider === 'kkphim' || label.includes('kkphim') || url.includes('phimapi.com') || url.includes('kkphim')) {
+      targetIdx = currentServers.findIndex((s: any) => s.server_name?.toLowerCase().includes('kkphim'));
+    } else if (provider === 'nguonc' || label.includes('nguonc') || label.includes('xem20') || url.includes('nguonc.com')) {
+      targetIdx = currentServers.findIndex((s: any) => s.server_name?.toLowerCase().includes('nguonc'));
+    } else if (provider === 'cinemaos' || url.includes('cinemaos.tech')) {
+      targetIdx = currentServers.findIndex((s: any) => s.server_name?.toLowerCase().includes('cinemaos'));
+    } else if (provider === 'hollysheesh') {
+      targetIdx = currentServers.findIndex((s: any) => s._isHollysheesh || s.server_name?.toLowerCase().includes('hollysheesh'));
+    }
+    // Community sources (vidsrc, 2embed, etc.) do not have a dedicated virtual server — skip backward sync
+
+    if (targetIdx !== -1 && targetIdx !== selectedServerId) {
+      console.log("[MovieDetail] Syncing selectedServerId to match selectedStream:", currentServers[targetIdx].server_name);
+      setSelectedServerId(targetIdx);
+    }
+  }, [selectedStream, currentServers, selectedServerId]);
 
   // Auto-select server & episode when season data loads
   // Server selection always runs (so the drawer shows correct episodes).
   // Episode selection is blocked when the player is actively playing.
   const lastProcessedSeasonDataRef = useRef<any>(null);
+  const activeStreamRef = useRef<any>(null);
+  const prevSelectedServerIdRef = useRef<number>(-1);
+
+  // Keep activeStreamRef in sync without causing dep loops
+  useEffect(() => { activeStreamRef.current = activeStream; }, [activeStream]);
   useEffect(() => {
     if (!isTv || !seasonServerData || seasonServerData.length === 0) return;
     // Avoid re-processing the exact same data object (React Query ref-equality)
@@ -789,8 +894,16 @@ export const MovieDetail: React.FC<{
         s.server_data?.length > 0 && 
         s.status !== 'empty' && 
         s.status !== 'error' && 
-        !s.server_name.toLowerCase().includes("cinemaos")
+        s.server_name.toLowerCase().includes("hollysheesh")
       );
+      if (targetServerIdx === -1) {
+        targetServerIdx = seasonServerData.findIndex((s: any) => 
+          s.server_data?.length > 0 && 
+          s.status !== 'empty' && 
+          s.status !== 'error' && 
+          !s.server_name.toLowerCase().includes("cinemaos")
+        );
+      }
       if (targetServerIdx === -1) {
         targetServerIdx = seasonServerData.findIndex((s: any) => s.server_data?.length > 0);
       }
@@ -922,7 +1035,6 @@ export const MovieDetail: React.FC<{
   const handleSelectEpisode = (ep: any, autoPlay: boolean = true) => {
     let phimApiEp = ep;
     if (ep.episode_number) {
-       const isCinemaOS = currentServers?.[selectedServerId]?.server_name?.includes("CinemaOS");
        if (isCinemaOS) {
           phimApiEp = {
              name: `${ep.episode_number}`,
@@ -940,7 +1052,7 @@ export const MovieDetail: React.FC<{
              phimApiEp = {
                 name: `${ep.episode_number}`,
                 filename: `Tập ${ep.episode_number}`,
-                link_embed: `https://cinemaos.tech/player/${finalTmdbData?.id}/${currentSeason}/${ep.episode_number}?theme=ffffff&autoPlay=true`,
+                link_embed: `https://cinemaos.tech/player/${finalTmdbData?.id}/${currentSeason}/${ep.episode_number}?theme=ffffff`,
                 link_m3u8: ""
              };
           }
@@ -1004,9 +1116,20 @@ export const MovieDetail: React.FC<{
   const tmdbBackdropUrl = cleanBackdrop || (finalTmdbData?.backdrop_path ? (finalTmdbData.backdrop_path?.startsWith('http') ? finalTmdbData.backdrop_path : `https://image.tmdb.org/t/p/original/${finalTmdbData.backdrop_path?.split('/').pop()}`) : null);
   const tmdbPosterUrl = cleanPoster || (finalTmdbData?.poster_path ? (finalTmdbData.poster_path?.startsWith('http') ? finalTmdbData.poster_path : `https://image.tmdb.org/t/p/w780/${finalTmdbData.poster_path?.split('/').pop()}`) : null);
   
+  // Official transparent logo overlay (prioritize English, fallback to neutral, Japanese, Korean, Vietnamese, then first logo)
+  const logoFile = finalTmdbData?.images?.logos
+    ? (finalTmdbData.images.logos.find((l: any) => l.iso_639_1 === 'en')?.file_path ||
+       finalTmdbData.images.logos.find((l: any) => !l.iso_639_1)?.file_path ||
+       finalTmdbData.images.logos.find((l: any) => l.iso_639_1 === 'ja')?.file_path ||
+       finalTmdbData.images.logos.find((l: any) => l.iso_639_1 === 'ko')?.file_path ||
+       finalTmdbData.images.logos.find((l: any) => l.iso_639_1 === 'vi')?.file_path ||
+       finalTmdbData.images.logos[0]?.file_path)
+    : null;
+  const logoUrl = logoFile ? `https://image.tmdb.org/t/p/w500${logoFile.startsWith('/') ? '' : '/'}${logoFile}` : null;
+  
   const rawBg = tmdbBackdropUrl || (typeof fbUrl === "string" && fbUrl.startsWith("http") ? fbUrl : `https://phimimg.com/${fbUrl}`);
   const bgDetailImg = proxyImage(rawBg);
-  const rawPoster = tmdbPosterUrl || (movie.poster_url ? (movie.poster_url.startsWith("http") ? movie.poster_url : `https://phimimg.com/${movie.poster_url}`) : rawBg);
+  const rawPoster = tmdbPosterUrl || (movie.poster_url && typeof movie.poster_url === 'string' ? (movie.poster_url.startsWith("http") ? movie.poster_url : `https://phimimg.com/${movie.poster_url}`) : rawBg);
   const posterUrl = proxyImage(rawPoster);
   const cleanMovieName = isTv ? `${cleanTitleForSeasonSearch(movie.name)} (Phần ${currentSeason})` : movie.name;
 
@@ -1050,6 +1173,15 @@ export const MovieDetail: React.FC<{
                     <ChevronLeft size={16} className="hidden sm:block" /> 
                     <span className="hidden sm:inline text-xs">Quay lại trang thông tin</span>
                   </button>
+
+                  <button
+                    onClick={() => setShowReportModal(true)}
+                    className="flex items-center justify-center gap-2 text-red-400 hover:text-red-300 bg-red-950/20 hover:bg-red-950/30 border border-red-500/25 hover:border-red-500/40 w-10 h-10 sm:w-auto sm:h-auto sm:px-4 sm:py-2.5 rounded-full transition-all font-bold tracking-wide shadow-lg cursor-pointer hover:scale-105 active:scale-95 shrink-0"
+                  >
+                    <AlertTriangle size={20} className="sm:hidden" />
+                    <AlertTriangle size={16} className="hidden sm:block" />
+                    <span className="hidden sm:inline text-xs">Báo lỗi phim</span>
+                  </button>
                 </div>
 
                 <motion.div 
@@ -1058,26 +1190,26 @@ export const MovieDetail: React.FC<{
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, height: 0 }}
                   className={cn(
-                    "w-full rounded-2xl overflow-hidden bg-black shadow-2xl relative z-[110]",
-                    (activeStream?.type === 'embed' || !activeStream?.url) ? "" : "aspect-video"
-                  )}
+                      "w-full rounded-2xl overflow-hidden bg-black shadow-2xl relative z-[110]",
+                      activeStream?.type === 'embed' ? "" : "aspect-video"
+                    )}
                 >
                   <NetflixPlayer
                     key={isTv ? `player-${slug}-${currentSeason}-${activeEp?.name || '1'}` : `player-${slug}-movie`}
-                    url={activeStream?.type === 'hls' ? activeStream.url : undefined}
-                    embedUrl={
-                      activeStream?.type === 'embed' 
-                        ? activeStream.url 
-                        : (finalTmdbData?.id 
-                            ? (isTv 
-                                ? `https://cinemaos.tech/player/${finalTmdbData.id}/${currentSeason}/${activeEp?.name || 1}?theme=ffffff&autoPlay=true`
-                                : `https://cinemaos.tech/player/${finalTmdbData.id}?theme=ffffff&autoPlay=true`
-                              )
-                            : undefined)
-                    }
+                     url={isCinemaOS ? undefined : (activeStream?.type === 'hls' ? activeStream.url : undefined)}
+                     embedUrl={
+                       activeStream?.type === 'embed'
+                         ? activeStream.url
+                         : ((!isAggregatorLoading && !activeStream && finalTmdbData?.id)
+                             ? (isTv
+                                 ? `https://vidsrc.me/embed/tv?tmdb=${finalTmdbData.id}&season=${currentSeason}&episode=${activeEp?.name || 1}`
+                                 : `https://vidsrc.me/embed/movie?tmdb=${finalTmdbData.id}`
+                               )
+                             : undefined)
+                     }
                     headers={activeStream?.headers}
                     subtitleUrl={bestSubUrl}
-                    externalSubtitles={subData?.tracks || []}
+                    externalSubtitles={limitedSubtitles}
                     title={`${cleanMovieName} - ${activeEp?.name || '1'}`}
                     slug={slug}
                     episodeName={activeEp?.name || '1'}
@@ -1087,6 +1219,8 @@ export const MovieDetail: React.FC<{
                     onClose={() => setIsPlaying(false)}
                     servers={currentServers}
                     selectedServerId={selectedServerId}
+                    tmdbId={finalTmdbData?.id}
+                    type={isTv ? 'series' : 'single'}
                     onServerChange={(newId) => {
                       setSelectedServerId(newId);
                       const srvEps = currentServers[newId]?.server_data || [];
@@ -1199,11 +1333,11 @@ export const MovieDetail: React.FC<{
 
                   {/* Right Column: Title, Metadata, Category, Synopsis, Cast */}
                   <div className="flex-1 flex flex-col justify-start text-left w-full">
-                    {finalTmdbData?.images?.logos && finalTmdbData.images.logos.length > 0 ? (
+                    {logoUrl ? (
                       <SafeImage 
-                        src={`https://image.tmdb.org/t/p/w500${finalTmdbData.images.logos[0].file_path}`} 
+                        src={logoUrl} 
                         alt="Logo" 
-                        className="w-auto h-24 sm:h-32 object-contain object-left mb-6 drop-shadow-2xl" 
+                        className="w-auto h-24 sm:h-32 object-contain object-left self-start mb-6 drop-shadow-2xl" 
                       />
                     ) : (
                       <h1 className="text-4xl sm:text-5xl lg:text-7xl font-black text-white leading-[1.1] mb-6 drop-shadow-2xl tracking-tighter">
@@ -1393,11 +1527,11 @@ export const MovieDetail: React.FC<{
 
                   {/* Title & Tagline & Logo */}
                   <div className="flex flex-col items-center text-center px-4 w-full gap-2">
-                    {finalTmdbData?.images?.logos && finalTmdbData.images.logos.length > 0 ? (
+                    {logoUrl ? (
                       <SafeImage 
-                        src={`https://image.tmdb.org/t/p/w500${finalTmdbData.images.logos[0].file_path}`} 
+                        src={logoUrl} 
                         alt="Logo" 
-                        className="w-auto h-16 sm:h-20 object-contain mx-auto drop-shadow-2xl mb-1" 
+                        className="w-auto h-16 sm:h-20 object-contain mx-auto self-center drop-shadow-2xl mb-1" 
                       />
                     ) : (
                       <h1 className="text-2xl sm:text-3xl font-black text-center text-white leading-tight drop-shadow-2xl tracking-tight">
@@ -1714,10 +1848,10 @@ export const MovieDetail: React.FC<{
                             const stillPath = getEpStillPath(epNameStr, tmdbEp?.still_path || ep.still_path);
                             const isSelected = currentSeason === validatedActiveEpSeason && (activeEp === ep || (activeEp?.name && isSameEpisode(ep.episode_number || ep.name, activeEp.name)));
                             
-                            const displayEpName = ep.episode_number ? `Tập ${ep.episode_number}` : (ep.name.startsWith("Tập") ? ep.name : `Tập ${ep.name}`);
+                            const displayEpName = ep.episode_number ? `Tập ${ep.episode_number}` : (String(ep.name).startsWith("Tập") ? ep.name : `Tập ${ep.name}`);
                             const displayEpTitle = tmdbEp?.name && !isGenericEpisodeName(tmdbEp.name, tmdbEp.episode_number)
                               ? tmdbEp.name
-                              : (ep.name && !isGenericEpisodeName(ep.name, ep.episode_number) && !ep.name.startsWith("Tập") ? ep.name : '');
+                              : (ep.name && !isGenericEpisodeName(ep.name, ep.episode_number) && !String(ep.name).startsWith("Tập") ? ep.name : '');
                             
                             const overview = tmdbEp?.overview || ep.overview;
 
@@ -1742,17 +1876,25 @@ export const MovieDetail: React.FC<{
                                 </div>
 
                                 {/* Episode Thumbnail */}
-                                <div className="w-[110px] sm:w-[130px] aspect-video rounded-lg overflow-hidden relative shrink-0 bg-[#222] border border-white/5">
-                                  {stillPath ? (
-                                    <SafeImage src={stillPath} alt={ep.name} className="w-full h-full object-cover" />
-                                  ) : (
-                                    <SafeImage src={bgDetailImg || ""} alt={ep.name} className="w-full h-full object-cover opacity-40 mix-blend-luminosity" />
-                                  )}
-                                  
-                                  {isSelected && (
-                                    <div className="absolute bottom-0 left-0 w-full h-0.5 bg-[#e50914]" />
-                                  )}
-                                </div>
+                                 <div className="w-[110px] sm:w-[130px] aspect-video rounded-lg overflow-hidden relative shrink-0 bg-[#222] border border-white/5 flex items-center justify-center">
+                                   {stillPath ? (
+                                     <SafeImage src={stillPath} alt={ep.name} className="w-full h-full object-cover" />
+                                   ) : (
+                                     <>
+                                       <SafeImage src={bgDetailImg || ""} alt={ep.name} className="w-full h-full object-cover opacity-20 mix-blend-luminosity absolute inset-0" />
+                                       <div className="absolute inset-0 flex flex-col justify-center items-center p-2 text-center z-10 pointer-events-none">
+                                         <Film size={16} className="text-white/40 mb-0.5" />
+                                         <span className="text-[7px] leading-tight text-white/50 font-bold uppercase tracking-wide line-clamp-1 max-w-[90%]">
+                                           {movie.name}
+                                         </span>
+                                       </div>
+                                     </>
+                                   )}
+                                   
+                                   {isSelected && (
+                                     <div className="absolute bottom-0 left-0 w-full h-0.5 bg-[#e50914] z-20" />
+                                   )}
+                                 </div>
 
                                 {/* Episode Info */}
                                 <div className="flex-1 min-w-0 pr-1 flex flex-col gap-0.5 justify-center">
@@ -1817,10 +1959,10 @@ export const MovieDetail: React.FC<{
                             const stillPath = getEpStillPath(epNameStr, tmdbEp?.still_path || ep.still_path);
                             const isSelected = activeEp === ep || (activeEp?.name && isSameEpisode(ep.episode_number || ep.name, activeEp.name));
                             
-                            const displayEpName = ep.episode_number ? `Tập ${ep.episode_number}` : (ep.name.startsWith("Tập") ? ep.name : `Tập ${ep.name}`);
+                            const displayEpName = ep.episode_number ? `Tập ${ep.episode_number}` : (String(ep.name).startsWith("Tập") ? ep.name : `Tập ${ep.name}`);
                             const displayEpTitle = tmdbEp?.name && !isGenericEpisodeName(tmdbEp.name, tmdbEp.episode_number)
                               ? tmdbEp.name
-                              : (ep.name && !isGenericEpisodeName(ep.name, ep.episode_number) && !ep.name.startsWith("Tập") ? ep.name : '');
+                              : (ep.name && !isGenericEpisodeName(ep.name, ep.episode_number) && !String(ep.name).startsWith("Tập") ? ep.name : '');
                             
                             const overview = tmdbEp?.overview || ep.overview;
                           
@@ -1830,12 +1972,20 @@ export const MovieDetail: React.FC<{
                               onClick={() => handleSelectEpisode(ep)}
                               className="min-w-[280px] sm:min-w-[320px] max-w-[320px] flex-shrink-0 flex flex-col gap-3 group cursor-pointer snap-start"
                             >
-                              <div className="w-full aspect-video rounded-xl overflow-hidden relative bg-black border border-white/5">
-                                {stillPath ? 
+                              <div className="w-full aspect-video rounded-xl overflow-hidden relative bg-black border border-white/5 flex items-center justify-center">
+                                {stillPath ? (
                                   <SafeImage src={stillPath} alt={ep.name} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500" /> 
-                                : 
-                                  <SafeImage src={bgDetailImg || ''} alt={ep.name} className="w-full h-full object-cover opacity-30 group-hover:opacity-50 transition-opacity mix-blend-luminosity" />
-                                }
+                                ) : (
+                                  <>
+                                    <SafeImage src={bgDetailImg || ''} alt={ep.name} className="w-full h-full object-cover opacity-20 group-hover:opacity-40 transition-opacity mix-blend-luminosity absolute inset-0" />
+                                    <div className="absolute inset-0 flex flex-col justify-center items-center p-4 text-center z-10 pointer-events-none">
+                                      <Film size={26} className="text-white/40 mb-1.5 transition-transform duration-300 group-hover:scale-110" />
+                                      <span className="text-[9px] sm:text-xs text-white/50 font-bold uppercase tracking-wider line-clamp-1 max-w-[90%]">
+                                        {movie.name}
+                                      </span>
+                                    </div>
+                                  </>
+                                )}
                                 
                                 <div className="absolute top-2 right-2 bg-black/80 backdrop-blur-md px-2 py-1 rounded text-[10px] font-black text-white z-10 border border-white/10">
                                   EP {ep.episode_number || getEpisodeNumber(ep.name) || ep.name}
@@ -1925,6 +2075,21 @@ export const MovieDetail: React.FC<{
           </motion.div>
         )}
       </AnimatePresence>
+
+      <ReportModal
+        isOpen={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        movieTitle={finalTmdbData?.title || finalTmdbData?.name || data?.movie?.name || "Phim"}
+        movieSlug={slug}
+        tmdbId={finalTmdbData?.id}
+        mediaType={isTv ? "tv" : "movie"}
+        season={isTv ? (currentSeason || 1) : undefined}
+        episodeName={isTv ? (activeEp?.name || "1") : undefined}
+        serverName={activeStream?.providerLabel || currentServers?.[selectedServerId]?.server_name || "Nguồn chưa xác định"}
+        streamUrl={activeStream?.url}
+        streamType={activeStream?.type}
+        quality={activeStream?.quality}
+      />
     </motion.div>
   );
 };

@@ -1,11 +1,30 @@
-import React, { useRef } from 'react';
-import { useTmdbRanking } from '../../hooks/useTmdb';
+import React, { useRef, useMemo, useState, useEffect } from 'react';
+import { useTmdbRanking, useTmdbBulkDetails } from '../../hooks/useTmdb';
 import { RankingCard } from './RankingCard';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { HorizontalShimmer } from '../ui/ImageShimmer';
 
 export const ImdbRow = ({ type, title, onSelect }: { type: 'top250-movies' | 'top250-tv' | 'popular-movies' | 'popular-tv' | 'now-playing', title: string, onSelect: (id: string) => void }) => {
-  const { data: tmdbData, isLoading: tmdbLoading } = useTmdbRanking(type);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [hasIntersected, setHasIntersected] = useState(false);
+
+  useEffect(() => {
+    if (hasIntersected) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setHasIntersected(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '400px' });
+    const el = containerRef.current;
+    if (el) observer.observe(el);
+    return () => {
+      if (el) observer.unobserve(el);
+      observer.disconnect();
+    };
+  }, [hasIntersected]);
+
+  const { data: tmdbData, isLoading: tmdbLoading } = useTmdbRanking(type, { enabled: hasIntersected });
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const scroll = (direction: 'left' | 'right') => {
@@ -18,28 +37,56 @@ export const ImdbRow = ({ type, title, onSelect }: { type: 'top250-movies' | 'to
     }
   };
 
+  const results = tmdbData?.results || [];
+
+  const data = useMemo(() => {
+    return results.map((item: any) => ({
+      id: `tmdb-${item.id}-${type.includes('tv') ? 'tv' : 'movie'}`,
+      imdb_id: item.id ? item.id.toString() : '', // Temp ID mapping for TMDB
+      title: item.title || item.name,
+      primaryTitle: item.original_title || item.original_name,
+      rating: item.vote_average,
+      poster: item.poster_path ? (item.poster_path?.startsWith('http') ? item.poster_path : `https://image.tmdb.org/t/p/w342/${item.poster_path?.split('/').pop()}`) : null,
+      tmdb_id: item.id,
+      tmdb: item, // Pass the full tmdb object
+    }));
+  }, [results, type]);
+
+  const displayedData = useMemo(() => data.slice(0, 10), [data]);
+
+  const bulkRequests = useMemo(() => {
+    return displayedData.map((item: any) => {
+      const isTv = type.includes('tv');
+      return { id: item.tmdb_id, type: isTv ? 'tv' as const : 'movie' as const };
+    });
+  }, [displayedData, type]);
+
+  const { data: bulkTmdbData } = useTmdbBulkDetails(bulkRequests);
+
+  if (!hasIntersected) {
+    return (
+      <div ref={containerRef} className="py-6 md:py-8 relative min-h-[200px] md:min-h-[250px]">
+        <div className="flex items-center gap-3 px-4 sm:px-8 md:px-12 mb-3">
+          <div className="w-[3px] h-5 sm:h-6 bg-[#E50914] rounded-full" />
+          <h2 className="text-white text-xl sm:text-2xl md:text-[28px] font-bold tracking-tight">
+            {title}
+          </h2>
+        </div>
+        <HorizontalShimmer />
+      </div>
+    );
+  }
+
   const isLoading = tmdbLoading;
   if (isLoading) return <HorizontalShimmer />;
 
-  const hasTmdbData = tmdbData && Array.isArray(tmdbData.results) && tmdbData.results.length > 0;
-  
+  const hasTmdbData = results.length > 0;
   if (!hasTmdbData) {
     return null;
   }
 
-  const data = tmdbData.results.map((item: any) => ({
-    id: `tmdb-${item.id}-${type.includes('tv') ? 'tv' : 'movie'}`,
-    imdb_id: item.id ? item.id.toString() : '', // Temp ID mapping for TMDB
-    title: item.title || item.name,
-    primaryTitle: item.original_title || item.original_name,
-    rating: item.vote_average,
-    poster: item.poster_path ? (item.poster_path?.startsWith('http') ? item.poster_path : `https://image.tmdb.org/t/p/w342/${item.poster_path?.split('/').pop()}`) : null,
-    tmdb_id: item.id,
-    tmdb: item, // Pass the full tmdb object
-  }));
-
   return (
-    <div className="py-6 md:py-8 relative group/row overflow-visible">
+    <div ref={containerRef} className="py-6 md:py-8 relative group/row overflow-visible">
       <div className="flex items-center gap-3 px-4 sm:px-8 md:px-12 mb-3">
         <div className="w-[3px] h-5 sm:h-6 bg-[#E50914] rounded-full" />
         <h2 className="text-white text-xl sm:text-2xl md:text-[28px] font-bold tracking-tight">
@@ -69,11 +116,22 @@ export const ImdbRow = ({ type, title, onSelect }: { type: 'top250-movies' | 'to
           className="flex gap-4 sm:gap-6 overflow-x-auto py-8 sm:py-12 -my-8 sm:-my-12 pl-[4%] pr-[4%] scrollbar-hide items-center relative z-10"
           style={{ scrollbarWidth: "none" }}
         >
-          {data.slice(0, 10).map((movie: any, index: number) => (
-            <div key={index} className="flex-none snap-start pt-4 pb-8">
-              <RankingCard movie={movie} onSelect={onSelect} idx={index} type={type} rowTitle={title} />
-            </div>
-          ))}
+          {displayedData.map((movie: any, index: number) => {
+            const isTv = type.includes('tv');
+            const enDetails = bulkTmdbData?.[`${isTv ? 'tv' : 'movie'}:${movie.tmdb_id}`];
+            return (
+              <div key={index} className="flex-none snap-start pt-4 pb-8">
+                <RankingCard 
+                  movie={movie} 
+                  onSelect={onSelect} 
+                  idx={index} 
+                  type={type} 
+                  rowTitle={title} 
+                  enDetails={enDetails}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

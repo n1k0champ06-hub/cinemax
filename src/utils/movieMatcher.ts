@@ -72,8 +72,32 @@ const containsWholePhrase = (container: string, phrase: string): boolean => {
 
 export const computeMatchScore = (
   item: any,
-  tmdb: { original_title: string; title: string; year: number; type?: 'movie' | 'tv' }
+  tmdb: { 
+    original_title: string; 
+    title: string; 
+    year: number; 
+    type?: 'movie' | 'tv';
+    id?: string | number;
+    imdb_id?: string;
+    casts?: string[];
+  }
 ) => {
+  // 0. Strict ID Match
+  if (tmdb.id || tmdb.imdb_id) {
+    const qTmdb = tmdb.id ? String(tmdb.id) : null;
+    const qImdb = tmdb.imdb_id ? String(tmdb.imdb_id) : null;
+    
+    const itemTmdb = item.tmdb && item.tmdb.id ? String(item.tmdb.id) : null;
+    const itemImdb = item.imdb && item.imdb.id ? String(item.imdb.id) : null;
+
+    if (qTmdb && itemTmdb && qTmdb === itemTmdb) {
+      return 500; // instant match
+    }
+    if (qImdb && itemImdb && qImdb === itemImdb) {
+      return 500; // instant match
+    }
+  }
+
   const itemCleanedOrigin = stripSeasonAndSuffixes(item.origin_name || item.original_name || '');
   const tmdbCleanedOrigin = stripSeasonAndSuffixes(tmdb.original_title || '');
   
@@ -163,6 +187,63 @@ export const computeMatchScore = (
     }
   }
 
+  // 5. Cast overlap bonus
+  if (tmdb.casts && tmdb.casts.length > 0) {
+    const itemCasts = typeof item.casts === 'string' ? item.casts.toLowerCase() : 
+                      (Array.isArray(item.casts) ? item.casts.join(',').toLowerCase() : 
+                      (typeof item.actor === 'string' ? item.actor.toLowerCase() : 
+                      (Array.isArray(item.actor) ? item.actor.join(',').toLowerCase() : '')));
+    
+    if (itemCasts) {
+      let overlap = 0;
+      for (const qc of tmdb.casts) {
+        if (qc && itemCasts.includes(qc.toLowerCase())) {
+          overlap++;
+        }
+      }
+      if (overlap > 0) {
+        score += (overlap * 15);
+      }
+    }
+  }
+
   return score;
 };
+
+export const getStringSimilarity = (str1: string, str2: string): number => {
+  const s1 = cleanString(str1);
+  const s2 = cleanString(str2);
+  if (s1 === s2) return 1.0;
+  if (!s1 || !s2) return 0.0;
+  if (s1.length < 2 || s2.length < 2) {
+    return s1.includes(s2) || s2.includes(s1) ? 0.5 : 0.0;
+  }
+
+  const getBigrams = (str: string) => {
+    const bigrams: string[] = [];
+    for (let i = 0; i < str.length - 1; i++) {
+      bigrams.push(str.substring(i, i + 2));
+    }
+    return bigrams;
+  };
+
+  const b1 = getBigrams(s1);
+  const b2 = getBigrams(s2);
+  
+  let matchCount = 0;
+  const visited = new Array(b2.length).fill(false);
+
+  for (let i = 0; i < b1.length; i++) {
+    for (let j = 0; j < b2.length; j++) {
+      if (!visited[j] && b1[i] === b2[j]) {
+        matchCount++;
+        visited[j] = true;
+        break;
+      }
+    }
+  }
+
+  return (2.0 * matchCount) / (b1.length + b2.length);
+};
+
 

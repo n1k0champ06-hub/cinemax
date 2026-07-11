@@ -55,7 +55,10 @@ export const ExternalResolverModal = ({
   // First attempt specific search (e.g. with Season)
   const { data: searchResultsSpecific, isLoading: isLoadingSearchSpecific } = useQuery({
     queryKey: ['phimapi_search', primarySearchTitle],
-    queryFn: () => fetchSearch(primarySearchTitle),
+    queryFn: async () => {
+      const results = await fetchSearch(primarySearchTitle);
+      return results.filter((item: any) => !item.isTmdbOnly);
+    },
     enabled: !!primarySearchTitle,
   });
 
@@ -63,7 +66,10 @@ export const ExternalResolverModal = ({
   const shouldTryFallback = !!fallbackSearchTitle && searchResultsSpecific && searchResultsSpecific.length === 0;
   const { data: searchResultsFallback, isLoading: isLoadingSearchFallback } = useQuery({
     queryKey: ['phimapi_search_fallback', fallbackSearchTitle],
-    queryFn: () => fetchSearch(fallbackSearchTitle),
+    queryFn: async () => {
+      const results = await fetchSearch(fallbackSearchTitle);
+      return results.filter((item: any) => !item.isTmdbOnly);
+    },
     enabled: shouldTryFallback,
   });
 

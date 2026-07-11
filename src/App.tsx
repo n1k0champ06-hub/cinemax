@@ -4,7 +4,10 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
+import * as idb from 'idb-keyval';
 import { motion, AnimatePresence } from "motion/react";
 import { NavBar } from "./components/layout/NavBar";
 import { Footer } from "./components/layout/Footer";
@@ -14,23 +17,38 @@ import {
   ContinueWatchingRow,
   MyListRow,
 } from "./components/movie/MovieRows";
-import { AnimeRankingRow } from "./components/movie/AnimeRankingRow";
-import { AnimeRow } from "./components/movie/AnimeRow";
+
 import { MovieDetail } from "./components/movie/MovieDetail";
 import { SearchPage } from "./components/pages/SearchPage";
 import { ListingPage } from "./components/pages/ListingPage";
 import { DiscoverPage } from "./components/pages/DiscoverPage";
+import { FootballPage } from "./components/pages/FootballPage";
+import { MusicPage } from "./components/pages/MusicPage";
+import { UserGuideModal } from "./components/layout/UserGuideModal";
+import { ReportNotification } from "./components/layout/ReportNotification";
 import "./lib/firebase";
 
 import { ImdbRow } from "./components/movie/ImdbRow";
+import { initFetchInterceptor, godModeStore } from "./lib/godmode";
+import { GodModeConsole } from "./components/debug/GodModeConsole";
+import ScraperDashboard from "./components/admin/ScraperDashboard";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000,
+      staleTime: 24 * 60 * 60 * 1000, // Cache query results for 24 hours by default
       retry: 2,
       refetchOnWindowFocus: false,
+      gcTime: 7 * 24 * 60 * 60 * 1000, // Retain cache for 7 days
     },
+  },
+});
+
+const persister = createAsyncStoragePersister({
+  storage: {
+    getItem: (key) => idb.get(key),
+    setItem: (key, value) => idb.set(key, value),
+    removeItem: (key) => idb.del(key),
   },
 });
 
@@ -50,6 +68,8 @@ export default function App() {
     return params.get("search") === "true";
   });
 
+  const [showUserGuide, setShowUserGuide] = useState(false);
+
   const [notification, setNotification] = useState<{ message: string } | null>(null);
 
   useEffect(() => {
@@ -58,6 +78,56 @@ export default function App() {
     };
     return () => {
       delete (window as any).showCinemaxAlert;
+    };
+  }, []);
+
+  // Initialize Cinemax God-Mode Console Telemetry & Triggers
+  useEffect(() => {
+    initFetchInterceptor();
+
+    // URL Query Bypass trigger
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("godmode") === "activated") {
+      godModeStore.setIsOpen(true);
+      godModeStore.addLog('SYSTEM', 'INFO', 'God-Mode Auto-Activated via URL query parameter (?godmode=activated).');
+    }
+
+    // Secret Key Sequence Trigger (C - I - N - E within 2 seconds)
+    let keyHistory: { key: string; time: number }[] = [];
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore key events in inputs, textareas, etc. to prevent interference when typing
+      const activeEl = document.activeElement;
+      if (activeEl && (
+        activeEl.tagName === 'INPUT' || 
+        activeEl.tagName === 'TEXTAREA' || 
+        activeEl.hasAttribute('contenteditable')
+      )) {
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+      if (!['c', 'i', 'n', 'e'].includes(key)) return;
+      
+      const now = Date.now();
+      keyHistory.push({ key, time: now });
+      
+      // Clean history older than 2s
+      keyHistory = keyHistory.filter(item => now - item.time <= 2000);
+      
+      if (keyHistory.length >= 4) {
+        const last4 = keyHistory.slice(-4).map(item => item.key).join('');
+        if (last4 === 'cine') {
+          const newState = !godModeStore.getIsOpen();
+          godModeStore.setIsOpen(newState);
+          godModeStore.addLog('SYSTEM', 'INFO', `God-Mode ${newState ? 'Activated' : 'Deactivated'} via Secret Key Sequence.`);
+          keyHistory = [];
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
 
@@ -176,18 +246,30 @@ export default function App() {
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
+        
+        .card-spring-hover {
+          transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), z-index 0.35s step-end, box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+          will-change: transform;
+          z-index: 10;
+        }
+        .card-spring-hover:hover {
+          transform: scale(1.08) translateY(-8px);
+          z-index: 40;
+          transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), z-index 0s, box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
       `;
       document.head.appendChild(style);
     }
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider client={queryClient} persistOptions={{ persister }}>
       <div className="min-h-screen bg-[#050505] text-white selection:bg-red-600/30 selection:text-white font-sans overflow-x-hidden relative">
         <NavBar
           currentTab={currentTab}
           setTab={handleSetTab}
           onShowSearch={() => setShowSearch(true)}
+          onShowGuide={() => setShowUserGuide(true)}
         />
 
         <AnimatePresence mode="wait">
@@ -215,12 +297,7 @@ export default function App() {
                 <ImdbRow title="Xu Hướng Tuần Này" type="popular-movies" onSelect={setSelectedMovieSlug} />
                 <ImdbRow title="Top Phim Thế Giới" type="top250-movies" onSelect={setSelectedMovieSlug} />
                 <ImdbRow title="Phim Bộ Phổ Biến Nhất" type="popular-tv" onSelect={setSelectedMovieSlug} />
-                <AnimeRankingRow onSelect={setSelectedMovieSlug} />
-                <AnimeRow
-                  title="Anime Mới Mùa Này"
-                  type="season-now"
-                  onSelect={setSelectedMovieSlug}
-                />
+
                 <MovieRow
                   title="Hành Động Kịch Tính"
                   type="the-loai/hanh-dong"
@@ -382,43 +459,69 @@ export default function App() {
                 id="movie-lists"
                 className="pb-32 mt-4 sm:mt-12 relative z-20 flex flex-col gap-0"
               >
-                <AnimeRankingRow onSelect={setSelectedMovieSlug} showFilters={false} />
-                <AnimeRow
-                  title="Anime Mới Mùa Này"
-                  type="season-now"
+                <MovieRow
+                  title="Anime Mới Cập Nhật"
+                  type="hoat-hinh-nhat"
                   onSelect={setSelectedMovieSlug}
-                />
-                <AnimeRow
-                  title="Anime Sắp Chiếu"
-                  type="upcoming"
-                  onSelect={setSelectedMovieSlug}
+                  aspectRatio="poster"
                 />
                 <MovieRow
                   title="Anime Thịnh Hành"
                   type="anime-popular"
                   onSelect={setSelectedMovieSlug}
+                  aspectRatio="poster"
                 />
                 <MovieRow
-                  title="Anime Hành Động"
+                  title="Hành Động & Kịch Tính"
                   type="anime-action"
                   onSelect={setSelectedMovieSlug}
+                  aspectRatio="poster"
                 />
                 <MovieRow
                   title="Phiêu Lưu & Kỳ Ảo"
                   type="anime-fantasy"
                   onSelect={setSelectedMovieSlug}
+                  aspectRatio="poster"
                 />
                 <MovieRow
-                  title="Lãng Mạn & Học Đường"
+                  title="Tình Cảm & Học Đường"
                   type="anime-romance"
                   onSelect={setSelectedMovieSlug}
+                  aspectRatio="poster"
                 />
                 <MovieRow
                   title="Hài Hước & Đời Thường"
                   type="anime-comedy"
                   onSelect={setSelectedMovieSlug}
+                  aspectRatio="poster"
+                />
+                <MovieRow
+                  title="Tuổi Thơ & Gia Đình"
+                  type="anime-kids"
+                  onSelect={setSelectedMovieSlug}
+                  aspectRatio="poster"
                 />
               </div>
+            </motion.div>
+          ) : currentTab === "football" ? (
+            <motion.div
+              key="football"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <FootballPage />
+            </motion.div>
+          ) : currentTab === "music" ? (
+            <motion.div
+              key="music"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <MusicPage />
             </motion.div>
           ) : currentTab === "discover" ? (
             <motion.div
@@ -433,6 +536,16 @@ export default function App() {
                 onSelect={setSelectedMovieSlug}
                 setTab={handleSetTab}
               />
+            </motion.div>
+          ) : currentTab === "scraper" || currentTab === "admin" ? (
+            <motion.div
+              key="scraper"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="min-h-screen"
+            >
+              <ScraperDashboard />
             </motion.div>
           ) : (
             <motion.div
@@ -458,6 +571,15 @@ export default function App() {
               key="search-page"
               onClose={() => setShowSearch(false)}
               onSelect={setSelectedMovieSlug}
+            />
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {showUserGuide && (
+            <UserGuideModal
+              key="user-guide-modal"
+              onClose={() => setShowUserGuide(false)}
             />
           )}
         </AnimatePresence>
@@ -506,7 +628,9 @@ export default function App() {
         </AnimatePresence>
 
         <Footer />
+        <GodModeConsole />
+        <ReportNotification />
       </div>
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   );
 }

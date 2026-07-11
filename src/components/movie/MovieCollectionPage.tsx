@@ -23,7 +23,8 @@ export const MovieCollectionPage = ({
   const { data: collectionDataEn } = useQuery({
     queryKey: ['tmdb', 'collection', collectionId, 'en'],
     queryFn: () => fetchTmdb(`/collection/${collectionId}`, { language: 'en' }),
-    enabled: !!collectionId
+    enabled: !!collectionId,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 
   const enTitleMap = React.useMemo(() => {

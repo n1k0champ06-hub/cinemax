@@ -9,7 +9,10 @@ import {
   Cat,
   LayoutGrid,
   Heart,
-  ChevronDown
+  ChevronDown,
+  Trophy,
+  Music,
+  HelpCircle
 } from "lucide-react";
 import { motion } from "motion/react";
 
@@ -17,10 +20,12 @@ export const NavBar = ({
   currentTab,
   setTab,
   onShowSearch,
+  onShowGuide,
 }: {
   currentTab: string;
   setTab: (t: string) => void;
   onShowSearch: () => void;
+  onShowGuide: () => void;
 }) => {
   const [scrolled, setScrolled] = useState(false);
 
@@ -35,16 +40,48 @@ export const NavBar = ({
     { id: "phim-bo", label: "Phim bộ" },
     { id: "phim-le", label: "Phim lẻ" },
     { id: "hoat-hinh", label: "Anime" },
+    { id: "football", label: "Football" },
+    { id: "music", label: "Âm nhạc" },
     { id: "discover", label: "Thể loại" },
-    { id: "my-list", label: "Danh sách của tôi" },
-  ];
+    { id: "my-list", label: "Yêu thích" },
+  ].filter(tab => tab.id !== "football" && tab.id !== "music");
 
-  const bottomDockTabs = [
-    { id: "home", icon: Home },
-    { id: "phim-le", icon: Film },
-    { id: "phim-bo", icon: Tv },
-    { id: "hoat-hinh", icon: Cat },
-    { id: "my-list", icon: Heart },
+  const mobileDockTabs = [
+    { 
+      id: "home", 
+      label: "Trang chủ", 
+      icon: Home, 
+      isActive: currentTab === "home", 
+      action: () => setTab("home") 
+    },
+    { 
+      id: "discover", 
+      label: "Thể loại", 
+      icon: LayoutGrid, 
+      isActive: currentTab === "discover" || currentTab.startsWith("the-loai/"), 
+      action: () => setTab("discover") 
+    },
+    { 
+      id: "search", 
+      label: "Tìm kiếm", 
+      icon: Search, 
+      isActive: false, 
+      action: onShowSearch 
+    },
+    { 
+      id: "my-list", 
+      label: "Yêu thích", 
+      icon: Heart, 
+      isActive: currentTab === "my-list", 
+      action: () => setTab("my-list") 
+    },
+    { 
+      id: "guide", 
+      label: "Hướng dẫn", 
+      icon: HelpCircle, 
+      isActive: false, 
+      action: onShowGuide 
+    },
   ];
 
   return (
@@ -53,108 +90,104 @@ export const NavBar = ({
       <div className="hidden md:flex fixed top-0 left-0 w-full z-50 justify-center pointer-events-none transition-all duration-300 pt-4">
         <nav
           className={cn(
-            "w-[94%] max-w-5xl pointer-events-auto rounded-full border flex items-center justify-between px-6 py-2 transition-all duration-500 shadow-2xl",
+            "w-[94%] max-w-4xl pointer-events-auto rounded-full border flex items-center justify-between px-6 py-2 transition-all duration-500 shadow-2xl",
             scrolled 
               ? "bg-[#050505]/92 backdrop-blur-2xl border-white/[0.08] shadow-[0_16px_50px_rgba(0,0,0,0.98)] translate-y-[-2px]" 
               : "bg-[#050505]/45 backdrop-blur-lg border-white/[0.04] shadow-[0_10px_35px_rgba(0,0,0,0.6)]"
           )}
         >
-          {/* Left/Center: Logo and Navigation tabs */}
-          <div className="flex items-center gap-6 flex-1 overflow-x-auto scrollbar-hide">
-            <div 
-              className="cursor-pointer flex items-center gap-2 group select-none pr-1 shrink-0" 
-              onClick={() => setTab("home")}
-            >
-              <Clapperboard className="w-5 h-5 text-white/95 group-hover:text-[#E50914] transition-all duration-300 group-hover:scale-110" />
-            </div>
-
-            <div className="flex items-center gap-1 md:gap-1.5">
-              {topTabs.map((tab) => {
-                const isActive = currentTab === tab.id || (tab.id === "discover" && currentTab.startsWith("the-loai/"));
-                const Icon = (() => {
-                  if (tab.id === "home") return Home;
-                  if (tab.id === "phim-bo") return Tv;
-                  if (tab.id === "phim-le") return Film;
-                  if (tab.id === "hoat-hinh") return Cat;
-                  if (tab.id === "discover") return LayoutGrid;
-                  return Heart;
-                })();
-
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setTab(tab.id)}
-                    className={cn(
-                      "px-3.5 py-1.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-300 cursor-pointer select-none whitespace-nowrap flex items-center gap-1.5 relative group",
-                      isActive
-                        ? "text-white"
-                        : "text-neutral-400 hover:text-white hover:bg-white/5"
-                    )}
-                  >
-                    {isActive && (
-                      <motion.div
-                        layoutId="activeTabPill"
-                        className="absolute inset-0 bg-white/10 rounded-xl border border-white/10 shadow-sm"
-                        transition={{ type: "spring", stiffness: 350, damping: 32 }}
-                      />
-                    )}
-                    <Icon className={cn("w-3.5 h-3.5 relative z-10 transition-transform duration-300", isActive ? "scale-110 text-white" : "text-neutral-400 group-hover:text-white group-hover:scale-105")} />
-                    <span className="relative z-10">{tab.label}</span>
-                    {tab.id === "discover" && (
-                      <ChevronDown className="w-3 h-3 text-neutral-400 relative z-10 ml-0.5 group-hover:text-white transition-colors" />
-                    )}
-                  </button>
-                );
-              })}
+          {/* Left: Logo */}
+          <div 
+            className="cursor-pointer flex items-center group select-none pr-3 border-r border-white/10 shrink-0" 
+            onClick={() => setTab("home")}
+          >
+            <div className="p-1.5 bg-[#E50914]/10 rounded-lg group-hover:bg-[#E50914]/20 transition-all duration-300">
+              <Clapperboard className="w-4 h-4 text-[#E50914] transition-all duration-300 group-hover:scale-110" />
             </div>
           </div>
 
-          {/* Right Side: Search Trigger */}
-          <div className="flex items-center pl-4 shrink-0">
+          {/* Center: Navigation tabs */}
+          <div className="flex items-center justify-center gap-1 md:gap-1.5 flex-1 overflow-x-auto scrollbar-hide px-4">
+            {topTabs.map((tab) => {
+              const isActive = currentTab === tab.id || (tab.id === "discover" && currentTab.startsWith("the-loai/"));
+              const Icon = (() => {
+                if (tab.id === "home") return Home;
+                if (tab.id === "phim-bo") return Tv;
+                if (tab.id === "phim-le") return Film;
+                if (tab.id === "hoat-hinh") return Cat;
+                if (tab.id === "football") return Trophy;
+                if (tab.id === "music") return Music;
+                if (tab.id === "discover") return LayoutGrid;
+                return Heart;
+              })();
+
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setTab(tab.id)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-300 cursor-pointer select-none whitespace-nowrap flex items-center gap-1.5 relative group",
+                    isActive
+                      ? "text-white"
+                      : "text-neutral-400 hover:text-white hover:bg-white/5"
+                  )}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="activeTabPill"
+                      className="absolute inset-0 bg-white/10 rounded-xl border border-white/10 shadow-sm"
+                      transition={{ type: "spring", stiffness: 350, damping: 32 }}
+                    />
+                  )}
+                  <Icon className={cn("w-3.5 h-3.5 relative z-10 transition-transform duration-300", isActive ? "scale-110 text-white" : "text-neutral-400 group-hover:text-white group-hover:scale-105")} />
+                  <span className="relative z-10">{tab.label}</span>
+                  {tab.id === "discover" && (
+                    <ChevronDown className="w-3 h-3 text-neutral-400 relative z-10 ml-0.5 group-hover:text-white transition-colors" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Right Side: Search & Guide Triggers */}
+          <div className="flex items-center gap-1 pl-3.5 shrink-0 border-l border-white/10">
             <button 
               onClick={onShowSearch} 
-              className="p-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-full cursor-pointer transition-all active:scale-95 duration-200"
+              className="p-2 text-neutral-400 hover:text-white hover:bg-white/5 rounded-xl cursor-pointer transition-all active:scale-95 duration-200"
               title="Tìm kiếm"
             >
-              <Search className="w-5 h-5" />
+              <Search className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={onShowGuide} 
+              className="p-2 text-neutral-400 hover:text-white hover:bg-[#E50914]/10 hover:text-[#E50914] rounded-xl cursor-pointer transition-all active:scale-95 duration-200"
+              title="Hướng dẫn sử dụng"
+            >
+              <HelpCircle className="w-4 h-4" />
             </button>
           </div>
         </nav>
       </div>
 
       {/* Mobile Floating Bottom Dock */}
-      <div className="md:hidden fixed bottom-4 left-0 w-full z-[100] flex justify-center pointer-events-none px-4">
-        <nav className="pointer-events-auto flex items-center justify-between w-full max-w-[400px] h-14 bg-[#050505]/92 backdrop-blur-2xl border border-white/[0.08] rounded-[24px] px-2 shadow-[0_24px_48px_rgba(0,0,0,0.95)]">
-          {/* Main Tabs */}
-          {bottomDockTabs.map((tab) => {
+      <div className="md:hidden fixed bottom-5 left-0 w-full z-[100] flex justify-center pointer-events-none px-4">
+        <nav className="pointer-events-auto flex items-center justify-around w-full max-w-[420px] h-16 bg-[#050505]/92 backdrop-blur-2xl border border-white/[0.08] rounded-2xl px-2 shadow-[0_24px_48px_rgba(0,0,0,0.95)]">
+          {mobileDockTabs.map((tab) => {
              const Icon = tab.icon;
-             const isActive = currentTab === tab.id;
+             const isActive = tab.isActive;
              return (
                <button
                  key={tab.id}
-                 onClick={() => setTab(tab.id)}
-                 className="flex-1 flex justify-center items-center h-full relative"
+                 onClick={tab.action}
+                 className="flex-1 flex flex-col justify-center items-center h-full relative cursor-pointer"
                >
-                 <Icon className={cn("w-5 h-5 transition-all duration-300", isActive ? "text-white scale-110" : "text-neutral-400 hover:text-neutral-300")} />
+                 <Icon className={cn("w-5 h-5 transition-all duration-300", isActive ? "text-[#E50914] scale-110" : "text-neutral-400 active:scale-95")} />
+                 <span className={cn("text-[9px] font-bold mt-1 tracking-wide transition-colors duration-300", isActive ? "text-white" : "text-neutral-500")}>
+                   {tab.label}
+                 </span>
                </button>
              );
           })}
-          
-          {/* Search Button */}
-          <button
-            onClick={onShowSearch}
-            className="flex-1 flex justify-center items-center h-full relative"
-          >
-            <Search className="w-5 h-5 text-neutral-400 hover:text-neutral-300 transition-all duration-300" />
-          </button>
-          
-          {/* Discover Category Grid */}
-          <button
-            onClick={() => setTab("discover")}
-            className="flex-1 flex justify-center items-center h-full relative"
-          >
-            <LayoutGrid className={cn("w-5 h-5 transition-all duration-300", currentTab === "discover" ? "text-white scale-110" : "text-neutral-400 hover:text-neutral-300")} />
-          </button>
         </nav>
       </div>
     </>

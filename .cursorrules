@@ -1,0 +1,30 @@
+# Cinemax Developer / AI Instructions (.cursorrules)
+
+You are an AI developer agent working on Cinemax. You must strictly follow these rules:
+
+## 🚀 God-Mode Console Telemetry & Debugging
+
+This project has a real-time cross-platform telemetry system connecting React (Frontend) and Cloudflare Workers (Edge). 
+
+### 1. The Local Debug Log (`cinemax-debug.log`)
+- All frontend and backend logs are mirrored to a local file in the root directory: [cinemax-debug.log](file:///c:/Users/cykab/Downloads/cinemax/cinemax-debug.log).
+- **CRITICAL REQUIREMENT**: Whenever you are asked to debug playback errors, API lag, translation errors, or worker cache issues, you **MUST** read [cinemax-debug.log](file:///c:/Users/cykab/Downloads/cinemax/cinemax-debug.log) first. This file contains the exact execution timings and error contexts.
+
+### 2. Log Categories & Levels
+All logs follow a standardized schema:
+- **Categories**:
+  - `[EDGE_WORKER]`: Cloudflare Worker routing, caching, and stream resolution.
+  - `[GEMINI_AI]`: WebVTT subtitle translation queue times and API results.
+  - `[PLAYER]`: Hls.js error events, buffer stalls, resolution changes, and active track loads.
+  - `[NETWORK]`: Outgoing fetch intercept logs, durations, and response bodies (including error payload previews).
+  - `[SYSTEM]`: Local console activation and configuration logs.
+- **Levels**: `INFO`, `WARN`, `ERROR`.
+
+### 3. God-Mode Activation
+- **Keyboard Shortcut**: Typing the sequence `C` - `I` - `N` - `E` within 2 seconds toggles the console.
+- **URL Bypass**: Adding `?godmode=activated` to the URL auto-opens the console on load.
+
+### 4. Code Integrity Rules
+- Do not remove or disable the fetch monkeypatch in `src/lib/godmode.ts`.
+- When modifying the Cloudflare Worker (`cloudflare-worker.js`), ensure that any new routes or async operations register their steps in `request.addEdgeLog()`.
+- Do not mutate state objects. Always return clean clones.
