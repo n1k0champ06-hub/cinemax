@@ -1224,8 +1224,121 @@ async function handleRequest(request, env, ctx) {
           headers: responseHeaders,
         });
 
-
     }
+
+    // 8a. Scraper database resolver (Hollysheesh proxy) -> /api/admin/scraper/streams
+    if (url.pathname === "/api/admin/scraper/streams") {
+      const title = url.searchParams.get('title') || '';
+      const titleVi = url.searchParams.get('titleVi') || '';
+      const slug = url.searchParams.get('slug') || '';
+      const year = parseInt(url.searchParams.get('year') || '0', 10);
+      const episode = url.searchParams.get('episode') || '1';
+
+      const isConfigured = env.MONGODB_DATA_API_URL && env.MONGODB_DATA_API_KEY;
+      if (!isConfigured) {
+        return json({ ok: true, streams: [], note: 'MongoDB Atlas Data API is not configured in Cloudflare Workers environment variables.' });
+      }
+
+      try {
+        let bestMovie = null;
+
+        const escapeRegex = (str) => str.replace(/[/\-\\^$*+?.()|[\]{}]/g, '\\$&');
+
+        const queryAtlasDataAPI = async (action, collection, filter = {}) => {
+          const apiUrl = env.MONGODB_DATA_API_URL.replace(/\/$/, '');
+          const apiKey = env.MONGODB_DATA_API_KEY;
+          const dataSource = env.MONGODB_CLUSTER || 'Cluster0';
+          const database = env.MONGODB_DATABASE || 'cinemax';
+
+          const endpoint = `${apiUrl}/action/${action}`;
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Request-Headers': '*',
+              'api-key': apiKey
+            },
+            body: JSON.stringify({
+              dataSource,
+              database,
+              collection,
+              filter
+            })
+          });
+
+          if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Data API ${action} failed (${res.status}): ${errText}`);
+          }
+          return await res.json();
+        };
+
+        if (slug) {
+          const res = await queryAtlasDataAPI('findOne', 'movies', { slug });
+          bestMovie = res.document || null;
+        }
+
+        if (!bestMovie) {
+          const queryConds = [];
+          if (title) {
+            const esc = escapeRegex(title);
+            queryConds.push({ title: { $regex: `^${esc}$`, $options: 'i' } });
+            queryConds.push({ originTitle: { $regex: `^${esc}$`, $options: 'i' } });
+            queryConds.push({ title: { $regex: esc, $options: 'i' } });
+            queryConds.push({ originTitle: { $regex: esc, $options: 'i' } });
+          }
+          if (titleVi) {
+            const esc = escapeRegex(titleVi);
+            queryConds.push({ title: { $regex: `^${esc}$`, $options: 'i' } });
+            queryConds.push({ originTitle: { $regex: `^${esc}$`, $options: 'i' } });
+            queryConds.push({ title: { $regex: esc, $options: 'i' } });
+            queryConds.push({ originTitle: { $regex: esc, $options: 'i' } });
+          }
+
+          if (queryConds.length > 0) {
+            const res = await queryAtlasDataAPI('find', 'movies', { $or: queryConds });
+            const movies = res.documents || [];
+            if (movies.length > 0) {
+              bestMovie = movies[0];
+              if (year > 0) {
+                const matchYear = movies.find(m => parseInt(m.year) === year);
+                if (matchYear) bestMovie = matchYear;
+              }
+            }
+          }
+        }
+
+        const matchedSlug = bestMovie ? bestMovie.slug : slug;
+        if (!matchedSlug) {
+          return json({ ok: true, streams: [] });
+        }
+
+        const resStreams = await queryAtlasDataAPI('find', 'streams', { slug: matchedSlug });
+        const streams = resStreams.documents || [];
+
+        const getEpNum = (str) => {
+          const num = String(str).toLowerCase().replace(/\D/g, '');
+          return num ? parseInt(num, 10) : str;
+        };
+        const targetEpNum = getEpNum(episode);
+
+        const matchedStreams = streams.filter(s => {
+          const sEpNum = getEpNum(s.episode);
+          return sEpNum === targetEpNum || String(s.episode).toLowerCase() === String(episode).toLowerCase();
+        });
+
+        return json({
+          ok: true,
+          movie: bestMovie,
+          streams: matchedStreams
+        });
+
+      } catch (err) {
+        console.error('[worker-streams-api] Error:', err.message);
+        return json({ error: err.message, streams: [] }, 500);
+      }
+    }
+
     // 9a. AniList bulk cover resolver -> /api/anilist/bulk
     if (url.pathname === "/api/anilist/bulk") {
       const queriesParam = url.searchParams.get('queries') || '';
