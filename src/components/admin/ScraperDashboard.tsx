@@ -281,7 +281,7 @@ export default function ScraperDashboard() {
                 <button
                   onClick={() => {
                     setSource('ophim');
-                    setCustomUrl('https://ophim1.cc');
+                    setCustomUrl('https://ophim1.com');
                   }}
                   disabled={status.isRunning}
                   className={`py-2 rounded-lg border text-xs font-bold font-mono tracking-wide transition-all ${
@@ -324,7 +324,7 @@ export default function ScraperDashboard() {
                   ? ['https://phimapi.com', 'https://phimapi.cc'] 
                   : source === 'nguonc'
                   ? ['https://phim.nguonc.com/api', 'https://nguonc.com/api']
-                  : ['https://ophim1.cc', 'https://ophim10.cc', 'https://ophim17.cc', 'https://ophim.tv']
+                  : ['https://ophim1.com', 'https://ophim1.cc', 'https://ophim10.cc', 'https://ophim17.cc', 'https://ophim.tv']
                 ).map((qUrl) => (
                   <button
                     key={qUrl}

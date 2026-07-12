@@ -128,7 +128,7 @@ async function startBackgroundSync(source, limitPages = 2, customUrl = '') {
   if (!baseUrl) {
     if (source === 'kkphim') baseUrl = 'https://phimapi.com';
     else if (source === 'nguonc') baseUrl = 'https://phim.nguonc.com/api';
-    else baseUrl = 'https://ophim1.cc';
+    else baseUrl = 'https://ophim1.com';
   }
   baseUrl = baseUrl.replace(/\/$/, '');
 

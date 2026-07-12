@@ -546,7 +546,7 @@ async function fetchFromHollysheeshApi(query: StreamQuery): Promise<StreamItem[]
       if (type === 'hls') {
         let referer = '';
         if (s.streamUrl.includes('phimapi.com')) referer = 'https://phimapi.com/';
-        else if (s.streamUrl.includes('ophim')) referer = 'https://ophim1.cc/';
+        else if (s.streamUrl.includes('ophim')) referer = 'https://ophim1.com/';
         else if (s.streamUrl.includes('nguonc')) referer = 'https://phim.nguonc.com/';
         url = buildProxiedM3u8Url(s.streamUrl, referer);
       }
