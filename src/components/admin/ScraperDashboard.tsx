@@ -112,6 +112,26 @@ export default function ScraperDashboard() {
     }
   };
 
+  const handleStartAllMining = async () => {
+    setLoading(true);
+    try {
+      const limit = syncAll ? 9999 : limitPages;
+      const res = await fetch(`http://localhost:3001/api/admin/scraper/start?source=all&limit=${limit}`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        await fetchStatus();
+      } else {
+        const errData = await res.json();
+        alert(errData.error || "Không thể khởi động cào 3 nguồn");
+      }
+    } catch (e) {
+      alert("Lỗi kết nối API Server");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleStopMining = async () => {
     setLoading(true);
     try {
@@ -377,14 +397,25 @@ export default function ScraperDashboard() {
                   <span>STOP</span>
                 </button>
               ) : (
-                <button
-                  onClick={handleStartMining}
-                  disabled={loading || !stats.connected}
-                  className="w-full bg-white hover:bg-zinc-200 text-black font-extrabold py-2.5 rounded-lg border border-white transition-all flex items-center justify-center gap-2 cursor-pointer text-xs tracking-widest uppercase font-mono disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} fill="currentColor" />}
-                  <span>START SYNC</span>
-                </button>
+                <div className="space-y-2">
+                  <button
+                    onClick={handleStartMining}
+                    disabled={loading || !stats.connected}
+                    className="w-full bg-white hover:bg-zinc-200 text-black font-extrabold py-2.5 rounded-lg border border-white transition-all flex items-center justify-center gap-2 cursor-pointer text-xs tracking-widest uppercase font-mono disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} fill="currentColor" />}
+                    <span>START SYNC ({source.toUpperCase()})</span>
+                  </button>
+
+                  <button
+                    onClick={handleStartAllMining}
+                    disabled={loading || !stats.connected}
+                    className="w-full bg-emerald-950/20 hover:bg-emerald-900/30 text-emerald-400 font-extrabold py-2.5 rounded-lg border border-emerald-900/50 transition-all flex items-center justify-center gap-2 cursor-pointer text-xs tracking-widest uppercase font-mono disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />}
+                    <span>CÀO CẢ 3 NGUỒN CÙNG LÚC</span>
+                  </button>
+                </div>
               )}
             </div>
           </div>

@@ -384,6 +384,29 @@ async function handleLocalScraperStart(searchParams) {
   const limit = parseInt(searchParams.get('limit') || '2', 10);
   const customUrl = searchParams.get('customUrl') || '';
   
+  if (source === 'all') {
+    const activeSources = ['kkphim', 'ophim', 'nguonc'];
+    let startedCount = 0;
+    
+    for (const src of activeSources) {
+      if (!runningJobs.has(src)) {
+        let defaultUrl = '';
+        if (src === 'kkphim') defaultUrl = 'https://phimapi.com';
+        else if (src === 'nguonc') defaultUrl = 'https://phim.nguonc.com/api';
+        else defaultUrl = 'https://ophim1.com';
+        
+        startBackgroundSync(src, limit, defaultUrl);
+        startedCount++;
+      }
+    }
+    
+    if (startedCount === 0) {
+      return new Response(JSON.stringify({ error: 'Tất cả 3 nguồn đều đang chạy rồi.' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    
+    return new Response(JSON.stringify({ ok: true, message: `Đã kích hoạt song song ${startedCount} nguồn chạy ngầm.` }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+
   if (runningJobs.has(source)) {
     return new Response(JSON.stringify({ error: `Nguồn ${source.toUpperCase()} đang được đồng bộ. Vui lòng chờ hoàn thành.` }), { status: 400, headers: { 'Content-Type': 'application/json' } });
   }
