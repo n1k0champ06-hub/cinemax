@@ -113,6 +113,22 @@ function addScraperLog(msg) {
   }
 }
 
+async function fetchJson(url, retries = 2) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      if (i === retries) throw err;
+      await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+    }
+  }
+}
+
 async function startBackgroundSync(source, limitPages = 2, customUrl = '') {
   if (runningJobs.has(source)) return;
   
@@ -156,21 +172,14 @@ async function startBackgroundSync(source, limitPages = 2, customUrl = '') {
         listUrl = `${baseUrl}/films/phim-moi-cap-nhat?page=${page}`;
       }
       
-      let listRes;
+      let listData;
       try {
-        listRes = await fetch(listUrl);
+        listData = await fetchJson(listUrl);
       } catch (err) {
         addScraperLog(`[${source.toUpperCase()}] Lỗi tải trang ${page}: ${err.message}`);
         continue;
       }
 
-      if (!listRes.ok) {
-        addScraperLog(`[${source.toUpperCase()}] Lỗi tải trang ${page}: HTTP ${listRes.status}`);
-        continue;
-      }
-
-      const listData = await listRes.json();
-      
       // Dynamic pagination limit for "Sync All" (9999)
       if (page === 1 && limitPages === 9999) {
         const paginationObj = listData.paginate || listData.pagination || {};
@@ -192,20 +201,14 @@ async function startBackgroundSync(source, limitPages = 2, customUrl = '') {
           detailsUrl = `${baseUrl}/film/${slug}`;
         }
         
-        let detailRes;
+        let detailData;
         try {
-          detailRes = await fetch(detailsUrl);
+          detailData = await fetchJson(detailsUrl);
         } catch (err) {
           addScraperLog(`[${source.toUpperCase()}] Lỗi tải chi tiết phim '${slug}': ${err.message}`);
           continue;
         }
 
-        if (!detailRes.ok) {
-          addScraperLog(`[${source.toUpperCase()}] Lỗi tải chi tiết phim '${slug}': HTTP ${detailRes.status}`);
-          continue;
-        }
-
-        const detailData = await detailRes.json();
         const movie = detailData.movie;
         const episodes = detailData.episodes || [];
 
