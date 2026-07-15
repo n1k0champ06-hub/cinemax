@@ -316,7 +316,8 @@ export const useMovieDetail = (rawSlug: string) => {
         category,
         actor,
         director,
-        status
+        status,
+        slug: phimApiSlug || rawSlug
       },
       episodes: []
     };
