@@ -214,10 +214,11 @@ export function buildProxiedM3u8Url(streamUrl: string, referer?: string | null):
   const params = new URLSearchParams({ url: streamUrl });
   if (referer) params.set('referer', referer);
 
-  // KKPhim/OPhim/Xem20/NguonC: dùng Render bridge (IP không bị block)
+  // KKPhim/OPhim/Xem20/NguonC: Phát trực tiếp trên trình duyệt (bypass proxy block)
+  // Các CDN này cấu hình CORS Allow-Origin: * nên trình duyệt chơi trực tiếp rất mượt mà
   const isViCdn = VI_CDN_PATTERNS.some(p => streamUrl.includes(p) || (referer || '').includes(p));
   if (isViCdn) {
-    return `${BRIDGE_URL}/proxy/m3u8?${params.toString()}`;
+    return streamUrl;
   }
 
   // Các nguồn khác: dùng Cloudflare Worker proxy (ad-filter tích hợp)
