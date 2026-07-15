@@ -47,7 +47,7 @@ if (!MONGODB_URI) {
 }
 
 async function getGeminiEmbedding(text) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key=${GEMINI_API_KEY}`;
   
   for (let i = 0; i < 3; i++) {
     try {
@@ -55,10 +55,11 @@ async function getGeminiEmbedding(text) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'models/text-embedding-004',
+          model: 'models/gemini-embedding-2',
           content: {
             parts: [{ text }]
-          }
+          },
+          outputDimensionality: 768
         }),
         signal: AbortSignal.timeout(10000)
       });

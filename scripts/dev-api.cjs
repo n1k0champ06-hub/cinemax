@@ -53,7 +53,7 @@ async function getGeminiEmbedding(text) {
   if (!GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY is not configured in .env file');
   }
-  const url = `https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key=${GEMINI_API_KEY}`;
   
   for (let i = 0; i < 3; i++) {
     try {
@@ -61,10 +61,11 @@ async function getGeminiEmbedding(text) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'models/text-embedding-004',
+          model: 'models/gemini-embedding-2',
           content: {
             parts: [{ text }]
-          }
+          },
+          outputDimensionality: 768
         }),
         signal: AbortSignal.timeout(10000)
       });
@@ -82,10 +83,19 @@ async function getGeminiEmbedding(text) {
 }
 
 async function resolveMovieWithAI(movieTitle, originTitle, year, type) {
-  if (!GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY is not configured in .env file');
+  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+  if (!GROQ_API_KEY) {
+    console.warn('[AI Matcher] GROQ_API_KEY is not configured, skipping AI resolution.');
+    return {
+      tmdb_id: null,
+      title: originTitle,
+      titleVi: movieTitle,
+      year: year,
+      confidence: 0
+    };
   }
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+  const url = 'https://api.groq.com/openai/v1/chat/completions';
   
   const prompt = `You are a professional movie database matcher. Your job is to correct spelling mistakes in the Vietnamese title, find the official English title, correct release year, and the exact TMDB (The Movie Database) ID for this movie/TV series:
 Input:
@@ -107,12 +117,16 @@ Respond ONLY with a valid JSON object matching the following structure (do NOT w
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${GROQ_API_KEY}`
+        },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseMimeType: 'application/json'
-          }
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            { role: 'user', content: prompt }
+          ],
+          response_format: { type: 'json_object' }
         }),
         signal: AbortSignal.timeout(10000)
       });
@@ -121,8 +135,8 @@ Respond ONLY with a valid JSON object matching the following structure (do NOT w
         throw new Error(`HTTP ${res.status}: ${errorText}`);
       }
       const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) throw new Error('No content returned from Gemini');
+      const text = data.choices?.[0]?.message?.content;
+      if (!text) throw new Error('No content returned from Groq');
       
       const parsed = JSON.parse(text.trim());
       return parsed;
