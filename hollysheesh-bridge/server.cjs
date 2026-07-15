@@ -2,9 +2,11 @@
 
 /**
  * Hollysheesh Bridge API
- * Kết nối MongoDB Atlas và expose /api/admin/scraper/streams
- * để Cloudflare Worker proxy qua.
- * Deploy: Render.com / Railway / Fly.io (free tier)
+ * Routes:
+ *   GET /health                      — health check
+ *   GET /api/admin/scraper/streams   — MongoDB stream lookup
+ *   GET /api/admin/scraper/stats     — DB stats
+ *   GET /proxy/m3u8                  — HLS proxy (bypass Cloudflare IP block for VI CDNs)
  */
 
 const http = require('http');
@@ -13,7 +15,6 @@ const { MongoClient } = require('mongodb');
 
 const PORT = process.env.PORT || 3099;
 const MONGODB_URI = process.env.MONGODB_URI;
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '*').split(',');
 
 if (!MONGODB_URI) {
   console.error('[Bridge] MONGODB_URI env var is required!');
@@ -61,21 +62,19 @@ function getEpNum(str) {
 async function handleStreams(req, res, searchParams) {
   if (!db) return json(res, { ok: false, error: 'Database not connected', streams: [] }, 503);
 
-  const title    = searchParams.get('title') || '';
-  const titleVi  = searchParams.get('titleVi') || '';
-  const slug     = searchParams.get('slug') || '';
-  const year     = parseInt(searchParams.get('year') || '0', 10);
-  const episode  = searchParams.get('episode') || '1';
+  const title   = searchParams.get('title') || '';
+  const titleVi = searchParams.get('titleVi') || '';
+  const slug    = searchParams.get('slug') || '';
+  const year    = parseInt(searchParams.get('year') || '0', 10);
+  const episode = searchParams.get('episode') || '1';
 
   try {
     let bestMovie = null;
 
-    // 1. Try slug first (exact match)
     if (slug) {
       bestMovie = await db.collection('movies').findOne({ slug });
     }
 
-    // 2. Fallback to title search
     if (!bestMovie) {
       const queryConds = [];
       const addTitleConds = (t) => {
@@ -102,11 +101,8 @@ async function handleStreams(req, res, searchParams) {
     }
 
     const matchedSlug = bestMovie ? bestMovie.slug : slug;
-    if (!matchedSlug) {
-      return json(res, { ok: true, streams: [] });
-    }
+    if (!matchedSlug) return json(res, { ok: true, streams: [] });
 
-    // 3. Query streams
     const targetEpNum = getEpNum(episode);
     const allStreams = await db.collection('streams').find({ slug: matchedSlug }).toArray();
     const streams = allStreams.filter(s => {
@@ -115,7 +111,6 @@ async function handleStreams(req, res, searchParams) {
     });
 
     return json(res, { ok: true, movie: bestMovie, streams });
-
   } catch (err) {
     console.error('[Bridge] Query error:', err.message);
     return json(res, { ok: false, error: err.message, streams: [] }, 500);
@@ -137,6 +132,81 @@ async function handleStats(req, res) {
 }
 
 // ---------------------------------------------------------------------------
+// Route: GET /proxy/m3u8 — HLS proxy bypass Cloudflare IP block cho VI CDNs
+// ---------------------------------------------------------------------------
+async function handleM3u8Proxy(req, res, searchParams) {
+  const targetUrl = searchParams.get('url');
+  const referer   = searchParams.get('referer') || '';
+
+  if (!targetUrl || !/^https?:\/\//.test(targetUrl)) {
+    return json(res, { error: 'Missing or invalid url param' }, 400);
+  }
+
+  const reqHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+    'Accept': '*/*',
+    'Accept-Language': 'en-US,en;q=0.9',
+  };
+  if (referer) {
+    reqHeaders['Referer'] = referer;
+    try { reqHeaders['Origin'] = new URL(referer).origin; } catch (_) {}
+  }
+  if (req.headers['range']) reqHeaders['Range'] = req.headers['range'];
+
+  let upstream;
+  try {
+    upstream = await fetch(targetUrl, { headers: reqHeaders, redirect: 'follow' });
+  } catch (err) {
+    return json(res, { error: `Fetch failed: ${err.message}` }, 502);
+  }
+
+  if (!upstream.ok && upstream.status !== 206) {
+    console.warn(`[proxy/m3u8] Upstream ${upstream.status} for: ${targetUrl}`);
+    return json(res, { error: `Upstream returned ${upstream.status}` }, upstream.status);
+  }
+
+  const contentType = upstream.headers.get('content-type') || '';
+  const isM3U8 = contentType.includes('mpegurl') || targetUrl.includes('.m3u8');
+
+  if (isM3U8) {
+    const text = await upstream.text();
+    const baseUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
+    const selfBase = `https://hollysheesh-bridge.onrender.com/proxy/m3u8`;
+
+    // Rewrite relative URLs to route through this proxy
+    const rewritten = text.replace(/^(?!#)(.+)$/gm, (line) => {
+      line = line.trim();
+      if (!line || line.startsWith('#')) return line;
+      const absUrl = line.startsWith('http') ? line : baseUrl + line;
+      return `${selfBase}?url=${encodeURIComponent(absUrl)}&referer=${encodeURIComponent(referer)}`;
+    });
+
+    res.writeHead(upstream.status, {
+      'Content-Type': 'application/vnd.apple.mpegurl',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-cache',
+    });
+    return res.end(rewritten);
+  }
+
+  // Binary TS / AAC segments
+  const buf = Buffer.from(await upstream.arrayBuffer());
+  const respHeaders = {
+    'Content-Type': contentType || 'video/MP2T',
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'public, max-age=3600',
+  };
+  if (upstream.status === 206) {
+    const cr = upstream.headers.get('content-range');
+    if (cr) respHeaders['Content-Range'] = cr;
+    const ar = upstream.headers.get('accept-ranges');
+    if (ar) respHeaders['Accept-Ranges'] = ar;
+  }
+  res.writeHead(upstream.status, respHeaders);
+  return res.end(buf);
+}
+
+// ---------------------------------------------------------------------------
 // HTTP Server
 // ---------------------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
@@ -148,7 +218,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Headers': 'Content-Type, Range',
       'Access-Control-Allow-Methods': 'GET, OPTIONS',
     });
     return res.end();
@@ -168,6 +238,10 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === '/api/admin/scraper/stats') {
     return await handleStats(req, res);
+  }
+
+  if (pathname === '/proxy/m3u8') {
+    return await handleM3u8Proxy(req, res, searchParams);
   }
 
   return json(res, { error: 'Not found' }, 404);
