@@ -49,7 +49,10 @@ if (!MONGODB_URI) {
 async function getGeminiEmbedding(text) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key=${GEMINI_API_KEY}`;
   
-  for (let i = 0; i < 3; i++) {
+  let attempts = 0;
+  const maxAttempts = 10;
+  
+  while (attempts < maxAttempts) {
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -61,19 +64,32 @@ async function getGeminiEmbedding(text) {
           },
           outputDimensionality: 768
         }),
-        signal: AbortSignal.timeout(10000)
+        signal: AbortSignal.timeout(15000)
       });
+      
+      if (res.status === 429) {
+        attempts++;
+        console.log(`\n[MIGRATION] [Rate Limit 429] Limit hit. Waiting 60 seconds (Attempt ${attempts}/${maxAttempts})...`);
+        await new Promise(r => setTimeout(r, 60000));
+        continue;
+      }
+      
       if (!res.ok) {
         const errorText = await res.text();
         throw new Error(`HTTP ${res.status}: ${errorText}`);
       }
+      
       const data = await res.json();
       return data.embedding?.values || null;
     } catch (err) {
-      if (i === 2) throw err;
-      await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+      attempts++;
+      if (attempts >= maxAttempts) throw err;
+      const delay = Math.min(1000 * Math.pow(2, attempts), 16000);
+      console.warn(`[MIGRATION] Fetch error: ${err.message}. Retrying in ${delay / 1000}s...`);
+      await new Promise(r => setTimeout(r, delay));
     }
   }
+  return null;
 }
 
 async function run() {
@@ -104,9 +120,9 @@ async function run() {
       
       const cleanContent = (movie.content || '').replace(/<[^>]*>/g, '').trim();
       const categories = Array.isArray(movie.category) 
-        ? movie.category.join(', ') 
-        : (movie.category || '');
-        
+          ? movie.category.join(', ') 
+          : (movie.category || '');
+          
       const textToEmbed = `${movie.title || movie.name || ''} (${movie.originTitle || movie.origin_name || ''} - ${movie.year || ''}). Thể loại: ${categories}. Nội dung: ${cleanContent}`.slice(0, 1000);
       
       if (!textToEmbed.trim()) {
@@ -132,8 +148,8 @@ async function run() {
         failCount++;
       }
       
-      // Delay to avoid rate limit (100ms is safe)
-      await new Promise(r => setTimeout(r, 100));
+      // Delay to avoid rate limit (650ms is safe for 100 RPM limit)
+      await new Promise(r => setTimeout(r, 650));
     }
     
     console.log(`[MIGRATION] Completed! Success: ${successCount}, Failures: ${failCount}`);
