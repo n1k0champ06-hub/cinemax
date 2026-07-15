@@ -192,19 +192,35 @@ export function selectBestCineproSource(sources: CineproSource[]): CineproSource
 }
 
 // ---------------------------------------------------------------------------
-// Proxied M3U8 URL builder (reuses existing m3u8-proxy)
+// Proxied M3U8 URL builder
 // ---------------------------------------------------------------------------
 
 /**
- * Cloudflare Worker URL — always route m3u8 through the worker so the
- * server-side ad-filter (filterPlaylistAds) runs on every HLS playlist.
- * Without this, production mode bypasses the proxy and gambling ads pass through.
+ * Cloudflare Worker URL — route m3u8 qua Worker để filter quảng cáo (ad-filter).
+ * KKPhim/OPhim CDN block Cloudflare IPs → dùng Render bridge thay thế.
  */
 const WORKER_URL = 'https://cinemax-backend-proxy.cykablyatt1505.workers.dev';
+const BRIDGE_URL = 'https://hollysheesh-bridge.onrender.com';
+
+// VI CDN domains bị block bởi Cloudflare IPs → phải route qua Render bridge
+const VI_CDN_PATTERNS = [
+  'kkphim', 'kkphimplayer', 'phimapi',
+  'ophim', 'opstream', 'phimimg',
+  'nguonc', 'phim.nguonc',
+  'xem20', 'xemphim',
+];
 
 export function buildProxiedM3u8Url(streamUrl: string, referer?: string | null): string {
-  const base = typeof window !== 'undefined' ? '' : WORKER_URL;
   const params = new URLSearchParams({ url: streamUrl });
   if (referer) params.set('referer', referer);
+
+  // KKPhim/OPhim/Xem20/NguonC: dùng Render bridge (IP không bị block)
+  const isViCdn = VI_CDN_PATTERNS.some(p => streamUrl.includes(p) || (referer || '').includes(p));
+  if (isViCdn) {
+    return `${BRIDGE_URL}/proxy/m3u8?${params.toString()}`;
+  }
+
+  // Các nguồn khác: dùng Cloudflare Worker proxy (ad-filter tích hợp)
+  const base = typeof window !== 'undefined' ? '' : WORKER_URL;
   return `${base}/api/m3u8-proxy?${params.toString()}`;
 }
