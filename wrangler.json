@@ -10,6 +10,9 @@
     "focusflow.id.vn/tmdb/*",
     "focusflow.id.vn/img/*"
   ],
+  "triggers": {
+    "crons": ["*/10 * * * *"]
+  },
   "vars": {
     "CINEPRO_URL": "https://cinepro-core.cykablyatt1505.workers.dev",
     "GEMINI_API_KEY": "AIzaSyAsA3AQZMb9qywj3uW-WwfBwhh9CEw9I6Y",
