@@ -21,6 +21,7 @@ export const SearchPage = ({
     return params.get("q") || "";
   });
   const [debouncedKeyword, setDebouncedKeyword] = useState(keyword);
+  const [isAiSearch, setIsAiSearch] = useState(false);
   const [history, setHistory] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem("search_history");
@@ -61,10 +62,28 @@ export const SearchPage = ({
   }, []);
 
   const { data: searchResults, isLoading } = useQuery({
-    queryKey: ["local_search", debouncedKeyword],
-    queryFn: () => fetchSearch(debouncedKeyword),
+    queryKey: ["local_search", debouncedKeyword, isAiSearch],
+    queryFn: async () => {
+      if (isAiSearch) {
+        const res = await fetch(`/api/admin/scraper/semantic-search?q=${encodeURIComponent(debouncedKeyword)}`);
+        if (!res.ok) throw new Error("Lỗi gọi API tìm kiếm AI");
+        const data = await res.json();
+        return (data.results || []).map((m: any) => ({
+          name: m.title,
+          origin_name: m.originTitle,
+          slug: m.slug,
+          thumb_url: m.thumbUrl,
+          poster_url: m.posterUrl,
+          type: m.type,
+          status: m.status,
+          year: m.year,
+          score: m.score
+        }));
+      }
+      return fetchSearch(debouncedKeyword);
+    },
     enabled: !!debouncedKeyword.trim(),
-    staleTime: 24 * 60 * 60 * 1000,
+    staleTime: isAiSearch ? 10 * 60 * 1000 : 24 * 60 * 60 * 1000,
   });
 
   const { data: trendingMovies, isLoading: isTrendingLoading } = useQuery({
@@ -203,18 +222,18 @@ export const SearchPage = ({
         </div>
 
         {/* Proportional, balanced inputs with smaller dimensions & glow effects */}
-        <div className="relative mb-8 mt-2 sm:mt-0 group">
+        <div className="relative mb-4 mt-2 sm:mt-0 group">
           <Search
             size={14}
-            className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#E50914] transition-colors"
+            className={`absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 transition-colors ${isAiSearch ? "group-focus-within:text-purple-500" : "group-focus-within:text-[#E50914]"}`}
           />
           <input
             autoFocus
             type="text"
-            placeholder="Bạn muốn xem gì hôm nay? Nhập tên phim, diễn viên, từ khóa..."
+            placeholder={isAiSearch ? "Tìm bằng AI: Nhập mô tả cốt truyện (ví dụ: một nhóm người thám hiểm giấc mơ)..." : "Bạn muốn xem gì hôm nay? Nhập tên phim, diễn viên, từ khóa..."}
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            className="w-full bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.08] focus:border-[#E50914]/80 focus:bg-black/45 rounded-xl py-3.5 pl-11 pr-11 text-xs focus:outline-none transition-all duration-300 placeholder:text-gray-500 font-semibold text-white shadow-[0_4px_30px_rgba(0,0,0,0.5)] focus:shadow-[0_0_20px_rgba(229,9,20,0.15)] transform focus:scale-[1.01]"
+            className={`w-full bg-white/[0.02] hover:bg-white/[0.04] border rounded-xl py-3.5 pl-11 pr-11 text-xs focus:outline-none transition-all duration-300 placeholder:text-gray-500 font-semibold text-white shadow-[0_4px_30px_rgba(0,0,0,0.5)] transform focus:scale-[1.01] ${isAiSearch ? "border-purple-600/30 focus:border-purple-500/80 focus:bg-black/45 focus:shadow-[0_0_20px_rgba(168,85,247,0.2)]" : "border-white/[0.08] focus:border-[#E50914]/80 focus:bg-black/45 focus:shadow-[0_0_20px_rgba(229,9,20,0.15)]"}`}
           />
           {keyword && (
             <button
@@ -235,6 +254,42 @@ export const SearchPage = ({
               <X size={12} />
             </button>
           )}
+        </div>
+
+        {/* Search Mode Selector (AI Search vs Regular Search) */}
+        <div className="flex gap-2 mb-6">
+          <button
+            onClick={() => {
+              setIsAiSearch(false);
+              setKeyword("");
+            }}
+            className={`px-3.5 py-2 rounded-xl text-[11px] font-bold transition-all duration-300 flex items-center gap-1.5 cursor-pointer ${
+              !isAiSearch 
+                ? "bg-white/10 text-white border border-white/10" 
+                : "bg-transparent text-gray-400 hover:text-white border border-transparent hover:bg-white/5"
+            }`}
+          >
+            <Search size={11} /> Tìm kiếm thường
+          </button>
+          <button
+            onClick={() => {
+              setIsAiSearch(true);
+              setKeyword("");
+            }}
+            className={`px-3.5 py-2 rounded-xl text-[11px] font-bold transition-all duration-300 flex items-center gap-1.5 cursor-pointer relative overflow-hidden group ${
+              isAiSearch 
+                ? "bg-purple-600/20 text-purple-400 border border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]" 
+                : "bg-transparent text-gray-400 hover:text-white border border-transparent hover:bg-white/5"
+            }`}
+          >
+            <motion.span
+              animate={isAiSearch ? { rotate: [0, 15, -15, 0] } : {}}
+              transition={{ repeat: Infinity, duration: 2, repeatDelay: 1 }}
+            >
+              ✨
+            </motion.span>
+            Tìm kiếm bằng AI (Cốt truyện)
+          </button>
         </div>
 
         {/* Suggestions and Search History Panel */}

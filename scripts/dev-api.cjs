@@ -44,6 +44,141 @@ function loadEnv() {
 
 loadEnv();
 
+// ---------------------------------------------------------------------------
+// Gemini AI API Helpers
+// ---------------------------------------------------------------------------
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+async function getGeminiEmbedding(text) {
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is not configured in .env file');
+  }
+  const url = `https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`;
+  
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'models/text-embedding-004',
+          content: {
+            parts: [{ text }]
+          }
+        }),
+        signal: AbortSignal.timeout(10000)
+      });
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errorText}`);
+      }
+      const data = await res.json();
+      return data.embedding?.values || null;
+    } catch (err) {
+      if (i === 2) throw err;
+      await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+    }
+  }
+}
+
+async function resolveMovieWithAI(movieTitle, originTitle, year, type) {
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is not configured in .env file');
+  }
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+  
+  const prompt = `You are a professional movie database matcher. Your job is to correct spelling mistakes in the Vietnamese title, find the official English title, correct release year, and the exact TMDB (The Movie Database) ID for this movie/TV series:
+Input:
+- Scraped Title: "${movieTitle}"
+- Original Title: "${originTitle}"
+- Scraped Year: ${year}
+- Type: ${type === 'tv' ? 'tv series' : 'movie'}
+
+Respond ONLY with a valid JSON object matching the following structure (do NOT wrap it in markdown code blocks like \`\`\`json, do NOT output anything else):
+{
+  "tmdb_id": "string or null", // The official TMDB ID if found, otherwise null
+  "title": "string", // Official English/Original title
+  "titleVi": "string", // Cleaned/Corrected Vietnamese title
+  "year": number, // Correct release year
+  "confidence": number // A rating from 0.0 to 1.0 representing your confidence
+}`;
+
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: 'application/json'
+          }
+        }),
+        signal: AbortSignal.timeout(10000)
+      });
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errorText}`);
+      }
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) throw new Error('No content returned from Gemini');
+      
+      const parsed = JSON.parse(text.trim());
+      return parsed;
+    } catch (err) {
+      if (i === 2) throw err;
+      await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+    }
+  }
+}
+
+async function processMovieAI(movie) {
+  let resolved = {
+    tmdb_id: null,
+    title: movie.origin_name,
+    titleVi: movie.name,
+    year: movie.year,
+    confidence: 0
+  };
+  
+  let embedding = null;
+
+  // 1. Resolve movie details using AI (AI Scraper Matcher)
+  try {
+    if (GEMINI_API_KEY) {
+      console.log(`[AI Scraper Matcher] Resolving "${movie.name}"...`);
+      const aiResult = await resolveMovieWithAI(movie.name, movie.origin_name, movie.year, movie.type);
+      if (aiResult && aiResult.confidence >= 0.7) {
+        resolved = aiResult;
+        console.log(`[AI Scraper Matcher] Success! Resolved TMDB ID: ${resolved.tmdb_id}, Year: ${resolved.year}`);
+      }
+    }
+  } catch (err) {
+    console.warn(`[AI Scraper Matcher] Failed to resolve "${movie.name}":`, err.message);
+  }
+
+  // 2. Generate Vector Embedding (AI Semantic Search Prep)
+  try {
+    if (GEMINI_API_KEY) {
+      const cleanContent = (movie.content || '').replace(/<[^>]*>/g, '').trim();
+      const categoryStr = Array.isArray(movie.category) 
+        ? movie.category.map(c => c.name || c).join(', ') 
+        : '';
+      const textToEmbed = `${resolved.titleVi || movie.name} (${resolved.title || movie.origin_name} - ${resolved.year || movie.year}). Thể loại: ${categoryStr}. Nội dung: ${cleanContent}`.slice(0, 1000);
+      
+      if (cleanContent) {
+        console.log(`[AI Embeddings] Generating embedding for "${movie.name}"...`);
+        embedding = await getGeminiEmbedding(textToEmbed);
+      }
+    }
+  } catch (err) {
+    console.warn(`[AI Embeddings] Failed to generate embedding for "${movie.name}":`, err.message);
+  }
+
+  return { resolved, embedding };
+}
+
 // Load wrangler vars as fallback
 let wranglerVars = {};
 try {
@@ -214,22 +349,42 @@ async function startBackgroundSync(source, limitPages = 2, customUrl = '') {
 
         if (!movie) continue;
 
+        // Xử lý AI Scraper Matcher & Vector Embedding
+        let aiData = { resolved: { tmdb_id: null, title: movie.origin_name, titleVi: movie.name, year: movie.year }, embedding: null };
+        if (GEMINI_API_KEY) {
+          try {
+            addScraperLog(`[${source.toUpperCase()}] Đang chạy AI Matcher & Embedding cho '${movie.name}'...`);
+            aiData = await processMovieAI(movie);
+          } catch (err) {
+            console.error(`[AI Process] Error for '${movie.name}':`, err.message);
+          }
+        }
+
         // Lưu thông tin phim vào bộ sưu tập movies
+        const updateDoc = {
+          title: aiData.resolved.titleVi || movie.name,
+          originTitle: aiData.resolved.title || movie.origin_name,
+          slug: movie.slug,
+          thumbUrl: movie.thumb_url,
+          posterUrl: movie.poster_url,
+          type: movie.type || 'series',
+          status: movie.status || 'ongoing',
+          year: aiData.resolved.year || movie.year || new Date().getFullYear(),
+          content: movie.content || '',
+          category: Array.isArray(movie.category) ? movie.category.map(c => c.name || c) : [],
+          actor: Array.isArray(movie.actor) ? movie.actor.map(a => a.name || a) : [],
+          director: Array.isArray(movie.director) ? movie.director.map(d => d.name || d) : [],
+          tmdbId: aiData.resolved.tmdb_id || null,
+          updatedAt: new Date()
+        };
+
+        if (aiData.embedding) {
+          updateDoc.embedding = aiData.embedding;
+        }
+
         await moviesCol.updateOne(
           { slug: movie.slug },
-          { 
-            $set: {
-              title: movie.name,
-              originTitle: movie.origin_name,
-              slug: movie.slug,
-              thumbUrl: movie.thumb_url,
-              posterUrl: movie.poster_url,
-              type: movie.type || 'series',
-              status: movie.status || 'ongoing',
-              year: movie.year || new Date().getFullYear(),
-              updatedAt: new Date()
-            }
-          },
+          { $set: updateDoc },
           { upsert: true }
         );
 
@@ -448,6 +603,61 @@ async function handleLocalScraperStop() {
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
+async function handleLocalScraperSemanticSearch(searchParams) {
+  if (!db) {
+    return new Response(JSON.stringify({ error: 'Chưa kết nối MongoDB' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+  const query = searchParams.get('q') || '';
+  if (!query.trim()) {
+    return new Response(JSON.stringify({ results: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  try {
+    console.log(`[AI Semantic Search] Embedding search query: "${query}"...`);
+    const embedding = await getGeminiEmbedding(query);
+    if (!embedding) {
+      throw new Error('Không thể tạo vector embedding cho từ khóa tìm kiếm');
+    }
+
+    const pipeline = [
+      {
+        $vectorSearch: {
+          index: "default",
+          path: "embedding",
+          queryVector: embedding,
+          numCandidates: 100,
+          limit: 15
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          title: 1,
+          originTitle: 1,
+          slug: 1,
+          thumbUrl: 1,
+          posterUrl: 1,
+          type: 1,
+          status: 1,
+          year: 1,
+          score: { $meta: "vectorSearchScore" }
+        }
+      }
+    ];
+
+    const results = await db.collection('movies').aggregate(pipeline).toArray();
+    console.log(`[AI Semantic Search] Success! Found ${results.length} matching movies.`);
+    
+    return new Response(JSON.stringify({
+      ok: true,
+      results
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (err) {
+    console.error('[AI Semantic Search] Error:', err.message);
+    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
 async function handleLocalScraperGetStreams(searchParams) {
   if (!db) {
     return new Response(JSON.stringify({ error: 'Chưa kết nối MongoDB' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
@@ -582,6 +792,12 @@ async function main() {
     }
     if (pathname === '/api/admin/scraper/streams') {
       const response = await handleLocalScraperGetStreams(searchParams);
+      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+      res.end(Buffer.from(await response.arrayBuffer()));
+      return;
+    }
+    if (pathname === '/api/admin/scraper/semantic-search') {
+      const response = await handleLocalScraperSemanticSearch(searchParams);
       res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
       res.end(Buffer.from(await response.arrayBuffer()));
       return;
