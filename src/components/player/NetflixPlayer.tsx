@@ -34,6 +34,9 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string): string {
   }
 
   const isKKPhim = playlistUrl && (playlistUrl.includes('kkphim') || playlistUrl.includes('phimapi'));
+  const isOPhim = playlistUrl && (playlistUrl.includes('ophim') || playlistUrl.includes('opstream'));
+  const isViCdn = isKKPhim || isOPhim || playlistUrl.includes('nguonc') || playlistUrl.includes('xem20');
+  
   const lines = text.split(/\r?\n/);
   const blocks: { start: number; uriIndex: number; end: number; uri: string }[] = [];
   let blockStart = 0;
@@ -53,16 +56,27 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string): string {
 
   const removalRanges: { start: number; end: number }[] = [];
 
-  // Pass 1: Blacklist Hostnames / URI Keywords
+  // Pass 1: Blacklist Hostnames / URI Keywords / Lead-slash relative path ads
   for (const block of blocks) {
     const norm = block.uri.toLowerCase();
     let isAd = false;
 
+    // 1. Blacklist keywords
     if (norm.includes('rovideo') || norm.includes('rostream') || norm.includes('phimimg.com/ads') || norm.includes('9922.com')) {
       isAd = true;
     }
+    
+    // 2. KKPhim convertv/doubleclick keywords
     if (isKKPhim) {
       if (norm.includes('convertv') || norm.includes('convert') || norm.includes('doubleclick') || norm.includes('googleads')) {
+        isAd = true;
+      }
+    }
+
+    // 3. Root-cause fix cho quảng cáo dạng relative path (bắt đầu bằng /v7/, /v8/, /v.../)
+    // Các tập phim gốc của KKPhim/OPhim là file relative trong thư mục (vd: QxVsrXL0.ts), không bao giờ có dấu gạch chéo / ở đầu
+    if (isViCdn) {
+      if (block.uri.startsWith('/') && (norm.includes('/v7/') || norm.includes('/v8/') || norm.includes('/v9/') || norm.includes('/v10/') || norm.includes('/segment'))) {
         isAd = true;
       }
     }
@@ -71,7 +85,7 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string): string {
       let start = block.uriIndex;
       for (let index = block.uriIndex - 1; index >= block.start; index -= 1) {
         const line = lines[index].trim();
-        if (line.startsWith('#EXTINF') || line.startsWith('#EXT-X-DISCONTINUITY') || line === '') {
+        if (line.startsWith('#EXTINF') || line.startsWith('#EXT-X-DISCONTINUITY') || line.startsWith('#EXT-X-KEY') || line === '') {
           start = index;
           continue;
         }
@@ -127,7 +141,7 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string): string {
             let start = block.uriIndex;
             for (let index = block.uriIndex - 1; index >= block.start; index -= 1) {
               const line = lines[index].trim();
-              if (line.startsWith('#EXTINF') || line.startsWith('#EXT-X-DISCONTINUITY') || line === '') {
+              if (line.startsWith('#EXTINF') || line.startsWith('#EXT-X-DISCONTINUITY') || line.startsWith('#EXT-X-KEY') || line === '') {
                 start = index;
                 continue;
               }
