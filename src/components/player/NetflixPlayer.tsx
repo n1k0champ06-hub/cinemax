@@ -188,10 +188,15 @@ class AdFilteringHlsLoader extends (Hls.DefaultConfig.loader as any) {
           const text = response.data;
           if (typeof text === 'string') {
             try {
+              const originalLines = text.split('\n').length;
               const filtered = clientFilterPlaylistAds(text, ctx.url);
+              const filteredLines = filtered.split('\n').length;
+              if (originalLines !== filteredLines) {
+                console.log(`%c[HlsLoader AD-FILTER] Successfully filtered out ${originalLines - filteredLines} lines from manifest: ${ctx.url}`, 'color: #10b981; font-weight: bold;');
+              }
               response.data = filtered;
-            } catch (err) {
-              console.warn('[HlsLoader] Failed to filter ads:', err);
+            } catch (err: any) {
+              console.warn('[HlsLoader] Failed to filter ads:', err.message);
             }
           }
         }
