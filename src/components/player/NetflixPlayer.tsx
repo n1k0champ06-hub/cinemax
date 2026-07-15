@@ -166,8 +166,14 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string): string {
   let previousWasDiscontinuity = false;
   for (const line of kept) {
     const isDiscontinuity = line.trim().toUpperCase() === '#EXT-X-DISCONTINUITY';
-    if (isDiscontinuity && previousWasDiscontinuity) {
-      continue;
+    if (isDiscontinuity) {
+      if (isViCdn) {
+        // Loại bỏ hoàn toàn thẻ discontinuity để tránh việc Hls.js reset decoder gây giật lag
+        continue;
+      }
+      if (previousWasDiscontinuity) {
+        continue;
+      }
     }
     compacted.push(line);
     previousWasDiscontinuity = isDiscontinuity;
