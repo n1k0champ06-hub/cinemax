@@ -17,6 +17,177 @@ import { StreamItem } from '../../api/streamProviders/types';
 import { godModeStore } from '../../lib/godmode';
 import { ReportModal } from '../ui/ReportModal';
 
+// ---------------------------------------------------------------------------
+// Client-side HLS Ad Blocker (Chặn quảng cáo trực tiếp trên trình duyệt)
+// ---------------------------------------------------------------------------
+function extractHostname(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch (e) {
+    return null;
+  }
+}
+
+function clientFilterPlaylistAds(text: string, playlistUrl: string): string {
+  if (!text || !text.includes('#EXTM3U')) {
+    return text;
+  }
+
+  const isKKPhim = playlistUrl && (playlistUrl.includes('kkphim') || playlistUrl.includes('phimapi'));
+  const lines = text.split(/\r?\n/);
+  const blocks: { start: number; uriIndex: number; end: number; uri: string }[] = [];
+  let blockStart = 0;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (line && !line.startsWith('#')) {
+      blocks.push({
+        start: blockStart,
+        uriIndex: index,
+        end: index,
+        uri: line
+      });
+      blockStart = index + 1;
+    }
+  }
+
+  const removalRanges: { start: number; end: number }[] = [];
+
+  // Pass 1: Blacklist Hostnames / URI Keywords
+  for (const block of blocks) {
+    const norm = block.uri.toLowerCase();
+    let isAd = false;
+
+    if (norm.includes('rovideo') || norm.includes('rostream') || norm.includes('phimimg.com/ads') || norm.includes('9922.com')) {
+      isAd = true;
+    }
+    if (isKKPhim) {
+      if (norm.includes('convertv') || norm.includes('convert') || norm.includes('doubleclick') || norm.includes('googleads')) {
+        isAd = true;
+      }
+    }
+
+    if (isAd) {
+      let start = block.uriIndex;
+      for (let index = block.uriIndex - 1; index >= block.start; index -= 1) {
+        const line = lines[index].trim();
+        if (line.startsWith('#EXTINF') || line.startsWith('#EXT-X-DISCONTINUITY') || line === '') {
+          start = index;
+          continue;
+        }
+        break;
+      }
+      removalRanges.push({ start, end: block.end });
+    }
+  }
+
+  // Pass 2: Khớp discontinuity + different host (chặn quảng cáo chèn ép)
+  if (blocks.length > 1) {
+    const hostCounts = new Map<string, number>();
+    for (const block of blocks) {
+      const h = extractHostname(block.uri);
+      if (h) hostCounts.set(h, (hostCounts.get(h) || 0) + 1);
+    }
+    let mainHost: string | null = null;
+    let maxCount = 0;
+    for (const [h, count] of hostCounts.entries()) {
+      if (count > maxCount) {
+        mainHost = h;
+        maxCount = count;
+      }
+    }
+
+    if (mainHost) {
+      for (let bi = 0; bi < blocks.length; bi += 1) {
+        const block = blocks[bi];
+        const segHost = extractHostname(block.uri);
+        const alreadyMarked = removalRanges.some(r => block.uriIndex >= r.start && block.uriIndex <= r.end);
+        if (alreadyMarked) continue;
+
+        if (segHost && segHost !== mainHost) {
+          let hasDiscBefore = false;
+          for (let i = block.start; i < block.uriIndex; i++) {
+            if (lines[i].trim().toUpperCase() === '#EXT-X-DISCONTINUITY') {
+              hasDiscBefore = true;
+              break;
+            }
+          }
+          const nextBlock = blocks[bi + 1];
+          let hasDiscAfter = false;
+          if (nextBlock) {
+            for (let i = block.end + 1; i < nextBlock.uriIndex; i++) {
+              if (lines[i].trim().toUpperCase() === '#EXT-X-DISCONTINUITY') {
+                hasDiscAfter = true;
+                break;
+              }
+            }
+          }
+
+          if (hasDiscBefore && hasDiscAfter) {
+            let start = block.uriIndex;
+            for (let index = block.uriIndex - 1; index >= block.start; index -= 1) {
+              const line = lines[index].trim();
+              if (line.startsWith('#EXTINF') || line.startsWith('#EXT-X-DISCONTINUITY') || line === '') {
+                start = index;
+                continue;
+              }
+              break;
+            }
+            removalRanges.push({ start, end: block.end });
+          }
+        }
+      }
+    }
+  }
+
+  const kept: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const isRemoved = removalRanges.some(r => index >= r.start && index <= r.end);
+    if (!isRemoved) {
+      kept.push(lines[index]);
+    }
+  }
+
+  const compacted: string[] = [];
+  let previousWasDiscontinuity = false;
+  for (const line of kept) {
+    const isDiscontinuity = line.trim().toUpperCase() === '#EXT-X-DISCONTINUITY';
+    if (isDiscontinuity && previousWasDiscontinuity) {
+      continue;
+    }
+    compacted.push(line);
+    previousWasDiscontinuity = isDiscontinuity;
+  }
+
+  return compacted.join('\n');
+}
+
+// Custom Hls.js loader để can thiệp nội dung m3u8 trước khi phát
+class AdFilteringHlsLoader extends (Hls.DefaultConfig.loader as any) {
+  constructor(config: any) {
+    super(config);
+    const load = this.load.bind(this);
+    this.load = (context: any, cfg: any, callbacks: any) => {
+      const onSuccess = callbacks.onSuccess;
+      callbacks.onSuccess = (response: any, stats: any, ctx: any, networkDetails: any) => {
+        if (ctx.type === 'manifest' || ctx.type === 'level') {
+          const text = response.data;
+          if (typeof text === 'string') {
+            try {
+              const filtered = clientFilterPlaylistAds(text, ctx.url);
+              response.data = filtered;
+            } catch (err) {
+              console.warn('[HlsLoader] Failed to filter ads:', err);
+            }
+          }
+        }
+        onSuccess(response, stats, ctx, networkDetails);
+      };
+      load(context, cfg, callbacks);
+    };
+  }
+}
+
 interface NetflixPlayerProps {
   url?: string;
   embedUrl?: string;
@@ -732,6 +903,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       const headersObj = JSON.parse(serializedHeaders);
 
       hls = new Hls({ 
+        loader: AdFilteringHlsLoader,
         maxBufferLength: isVietnameseSource ? 40 : 10,
         maxMaxBufferLength: isVietnameseSource ? 60 : 20,
         maxBufferSize: isVietnameseSource ? 80 * 1024 * 1024 : 15 * 1000 * 1000,
