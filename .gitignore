@@ -13,3 +13,9 @@ scratch/
 .agents/
 .claude/
 test-keys*.ts
+
+# Python scraper
+scraper/logs/
+scraper/__pycache__/
+__pycache__/
+*.pyc
