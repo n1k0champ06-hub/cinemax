@@ -147,13 +147,13 @@ export const HeroShimmer = () => (
     <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,#050505_100%)] opacity-80 z-10 pointer-events-none" />
 
     <div className="absolute z-20 bottom-[10%] lg:bottom-24 left-4 lg:left-24 max-w-3xl flex flex-col gap-5 w-full">
-      <div className="h-16 md:h-24 bg-gradient-to-r from-white/10 to-transparent rounded-[2rem] w-3/4 backdrop-blur-3xl animate-pulse ring-1 ring-white/5" />
-      <div className="h-6 bg-gradient-to-r from-white/5 to-transparent rounded-full w-1/2 backdrop-blur-md animate-pulse mt-4" />
-      <div className="h-6 bg-gradient-to-r from-white/5 to-transparent rounded-full w-2/3 backdrop-blur-md animate-pulse" />
+      <div className="h-16 md:h-24 bg-gradient-to-r from-white/10 to-transparent rounded-[2rem] w-3/4 animate-pulse ring-1 ring-white/5" />
+      <div className="h-6 bg-gradient-to-r from-white/5 to-transparent rounded-full w-1/2 animate-pulse mt-4" />
+      <div className="h-6 bg-gradient-to-r from-white/5 to-transparent rounded-full w-2/3 animate-pulse" />
       
       <div className="flex gap-4 mt-10">
-        <div className="h-14 w-44 bg-white/20 rounded-full animate-pulse backdrop-blur-xl shadow-[0_0_30px_rgba(255,255,255,0.1)] ring-1 ring-white/30" />
-        <div className="h-14 w-44 bg-white/5 rounded-full animate-pulse backdrop-blur-md border border-white/10 shadow-2xl" />
+        <div className="h-14 w-44 bg-white/20 rounded-full animate-pulse shadow-[0_0_30px_rgba(255,255,255,0.1)] ring-1 ring-white/30" />
+        <div className="h-14 w-44 bg-white/5 rounded-full animate-pulse border border-white/10 shadow-2xl" />
       </div>
     </div>
   </div>

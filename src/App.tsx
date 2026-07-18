@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, lazy, Suspense } from "react";
 import { QueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
@@ -17,23 +17,26 @@ import {
   ContinueWatchingRow,
   MyListRow,
 } from "./components/movie/MovieRows";
-
-import { MovieDetail } from "./components/movie/MovieDetail";
-import { SearchPage } from "./components/pages/SearchPage";
-import { ListingPage } from "./components/pages/ListingPage";
-import { DiscoverPage } from "./components/pages/DiscoverPage";
-import { SwipePage } from "./components/pages/SwipePage";
-import { FootballPage } from "./components/pages/FootballPage";
-import { MusicPage } from "./components/pages/MusicPage";
-import { UserGuideModal } from "./components/layout/UserGuideModal";
-import { ReportNotification } from "./components/layout/ReportNotification";
-import "./lib/firebase";
-
 import { ImdbRow } from "./components/movie/ImdbRow";
 import { initFetchInterceptor, godModeStore } from "./lib/godmode";
-import { GodModeConsole } from "./components/debug/GodModeConsole";
-import { MobileSimulator } from "./components/debug/MobileSimulator";
-import ScraperDashboard from "./components/admin/ScraperDashboard";
+import "./lib/firebase";
+
+// Lazy-load heavy page components — only parsed when user navigates there
+const MovieDetail = lazy(() => import("./components/movie/MovieDetail").then(m => ({ default: m.MovieDetail })));
+const SearchPage = lazy(() => import("./components/pages/SearchPage").then(m => ({ default: m.SearchPage })));
+const ListingPage = lazy(() => import("./components/pages/ListingPage").then(m => ({ default: m.ListingPage })));
+const DiscoverPage = lazy(() => import("./components/pages/DiscoverPage").then(m => ({ default: m.DiscoverPage })));
+const SwipePage = lazy(() => import("./components/pages/SwipePage").then(m => ({ default: m.SwipePage })));
+const FootballPage = lazy(() => import("./components/pages/FootballPage").then(m => ({ default: m.FootballPage })));
+const MusicPage = lazy(() => import("./components/pages/MusicPage").then(m => ({ default: m.MusicPage })));
+const UserGuideModal = lazy(() => import("./components/layout/UserGuideModal").then(m => ({ default: m.UserGuideModal })));
+const ReportNotification = lazy(() => import("./components/layout/ReportNotification").then(m => ({ default: m.ReportNotification })));
+const GodModeConsole = lazy(() => import("./components/debug/GodModeConsole").then(m => ({ default: m.GodModeConsole })));
+const MobileSimulator = lazy(() => import("./components/debug/MobileSimulator").then(m => ({ default: m.MobileSimulator })));
+const ScraperDashboard = lazy(() => import("./components/admin/ScraperDashboard"));
+
+// Minimal fallback for Suspense — invisible, no layout shift
+const SuspenseFallback = () => null;
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -296,6 +299,7 @@ export default function App() {
 
   return (
     <PersistQueryClientProvider client={queryClient} persistOptions={{ persister }}>
+      <Suspense fallback={<SuspenseFallback />}>
       <div className="min-h-screen bg-[#050505] text-white selection:bg-red-600/30 selection:text-white font-sans overflow-x-hidden relative">
         {currentTab !== "scraper" && currentTab !== "admin" && (
           <NavBar
@@ -328,55 +332,18 @@ export default function App() {
               >
                 <ContinueWatchingRow onSelect={setSelectedMovieSlug} />
                 <MyListRow onSelect={setSelectedMovieSlug} />
-                <ImdbRow title="Xu Hướng Tuần Này" type="popular-movies" onSelect={setSelectedMovieSlug} />
-                <ImdbRow title="Top Phim Thế Giới" type="top250-movies" onSelect={setSelectedMovieSlug} />
-                <ImdbRow title="Phim Bộ Phổ Biến Nhất" type="popular-tv" onSelect={setSelectedMovieSlug} />
-
-                <MovieRow
-                  title="Hành Động Kịch Tính"
-                  type="the-loai/hanh-dong"
-                  onSelect={setSelectedMovieSlug}
-                />
-                <MovieRow
-                  title="Kinh Dị & Giật Gân"
-                  type="the-loai/kinh-di"
-                  onSelect={setSelectedMovieSlug}
-                />
-                <MovieRow
-                  title="Hài Hước Đặc Sắc"
-                  type="the-loai/hai-huoc"
-                  onSelect={setSelectedMovieSlug}
-                />
-                <MovieRow
-                  title="Tình Cảm Lãng Mạn"
-                  type="the-loai/tinh-cam"
-                  onSelect={setSelectedMovieSlug}
-                />
-                <MovieRow
-                  title="Cực Phẩm Điện Ảnh Hàn"
-                  type="quoc-gia/han-quoc"
-                  onSelect={setSelectedMovieSlug}
-                />
-                <MovieRow
-                  title="Viễn Tưởng & Phiêu Lưu"
-                  type="the-loai/vien-tuong"
-                  onSelect={setSelectedMovieSlug}
-                />
-                <MovieRow
-                  title="Điện Ảnh Hoa Ngữ"
-                  type="quoc-gia/trung-quoc"
-                  onSelect={setSelectedMovieSlug}
-                />
-                <MovieRow
-                  title="Thế Giới Hoạt Hình"
-                  type="hoat-hinh"
-                  onSelect={setSelectedMovieSlug}
-                />
-                <MovieRow
-                  title="Chiến Tranh & Lịch Sử"
-                  type="the-loai/chien-tranh"
-                  onSelect={setSelectedMovieSlug}
-                />
+                <div className="lazy-row-section"><ImdbRow title="Xu Hướng Tuần Này" type="popular-movies" onSelect={setSelectedMovieSlug} /></div>
+                <div className="lazy-row-section"><ImdbRow title="Top Phim Thế Giới" type="top250-movies" onSelect={setSelectedMovieSlug} /></div>
+                <div className="lazy-row-section"><ImdbRow title="Phim Bộ Phổ Biến Nhất" type="popular-tv" onSelect={setSelectedMovieSlug} /></div>
+                <div className="lazy-row-section"><MovieRow title="Hành Động Kịch Tính" type="the-loai/hanh-dong" onSelect={setSelectedMovieSlug} /></div>
+                <div className="lazy-row-section"><MovieRow title="Kinh Dị & Giật Gân" type="the-loai/kinh-di" onSelect={setSelectedMovieSlug} /></div>
+                <div className="lazy-row-section"><MovieRow title="Hài Hước Đặc Sắc" type="the-loai/hai-huoc" onSelect={setSelectedMovieSlug} /></div>
+                <div className="lazy-row-section"><MovieRow title="Tình Cảm Lãng Mạn" type="the-loai/tinh-cam" onSelect={setSelectedMovieSlug} /></div>
+                <div className="lazy-row-section"><MovieRow title="Cực Phẩm Điện Ảnh Hàn" type="quoc-gia/han-quoc" onSelect={setSelectedMovieSlug} /></div>
+                <div className="lazy-row-section"><MovieRow title="Viễn Tưởng & Phiêu Lưu" type="the-loai/vien-tuong" onSelect={setSelectedMovieSlug} /></div>
+                <div className="lazy-row-section"><MovieRow title="Điện Ảnh Hoa Ngữ" type="quoc-gia/trung-quoc" onSelect={setSelectedMovieSlug} /></div>
+                <div className="lazy-row-section"><MovieRow title="Thế Giới Hoạt Hình" type="hoat-hinh" onSelect={setSelectedMovieSlug} /></div>
+                <div className="lazy-row-section"><MovieRow title="Chiến Tranh & Lịch Sử" type="the-loai/chien-tranh" onSelect={setSelectedMovieSlug} /></div>
               </div>
             </motion.div>
           ) : currentTab === "phim-bo" ? (
@@ -679,6 +646,7 @@ export default function App() {
         <MobileSimulator />
         <ReportNotification />
       </div>
+      </Suspense>
     </PersistQueryClientProvider>
   );
 }

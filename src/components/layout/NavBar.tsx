@@ -101,8 +101,8 @@ export const NavBar = ({
           className={cn(
             "w-[94%] max-w-4xl pointer-events-auto rounded-full border flex items-center justify-between px-6 py-2 transition-all duration-500 shadow-2xl",
             scrolled 
-              ? "bg-[#050505]/92 backdrop-blur-2xl border-white/[0.08] shadow-[0_16px_50px_rgba(0,0,0,0.98)] translate-y-[-2px]" 
-              : "bg-[#050505]/45 backdrop-blur-lg border-white/[0.04] shadow-[0_10px_35px_rgba(0,0,0,0.6)]"
+              ? "bg-[#050505]/95 backdrop-blur-sm border-white/[0.08] shadow-[0_16px_50px_rgba(0,0,0,0.98)] translate-y-[-2px]" 
+              : "bg-[#050505]/70 backdrop-blur-sm border-white/[0.04] shadow-[0_10px_35px_rgba(0,0,0,0.6)]"
           )}
         >
           {/* Left: Logo */}
@@ -181,7 +181,7 @@ export const NavBar = ({
 
       {/* Mobile Floating Bottom Dock */}
       <div className="md:hidden fixed bottom-5 left-0 w-full z-[100] flex justify-center pointer-events-none px-4">
-        <nav className="pointer-events-auto flex items-center justify-around w-full max-w-[420px] h-16 bg-[#050505]/92 backdrop-blur-2xl border border-white/[0.08] rounded-[28px] px-2 shadow-[0_24px_48px_rgba(0,0,0,0.95)]">
+        <nav className="pointer-events-auto flex items-center justify-around w-full max-w-[420px] h-16 bg-[#050505]/95 backdrop-blur-sm border border-white/[0.08] rounded-[28px] px-2 shadow-[0_24px_48px_rgba(0,0,0,0.95)]">
           {mobileDockTabs.map((tab) => {
              const Icon = tab.icon;
              const isActive = tab.isActive;
