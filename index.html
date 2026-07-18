@@ -32,28 +32,40 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
+      // Automatic Cache Purger & Version Sync for instant UI updates
+      const CURRENT_BUILD_VER = '2026-07-18-v10';
+      const savedVer = localStorage.getItem('cinemax_app_version');
+      if (savedVer !== CURRENT_BUILD_VER) {
+        localStorage.setItem('cinemax_app_version', CURRENT_BUILD_VER);
+        if ('caches' in window) {
+          caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+        }
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+        }
+      }
+
+      // Quick shortcut: Accessing site with ?clearCache=true wipes 100% of browser cache
+      if (window.location.search.includes('clearCache=true') || window.location.search.includes('purgeCache=true')) {
+        if ('caches' in window) caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+        }
+        window.location.href = window.location.pathname;
+      }
+
       // Service Worker Registration for PWA installation
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js')
             .then(reg => {
-              console.log('Service Worker registered successfully:', reg.scope);
+              console.log('Service Worker registered:', reg.scope);
               reg.update();
-              reg.onupdatefound = () => {
-                const installingWorker = reg.installing;
-                if (installingWorker) {
-                  installingWorker.onstatechange = () => {
-                    if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                      console.log('New version found, reloading page...');
-                      window.location.reload();
-                    }
-                  };
-                }
-              };
             })
             .catch(err => console.error('Service Worker registration failed:', err));
         });
       }
+    </script>
 
       document.addEventListener('contextmenu', (e) => e.preventDefault());
       document.addEventListener('keydown', (e) => {
