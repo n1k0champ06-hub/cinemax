@@ -1034,13 +1034,23 @@ export const MovieDetail: React.FC<{
 
   const currentServer = currentServers[selectedServerId] || currentServers[0];
   const fallbackRawEpList = currentServer?.server_data || [];
-  
-  // Use server episode list if available (actual episodes from provider).
-  // If the selected server has no server_data (e.g. Hollysheesh which only provides stream URLs),
-  // fall back to TMDB season episodes so the UI episode list stays visible.
-  const baseEpList = isTv
-    ? (fallbackRawEpList.length > 0 ? fallbackRawEpList : (seasonData?.episodes || []))
-    : fallbackRawEpList;
+
+  // Episode list logic (TMDB is authoritative for episode count):
+  // 1. If provider has episodes AND TMDB data is loaded → cap provider list to TMDB episode count
+  // 2. If provider has episodes but TMDB not yet loaded → show provider list as-is
+  // 3. If provider has no episodes (e.g. Hollysheesh stream-only source) → fallback to TMDB list
+  // 4. If not TV → use raw server list directly
+  const baseEpList = (() => {
+    if (!isTv) return fallbackRawEpList;
+    if (fallbackRawEpList.length === 0) return seasonData?.episodes || [];
+    // Cap by TMDB episode count if TMDB season data is loaded
+    const tmdbCount = seasonData?.episodes?.length;
+    if (tmdbCount && fallbackRawEpList.length > tmdbCount) {
+      return fallbackRawEpList.slice(0, tmdbCount);
+    }
+    return fallbackRawEpList;
+  })();
+
 
   const epList = searchEp ? baseEpList.filter((ep: any) => {
     const epName = ep.episode_number ? `${ep.episode_number}` : ep.name;
