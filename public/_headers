@@ -1,0 +1,18 @@
+# Cloudflare Pages Headers Configuration
+
+# HTML & Entrypoints — Always check server for latest version so UI updates land instantly
+/*
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/manifest.json
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# Hashed assets in /assets/ — Vite generates unique hashes per build, safe to cache immutably
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
