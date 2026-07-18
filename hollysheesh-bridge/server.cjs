@@ -199,6 +199,10 @@ async function handleM3u8Proxy(req, res, searchParams) {
     const baseUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
     const selfBase = `https://hollysheesh-bridge.onrender.com/proxy/m3u8`;
 
+    // VI CDN domains have CORS Allow-Origin:* — segments can be played directly by the browser
+    const VI_CDN_PATTERNS = ['kkphim', 'phimapi', 'phimimg', 'ophim', 'opstream', 'nguonc',
+      'phim.nguonc', 'xem20', 'xemphim', 'sing.phimmoi', 's3.phimmoi', 'stream.ophim'];
+
     const adPatterns = /9922|9922com|shbet|888bet|88bet|79bet|789bet|jun88|f8bet|hi88|new88|okvip|bk8|nhacai|cobac|casino|quangcao|banner|intro|slot|game68|sunwin|go88|baccarat/i;
     const rawLines = text.split('\n');
     const filteredLines = [];
@@ -217,7 +221,13 @@ async function handleM3u8Proxy(req, res, searchParams) {
 
       if (!line.startsWith('#')) {
         const absUrl = line.startsWith('http') ? line : baseUrl + line;
-        filteredLines.push(`${selfBase}?url=${encodeURIComponent(absUrl)}&referer=${encodeURIComponent(referer)}`);
+        // If segment comes from a VI CDN, let browser fetch directly (no proxy overhead)
+        const isViSegment = VI_CDN_PATTERNS.some(p => absUrl.includes(p));
+        if (isViSegment) {
+          filteredLines.push(absUrl);
+        } else {
+          filteredLines.push(`${selfBase}?url=${encodeURIComponent(absUrl)}&referer=${encodeURIComponent(referer)}`);
+        }
       } else {
         filteredLines.push(line);
       }
@@ -232,6 +242,7 @@ async function handleM3u8Proxy(req, res, searchParams) {
     });
     return res.end(rewritten);
   }
+
 
   // Binary TS / AAC segments
   const buf = Buffer.from(await upstream.arrayBuffer());

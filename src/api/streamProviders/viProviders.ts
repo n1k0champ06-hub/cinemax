@@ -545,11 +545,9 @@ async function fetchFromHollysheeshApi(query: StreamQuery): Promise<StreamItem[]
       
       let url = s.streamUrl;
       if (type === 'hls') {
-        let referer = '';
-        if (s.streamUrl.includes('phimapi.com')) referer = 'https://phimapi.com/';
-        else if (s.streamUrl.includes('ophim')) referer = 'https://ophim1.com/';
-        else if (s.streamUrl.includes('nguonc')) referer = 'https://phim.nguonc.com/';
-        url = buildProxiedM3u8Url(s.streamUrl, referer);
+        // Hollysheesh streams come from VI CDNs (phimapi/ophim/nguonc) which have CORS support
+        // → play directly in browser, no proxy needed (avoids 200-500ms Render overhead per .ts segment)
+        url = s.streamUrl;
       }
 
       const normServer = String(s.server).replace(/\s*#\d+/g, '');
