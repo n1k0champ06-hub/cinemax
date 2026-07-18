@@ -145,3 +145,32 @@ export const tmdbFindByExternalId = (externalId: string, source: 'imdb_id' | 'tv
 /** Fetch external IDs (imdb_id, tvdb_id, etc.) for a movie or TV show */
 export const tmdbGetExternalIds = (mediaType: 'movie' | 'tv', id: number | string) =>
   fetchTmdb(`/${mediaType}/${id}/external_ids`);
+
+// ─── Responsive Image URL Helpers ─────────────────────────────────────────────
+// Detect if the device is mobile (screen ≤ 768px) at call time
+const isMobileScreen = () =>
+  typeof window !== 'undefined' && window.innerWidth <= 768;
+
+/**
+ * Returns a responsive TMDB poster URL:
+ * - Mobile (≤768px): w300 (~35KB) instead of w500 (~100KB) — 65% less bandwidth
+ * - Desktop: w500 (full quality)
+ */
+export const tmdbPosterUrl = (path: string | null | undefined, forceSize?: 'w300' | 'w500' | 'w780'): string => {
+  if (!path) return '';
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const size = forceSize ?? (isMobileScreen() ? 'w300' : 'w500');
+  return `https://image.tmdb.org/t/p/${size}${cleanPath}`;
+};
+
+/**
+ * Returns a responsive TMDB backdrop URL:
+ * - Mobile: w780 (good quality, saves ~40% vs w1280)
+ * - Desktop: w1280
+ */
+export const tmdbBackdropUrl = (path: string | null | undefined, forceSize?: 'w300' | 'w780' | 'w1280'): string => {
+  if (!path) return '';
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const size = forceSize ?? (isMobileScreen() ? 'w780' : 'w1280');
+  return `https://image.tmdb.org/t/p/${size}${cleanPath}`;
+};

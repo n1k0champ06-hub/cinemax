@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@100;200;300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;700;900&display=optional');
 @import "tailwindcss";
 
 @theme {
@@ -21,12 +21,18 @@ body {
   /* iOS Safari: prevent overscroll bounce gây glitch hero image */
   overscroll-behavior-y: none;
   -webkit-overflow-scrolling: touch;
+  /* Smoother text on Retina/AMOLED screens */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 /* Prevent GPU layer flicker khi scroll trên mobile */
 img {
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
+  /* Prevent layout shift from loading images */
+  image-rendering: auto;
 }
 
 input, button, select, textarea {
@@ -36,6 +42,28 @@ input, button, select, textarea {
 ::-webkit-scrollbar {
   display: none; /* Safari and Chrome */
 }
+
+/* ─── Mobile touch optimizations ──────────────────────────────────────────── */
+
+/* Remove gray/blue tap flash on all tappable elements (iOS & Android) */
+a, button, [role="button"], [tabindex] {
+  -webkit-tap-highlight-color: transparent;
+  /* Removes 300ms double-tap-to-zoom delay without affecting pinch-zoom */
+  touch-action: manipulation;
+}
+
+/* Horizontal scroll containers: allow horizontal pan, block vertical to prevent jank */
+.scroll-row-container {
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent text selection during swipe gestures */
+.card-spring-hover {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 
 /* ─── Performance utilities ─────────────────────────────────────────────────── */
 

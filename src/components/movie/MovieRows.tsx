@@ -102,7 +102,7 @@ export const CustomMovieRowContainer = React.memo(({
             <div
               ref={scrollRef}
               className={cn(
-                "flex gap-4 sm:gap-6 overflow-x-auto py-8 sm:py-12 -my-8 sm:-my-12 px-[4%] scrollbar-hide items-center relative z-10",
+                "scroll-row-container flex gap-4 sm:gap-6 overflow-x-auto py-8 sm:py-12 -my-8 sm:-my-12 px-[4%] scrollbar-hide items-center relative z-10",
                 isTop10 ? "pl-[4%]" : "",
               )}
               style={{ scrollbarWidth: "none" }}

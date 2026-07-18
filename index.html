@@ -2,17 +2,24 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- DNS prefetch & preconnect for all image/API origins -->
     <link rel="dns-prefetch" href="https://ophim1.com" />
     <link rel="dns-prefetch" href="https://phimapi.com" />
     <link rel="dns-prefetch" href="https://phim.nguonc.com" />
     <link rel="dns-prefetch" href="https://phimimg.com" />
     <link rel="dns-prefetch" href="https://cinemaos.tech" />
+    <link rel="dns-prefetch" href="https://image.tmdb.org" />
+    <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
     <link rel="preconnect" href="https://ophim1.com" crossorigin />
     <link rel="preconnect" href="https://phimapi.com" crossorigin />
     <link rel="preconnect" href="https://phim.nguonc.com" crossorigin />
     <link rel="preconnect" href="https://phimimg.com" crossorigin />
-    <link rel="preconnect" href="https://cinemaos.tech" crossorigin />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://image.tmdb.org" crossorigin />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!-- Mobile viewport: no zoom delay, correct scaling -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="color-scheme" content="dark" />
     <title>Cinemax</title>
     <link rel="icon" type="image/png" href="https://res.cloudinary.com/dwbbs7rho/image/upload/v1779716516/Elegant_Marquee_Style_Logo_with_Deep_Crimson_C_c2sulc.png" />
@@ -28,6 +35,7 @@
     <!-- Thay 'YOUR_CF_TOKEN' bằng Web Analytics Token của bạn trên Cloudflare Dashboard -->
     <script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "YOUR_CF_TOKEN"}'></script>
   </head>
+
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
