@@ -18,6 +18,15 @@ body {
   background-color: #050505;
   font-family: "Be Vietnam Pro", ui-sans-serif, system-ui, sans-serif;
   scrollbar-width: none; /* Firefox */
+  /* iOS Safari: prevent overscroll bounce gây glitch hero image */
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent GPU layer flicker khi scroll trên mobile */
+img {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 input, button, select, textarea {

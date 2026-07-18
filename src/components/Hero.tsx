@@ -192,11 +192,12 @@ export const Hero = ({
       <AnimatePresence mode="popLayout">
         <motion.div 
           key={`slide-${currentIndex}`}
-          initial={{ opacity: 0, scale: 1.04 }}
-          animate={{ opacity: 1, scale: 1 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 1.0, ease: "easeInOut" }}
+          transition={{ duration: 0.8, ease: "easeInOut" }}
           className="absolute inset-0 h-full w-full z-0 overflow-hidden bg-black"
+          style={{ willChange: 'opacity', transform: 'translateZ(0)' }}
         >
           <SafeImage src={bgImage || ''} alt={titleString} className="w-full h-full object-cover opacity-100 lg:opacity-90 pointer-events-none select-none" priority={true} />
         </motion.div>

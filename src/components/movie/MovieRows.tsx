@@ -171,23 +171,39 @@ export const MovieRow = ({
   aspectRatio?: 'landscape' | 'poster';
 }) => {
   const ref = useRef<HTMLDivElement>(null);
+  // Stage 1: trigger API fetch khi còn cách viewport 1200px
+  const [shouldFetch, setShouldFetch] = useState(false);
+  // Stage 2: render nội dung khi còn cách viewport 200px
   const [hasIntersected, setHasIntersected] = useState(false);
 
   useEffect(() => {
-    if (hasIntersected) return;
-    const observer = new IntersectionObserver(([entry]) => {
+    const el = ref.current;
+    if (!el) return;
+
+    // Preload observer — kích hoạt fetch sớm
+    const preloadObserver = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setShouldFetch(true);
+        preloadObserver.disconnect();
+      }
+    }, { rootMargin: '1200px' });
+
+    // Render observer — quyết định khi nào show content
+    const renderObserver = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) {
         setHasIntersected(true);
-        observer.disconnect();
+        renderObserver.disconnect();
       }
-    }, { rootMargin: '400px' });
-    const el = ref.current;
-    if (el) observer.observe(el);
+    }, { rootMargin: '200px' });
+
+    preloadObserver.observe(el);
+    renderObserver.observe(el);
+
     return () => {
-      if (el) observer.unobserve(el);
-      observer.disconnect();
+      preloadObserver.disconnect();
+      renderObserver.disconnect();
     };
-  }, [hasIntersected]);
+  }, []);
   
   const showMovie = type !== 'phim-bo';
   const showTv = type !== 'phim-le';
@@ -318,9 +334,9 @@ export const MovieRow = ({
     tvParams.with_origin_country = 'CN|HK|TW';
   }
 
-  // Dual React Queries
-  const { data: movieData, isLoading: movieLoading } = useTmdbDiscover('movie', movieParams, { enabled: hasIntersected && showMovie });
-  const { data: tvData, isLoading: tvLoading } = useTmdbDiscover('tv', tvParams, { enabled: hasIntersected && showTv });
+  // Dual React Queries — fetch sớm khi shouldFetch, render khi hasIntersected
+  const { data: movieData, isLoading: movieLoading } = useTmdbDiscover('movie', movieParams, { enabled: shouldFetch && showMovie });
+  const { data: tvData, isLoading: tvLoading } = useTmdbDiscover('tv', tvParams, { enabled: shouldFetch && showTv });
   const { progressStore } = useWatchProgress();
 
   if (!hasIntersected) {
