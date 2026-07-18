@@ -65,18 +65,6 @@
             .catch(err => console.error('Service Worker registration failed:', err));
         });
       }
-
-      document.addEventListener('contextmenu', (e) => e.preventDefault());
-      document.addEventListener('keydown', (e) => {
-        if (
-          e.keyCode === 123 || // F12
-          (e.ctrlKey && e.shiftKey && e.keyCode === 73) || // Ctrl+Shift+I
-          (e.ctrlKey && e.shiftKey && e.keyCode === 74) || // Ctrl+Shift+J
-          (e.ctrlKey && e.keyCode === 85) // Ctrl+U
-        ) {
-          e.preventDefault();
-        }
-      });
     </script>
   </body>
 </html>
