@@ -75,36 +75,15 @@ export const MovieCard = React.memo(({ movie, onSelect, isTop10, idx, progressDa
 
   const enDetails = passedEnDetails || fetchedEnDetails || (cachedData as any);
 
-  const isAnime = passedIsAnime || movie?.isJikan || 
-    (typeof movie?.slug === 'string' && (movie.slug.startsWith('anilist-') || movie.slug.startsWith('mal-') || movie.slug.startsWith('jikan-') || /^\d+$/.test(movie.slug))) || 
-    movie?.media_type === 'anime' || 
-    (rowTitle && /anime|hoạt hình/i.test(rowTitle));
-
-  const resolvedDisplayName = isAnime ? displayName : (enDetails?.title || enDetails?.name || displayName);
-
-  const { data: fetchedAniListCover } = useQuery({
-    queryKey: ['anilist', 'cover', resolvedDisplayName],
-    queryFn: async () => {
-      const { fetchAniListCover } = await import('../../api/anilistApi');
-      return fetchAniListCover(resolvedDisplayName);
-    },
-    enabled: !passedAniListCover && !!isAnime && !!resolvedDisplayName && shouldFetch,
-    staleTime: 24 * 60 * 60 * 1000,
-  });
-
-  const aniListCover = passedAniListCover || fetchedAniListCover;
-
-  const aniPoster = aniListCover?.extraLarge || aniListCover?.large;
-  const aniThumb = aniListCover?.banner || aniListCover?.extraLarge || aniListCover?.large;
-  
   const rawPoster = movie?.tmdb?.poster_path ? (movie.tmdb.poster_path?.startsWith('http') ? movie.tmdb.poster_path : `https://image.tmdb.org/t/p/w500/${movie.tmdb.poster_path?.split('/').pop()}`) : movie.poster_url;
   const rawThumb = movie?.tmdb?.backdrop_path ? (movie.tmdb.backdrop_path?.startsWith('http') ? movie.tmdb.backdrop_path : `https://image.tmdb.org/t/p/w500/${movie.tmdb.backdrop_path?.split('/').pop()}`) : (movie.thumb_url || movie.poster_url);
   
   const enBackdrop = enDetails?.backdrop_path ? `https://image.tmdb.org/t/p/w500/${enDetails.backdrop_path.split('/').pop()}` : null;
   const enPoster = enDetails?.poster_path ? `https://image.tmdb.org/t/p/w500/${enDetails.poster_path.split('/').pop()}` : null;
 
-  let safePoster = enPoster || aniPoster || (typeof rawPoster === 'string' && !rawPoster.startsWith('http' ) ? `https://phimimg.com/${rawPoster}` : rawPoster);
-  let safeThumb = enBackdrop || aniThumb || (typeof rawThumb === 'string' && !rawThumb.startsWith('http') ? `https://phimimg.com/${rawThumb}` : rawThumb);
+  let safePoster = enPoster || (typeof rawPoster === 'string' && !rawPoster.startsWith('http' ) ? `https://phimimg.com/${rawPoster}` : rawPoster);
+  let safeThumb = enBackdrop || (typeof rawThumb === 'string' && !rawThumb.startsWith('http') ? `https://phimimg.com/${rawThumb}` : rawThumb);
+
 
   if (typeof safePoster === 'string' && safePoster.includes('-thumb.')) {
     safePoster = safePoster.replace('-thumb.', '-poster.');

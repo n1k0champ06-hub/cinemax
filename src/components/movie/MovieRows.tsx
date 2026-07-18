@@ -10,7 +10,6 @@ import { useIntersectionObserver } from "../../hooks/useIntersectionObserver";
 import { useWatchProgress, useMyList } from "../../hooks/useStorage";
 import { fetchDetail } from "../../api/phimApi";
 import { useTmdbDiscover, useTmdbBulkDetails } from "../../hooks/useTmdb";
-import { useAnilistBulkCovers } from "../../hooks/useAnimeDb";
 
 export const CustomMovieRowContainer = React.memo(({
   title,
@@ -37,7 +36,7 @@ export const CustomMovieRowContainer = React.memo(({
     }
   };
 
-  // Collect TMDB requests and Anime titles in bulk
+  // Collect TMDB requests in bulk
   const bulkRequests = useMemo(() => {
     return movies.map(movie => {
       const displayName = typeof movie.name === 'string' ? movie.name : (movie.title || '');
@@ -49,23 +48,7 @@ export const CustomMovieRowContainer = React.memo(({
     }).filter(Boolean) as Array<{ id: string | number; type: 'movie' | 'tv' }>;
   }, [movies]);
 
-  const bulkAnimeTitles = useMemo(() => {
-    return movies.map(movie => {
-      const isAnimeItem = isAnime || movie?.isJikan || 
-        (typeof movie?.slug === 'string' && (movie.slug.startsWith('anilist-') || movie.slug.startsWith('mal-') || movie.slug.startsWith('jikan-') || /^\d+$/.test(movie.slug))) || 
-        movie?.media_type === 'anime' || 
-        (title && /anime|hoạt hình/i.test(title));
-        
-      if (!isAnimeItem) return null;
-      
-      const originalTitle = movie.tmdb?.original_title || movie.tmdb?.original_name;
-      const displayName = typeof movie.name === 'string' ? movie.name : (movie.title || '');
-      return originalTitle || displayName;
-    }).filter(Boolean) as string[];
-  }, [movies, title, isAnime]);
-
   const { data: bulkTmdbData } = useTmdbBulkDetails(bulkRequests);
-  const { data: bulkAnilistData } = useAnilistBulkCovers(bulkAnimeTitles);
 
   return (
     <div className="py-[0.6vw] md:py-[0.8vw] relative group/row overflow-visible">
@@ -115,10 +98,6 @@ export const CustomMovieRowContainer = React.memo(({
                 
                 const enDetails = tmdbId ? bulkTmdbData?.[`${isTv ? 'tv' : 'movie'}:${tmdbId}`] : undefined;
                 const resolvedDisplayName = enDetails?.title || enDetails?.name || displayName;
-                const originalTitle = movie.tmdb?.original_title || movie.tmdb?.original_name;
-                const aniListCover = bulkAnilistData?.[resolvedDisplayName] || 
-                                     bulkAnilistData?.[displayName] || 
-                                     (originalTitle && (bulkAnilistData?.[originalTitle] || bulkAnilistData?.[originalTitle.toLowerCase()]));
 
                 return (
                   <div key={`${movie.slug}-${idx}`} className="shrink-0 pt-2.5 pb-5">
@@ -129,7 +108,6 @@ export const CustomMovieRowContainer = React.memo(({
                         idx={idx} 
                         rowTitle={`Bảng xếp hạng: ${title}`}
                         enDetails={enDetails}
-                        aniListCover={aniListCover}
                         isAnime={isAnime}
                       />
                     ) : (
@@ -141,13 +119,13 @@ export const CustomMovieRowContainer = React.memo(({
                         progressData={progressStore?.[movie.slug as string]}
                         rowTitle={title}
                         enDetails={enDetails}
-                        aniListCover={aniListCover}
                         aspectRatio={aspectRatio}
                         isAnime={isAnime}
                       />
                     )}
                   </div>
                 );
+
               })}
             </div>
           </div>

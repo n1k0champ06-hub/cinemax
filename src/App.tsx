@@ -18,25 +18,51 @@ import {
   MyListRow,
 } from "./components/movie/MovieRows";
 import { ImdbRow } from "./components/movie/ImdbRow";
+import { AnimeRankingRow } from "./components/movie/AnimeRankingRow";
 import { initFetchInterceptor, godModeStore } from "./lib/godmode";
 import "./lib/firebase";
 
 // Lazy-load heavy page components — only parsed when user navigates there
-const MovieDetail = lazy(() => import("./components/movie/MovieDetail").then(m => ({ default: m.MovieDetail })));
-const SearchPage = lazy(() => import("./components/pages/SearchPage").then(m => ({ default: m.SearchPage })));
-const ListingPage = lazy(() => import("./components/pages/ListingPage").then(m => ({ default: m.ListingPage })));
-const DiscoverPage = lazy(() => import("./components/pages/DiscoverPage").then(m => ({ default: m.DiscoverPage })));
-const SwipePage = lazy(() => import("./components/pages/SwipePage").then(m => ({ default: m.SwipePage })));
-const FootballPage = lazy(() => import("./components/pages/FootballPage").then(m => ({ default: m.FootballPage })));
-const MusicPage = lazy(() => import("./components/pages/MusicPage").then(m => ({ default: m.MusicPage })));
+const importMovieDetail = () => import("./components/movie/MovieDetail");
+const importSearchPage = () => import("./components/pages/SearchPage");
+const importListingPage = () => import("./components/pages/ListingPage");
+const importDiscoverPage = () => import("./components/pages/DiscoverPage");
+const importSwipePage = () => import("./components/pages/SwipePage");
+const importFootballPage = () => import("./components/pages/FootballPage");
+const importMusicPage = () => import("./components/pages/MusicPage");
+
+const MovieDetail = lazy(() => importMovieDetail().then(m => ({ default: m.MovieDetail })));
+const SearchPage = lazy(() => importSearchPage().then(m => ({ default: m.SearchPage })));
+const ListingPage = lazy(() => importListingPage().then(m => ({ default: m.ListingPage })));
+const DiscoverPage = lazy(() => importDiscoverPage().then(m => ({ default: m.DiscoverPage })));
+const SwipePage = lazy(() => importSwipePage().then(m => ({ default: m.SwipePage })));
+const FootballPage = lazy(() => importFootballPage().then(m => ({ default: m.FootballPage })));
+const MusicPage = lazy(() => importMusicPage().then(m => ({ default: m.MusicPage })));
 const UserGuideModal = lazy(() => import("./components/layout/UserGuideModal").then(m => ({ default: m.UserGuideModal })));
 const ReportNotification = lazy(() => import("./components/layout/ReportNotification").then(m => ({ default: m.ReportNotification })));
 const GodModeConsole = lazy(() => import("./components/debug/GodModeConsole").then(m => ({ default: m.GodModeConsole })));
 const MobileSimulator = lazy(() => import("./components/debug/MobileSimulator").then(m => ({ default: m.MobileSimulator })));
 const ScraperDashboard = lazy(() => import("./components/admin/ScraperDashboard"));
 
+// Preload primary page bundles during browser idle time so tab clicks respond instantly
+if (typeof window !== 'undefined') {
+  const preloadAllPages = () => {
+    importListingPage();
+    importDiscoverPage();
+    importSwipePage();
+    importFootballPage();
+    importMusicPage();
+  };
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(preloadAllPages, { timeout: 3000 });
+  } else {
+    setTimeout(preloadAllPages, 1500);
+  }
+}
+
 // Minimal fallback for Suspense — invisible, no layout shift
 const SuspenseFallback = () => null;
+
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -310,14 +336,14 @@ export default function App() {
           />
         )}
 
-        <AnimatePresence mode="wait">
+        <AnimatePresence mode="sync">
           {currentTab === "home" ? (
             <motion.div
               key="home"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18, ease: "easeInOut" }}
             >
               <Hero
                 type="home"
@@ -349,10 +375,10 @@ export default function App() {
           ) : currentTab === "phim-bo" ? (
             <motion.div
               key="phim-bo"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18, ease: "easeInOut" }}
             >
               <Hero
                 type="phim-bo"
@@ -396,10 +422,10 @@ export default function App() {
           ) : currentTab === "phim-le" ? (
             <motion.div
               key="phim-le"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18, ease: "easeInOut" }}
             >
               <Hero
                 type="phim-le"
@@ -444,10 +470,10 @@ export default function App() {
           ) : currentTab === "hoat-hinh" ? (
             <motion.div
               key="hoat-hinh"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18, ease: "easeInOut" }}
             >
               <Hero
                 type="hoat-hinh"
@@ -460,77 +486,102 @@ export default function App() {
                 id="movie-lists"
                 className="pb-32 mt-4 sm:mt-12 relative z-20 flex flex-col gap-0"
               >
-                <MovieRow
-                  title="Anime Mới Cập Nhật"
-                  type="hoat-hinh-nhat"
-                  onSelect={setSelectedMovieSlug}
-                  aspectRatio="poster"
-                />
-                <MovieRow
-                  title="Anime Thịnh Hành"
-                  type="anime-popular"
-                  onSelect={setSelectedMovieSlug}
-                  aspectRatio="poster"
-                />
-                <MovieRow
-                  title="Hành Động & Kịch Tính"
-                  type="anime-action"
-                  onSelect={setSelectedMovieSlug}
-                  aspectRatio="poster"
-                />
-                <MovieRow
-                  title="Phiêu Lưu & Kỳ Ảo"
-                  type="anime-fantasy"
-                  onSelect={setSelectedMovieSlug}
-                  aspectRatio="poster"
-                />
-                <MovieRow
-                  title="Tình Cảm & Học Đường"
-                  type="anime-romance"
-                  onSelect={setSelectedMovieSlug}
-                  aspectRatio="poster"
-                />
-                <MovieRow
-                  title="Hài Hước & Đời Thường"
-                  type="anime-comedy"
-                  onSelect={setSelectedMovieSlug}
-                  aspectRatio="poster"
-                />
-                <MovieRow
-                  title="Tuổi Thơ & Gia Đình"
-                  type="anime-kids"
-                  onSelect={setSelectedMovieSlug}
-                  aspectRatio="poster"
-                />
+                <div className="lazy-row-section">
+                  <AnimeRankingRow title="Top 10 Anime Thịnh Hành (MAL)" onSelect={setSelectedMovieSlug} />
+                </div>
+                <div className="lazy-row-section">
+                  <MovieRow
+                    title="Anime Mới Cập Nhật"
+                    type="hoat-hinh-nhat"
+                    onSelect={setSelectedMovieSlug}
+                    aspectRatio="landscape"
+                    isAnime
+                  />
+                </div>
+                <div className="lazy-row-section">
+                  <MovieRow
+                    title="Anime Phổ Biến Nhất"
+                    type="anime-popular"
+                    onSelect={setSelectedMovieSlug}
+                    aspectRatio="poster"
+                    isAnime
+                  />
+                </div>
+                <div className="lazy-row-section">
+                  <MovieRow
+                    title="Hành Động & Kịch Tính"
+                    type="anime-action"
+                    onSelect={setSelectedMovieSlug}
+                    aspectRatio="landscape"
+                    isAnime
+                  />
+                </div>
+                <div className="lazy-row-section">
+                  <MovieRow
+                    title="Phiêu Lưu & Kỳ Ảo"
+                    type="anime-fantasy"
+                    onSelect={setSelectedMovieSlug}
+                    aspectRatio="poster"
+                    isAnime
+                  />
+                </div>
+                <div className="lazy-row-section">
+                  <MovieRow
+                    title="Tình Cảm & Học Đường"
+                    type="anime-romance"
+                    onSelect={setSelectedMovieSlug}
+                    aspectRatio="landscape"
+                    isAnime
+                  />
+                </div>
+                <div className="lazy-row-section">
+                  <MovieRow
+                    title="Hài Hước & Đời Thường"
+                    type="anime-comedy"
+                    onSelect={setSelectedMovieSlug}
+                    aspectRatio="poster"
+                    isAnime
+                  />
+                </div>
+                <div className="lazy-row-section">
+                  <MovieRow
+                    title="Tuổi Thơ & Gia Đình"
+                    type="anime-kids"
+                    onSelect={setSelectedMovieSlug}
+                    aspectRatio="landscape"
+                    isAnime
+                  />
+                </div>
               </div>
             </motion.div>
+
           ) : currentTab === "football" ? (
             <motion.div
               key="football"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18, ease: "easeInOut" }}
             >
               <FootballPage />
             </motion.div>
           ) : currentTab === "music" ? (
             <motion.div
               key="music"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18, ease: "easeInOut" }}
             >
               <MusicPage />
             </motion.div>
           ) : currentTab === "discover" ? (
             <motion.div
               key="discover"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18, ease: "easeInOut" }}
               className="pt-6 md:pt-24 pb-24 md:pb-20 min-h-screen"
             >
               <DiscoverPage
@@ -541,10 +592,10 @@ export default function App() {
           ) : currentTab === "swipe" ? (
             <motion.div
               key="swipe"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18, ease: "easeInOut" }}
             >
               <SwipePage
                 onSelect={setSelectedMovieSlug}
@@ -564,10 +615,10 @@ export default function App() {
           ) : (
             <motion.div
               key={currentTab}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18, ease: "easeInOut" }}
               className="pt-6 md:pt-24 pb-24 md:pb-20 min-h-screen"
             >
               <ListingPage
