@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { fetchDetail, fetchSearch } from "../../api/phimApi";
 import { useMyList } from "../useStorage";
 import { useTmdbDetails, useTmdbSearch } from "../useTmdb";
@@ -238,6 +238,7 @@ export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
     },
     enabled: (isTmdbSlug || isAnilistSlug) && !!finalTmdbData,
     staleTime: 24 * 60 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 
   const phimApiSlug = useMemo(() => {
@@ -250,6 +251,7 @@ export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
     queryFn: () => fetchDetail(phimApiSlug!),
     enabled: !!phimApiSlug,
     staleTime: 24 * 60 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 
   // Fetch external IDs to resolve IMDb ID

@@ -1029,7 +1029,19 @@ export const MovieDetail: React.FC<{
       </motion.div>
     );
 
-  if (!data?.movie) return null;
+  // Tránh màn đen: nếu data chưa có nhưng đang fetch, show spinner thay vì unmount
+  if (!data?.movie)
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[150] bg-[#050505] flex flex-col justify-center items-center"
+      >
+        <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
+      </motion.div>
+    );
+
   const { movie } = data;
 
   const currentServer = currentServers[selectedServerId] || currentServers[0];
@@ -1192,7 +1204,7 @@ export const MovieDetail: React.FC<{
       <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-10 pb-20 pt-[20vh] sm:pt-[25vh] md:pt-[35vh] lg:pt-[45vh] relative z-10 flex flex-col gap-6 sm:gap-8 xl:gap-12">
         
         <div className="w-full">
-          <AnimatePresence mode="wait">
+          <AnimatePresence mode="sync">
             {isPlaying && activeEp ? (
               <div className="flex flex-col gap-4 mb-12 -mt-[15vh] sm:-mt-[25vh] lg:-mt-[35vh]">
                 <div className="flex justify-between items-center z-[110] relative">
