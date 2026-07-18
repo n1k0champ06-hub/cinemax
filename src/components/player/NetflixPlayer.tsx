@@ -3315,9 +3315,14 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                       // Match with TMDB metadata episodes object
                       const tmdbEp = tmdbEpisodes.find(t => isSameEpisode(t.episode_number || t.name, epNameStr));
 
-                      const runtime = tmdbEp?.runtime ? `${tmdbEp.runtime}m` : 'Phát ngay';
                       const cleanEpNum = getEpisodeNumber(epNameStr)?.toString() || epNameStr.replace("Tập ", "").trim();
-                      const displayTitle = tmdbEp?.name ? `${cleanEpNum}. ${tmdbEp.name}` : (ep.name.startsWith("Tập") ? ep.name : `Tập ${ep.name}`);
+                      const isGeneric = (str: string | undefined | null) => {
+                        if (!str) return true;
+                        const s = str.trim().toLowerCase().replace(/^tập\s*/i, '').replace(/^episode\s*/i, '').trim();
+                        return /^\d+$/i.test(s) || /^\d+[\s\.\:\x\-x/e]\d+$/i.test(s) || /^s?\d+[\s\.\:\x\-x/e]s?\d+$/i.test(s);
+                      };
+                      const hasRealTitle = tmdbEp?.name && !isGeneric(tmdbEp.name);
+                      const displayTitle = hasRealTitle ? `${cleanEpNum}. ${tmdbEp.name}` : (epNameStr.startsWith("Tập") ? epNameStr : `Tập ${cleanEpNum}`);
 
                       // Extract Still image
                       const imgUrl = tmdbEp?.still_path 

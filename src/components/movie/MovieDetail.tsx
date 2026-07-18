@@ -46,17 +46,23 @@ const getEpisodeNumber = (nameStr: string | number | undefined | null): number |
 
 const isGenericEpisodeName = (name: string | undefined | null, epNum: number | string | undefined | null): boolean => {
   if (!name) return true;
-  const cleanedName = name.toString().trim().toLowerCase();
-  if (!cleanedName) return true;
+  const rawStr = name.toString().trim();
+  if (!rawStr) return true;
+  const cleanedName = rawStr.toLowerCase();
   
   const numStr = epNum ? epNum.toString() : '';
-  if (cleanedName === numStr) return true;
-  if (cleanedName === `episode ${numStr}`) return true;
-  if (cleanedName === `tập ${numStr}`) return true;
-  
   const paddedNum = numStr.padStart(2, '0');
-  if (cleanedName === `episode ${paddedNum}`) return true;
-  if (cleanedName === `tập ${paddedNum}`) return true;
+  
+  if (cleanedName === numStr || cleanedName === paddedNum) return true;
+  if (cleanedName === `episode ${numStr}` || cleanedName === `episode ${paddedNum}`) return true;
+  if (cleanedName === `tập ${numStr}` || cleanedName === `tập ${paddedNum}`) return true;
+  if (cleanedName === `tap ${numStr}` || cleanedName === `tap ${paddedNum}`) return true;
+
+  // Stripped check for patterns like "3:3", "3.3", "3-3", "3/3", "3x3", "3x03", "s3e3", "s03e03"
+  const stripped = cleanedName.replace(/^tập\s*/i, '').replace(/^episode\s*/i, '').trim();
+  if (/^\d+[\s\.\:\x\-x/e]\d+$/i.test(stripped)) return true;
+  if (/^s?\d+[\s\.\:\x\-x/e]s?\d+$/i.test(stripped)) return true;
+  if (/^\d+$/i.test(stripped)) return true;
   
   return false;
 };

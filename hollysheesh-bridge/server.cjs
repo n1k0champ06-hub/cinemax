@@ -65,13 +65,26 @@ async function handleStreams(req, res, searchParams) {
   const title   = searchParams.get('title') || '';
   const titleVi = searchParams.get('titleVi') || '';
   const slug    = searchParams.get('slug') || '';
+  const tmdbId  = searchParams.get('tmdbId') || '';
+  const season  = parseInt(searchParams.get('season') || '1', 10);
   const year    = parseInt(searchParams.get('year') || '0', 10);
   const episode = searchParams.get('episode') || '1';
 
   try {
     let bestMovie = null;
 
-    if (slug) {
+    if (tmdbId) {
+      const tmdbMovies = await db.collection('movies').find({ tmdbId: String(tmdbId) }).toArray();
+      if (tmdbMovies.length > 0) {
+        if (season > 1) {
+          const sRegex = new RegExp(`(phan|season|part|ss)\\s*0*${season}\\b`, 'i');
+          bestMovie = tmdbMovies.find(m => sRegex.test(m.slug || '') || sRegex.test(m.title || ''));
+        }
+        if (!bestMovie) bestMovie = tmdbMovies[0];
+      }
+    }
+
+    if (!bestMovie && slug) {
       bestMovie = await db.collection('movies').findOne({ slug });
     }
 
@@ -89,13 +102,16 @@ async function handleStreams(req, res, searchParams) {
       addTitleConds(titleVi);
 
       if (queryConds.length > 0) {
-        const movies = await db.collection('movies').find({ $or: queryConds }).limit(10).toArray();
+        const movies = await db.collection('movies').find({ $or: queryConds }).limit(20).toArray();
         if (movies.length > 0) {
-          bestMovie = movies[0];
-          if (year > 0) {
-            const matchYear = movies.find(m => parseInt(m.year) === year);
-            if (matchYear) bestMovie = matchYear;
+          if (season > 1) {
+            const sRegex = new RegExp(`(phan|season|part|ss)\\s*0*${season}\\b`, 'i');
+            bestMovie = movies.find(m => sRegex.test(m.slug || '') || sRegex.test(m.title || ''));
           }
+          if (!bestMovie && year > 0) {
+            bestMovie = movies.find(m => parseInt(m.year) === year);
+          }
+          if (!bestMovie) bestMovie = movies[0];
         }
       }
     }
@@ -183,13 +199,31 @@ async function handleM3u8Proxy(req, res, searchParams) {
     const baseUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
     const selfBase = `https://hollysheesh-bridge.onrender.com/proxy/m3u8`;
 
-    // Rewrite relative URLs to route through this proxy
-    const rewritten = text.replace(/^(?!#)(.+)$/gm, (line) => {
-      line = line.trim();
-      if (!line || line.startsWith('#')) return line;
-      const absUrl = line.startsWith('http') ? line : baseUrl + line;
-      return `${selfBase}?url=${encodeURIComponent(absUrl)}&referer=${encodeURIComponent(referer)}`;
-    });
+    const adPatterns = /shbet|888bet|88bet|79bet|789bet|jun88|f8bet|hi88|new88|okvip|bk8|nhacai|cobac|casino|quangcao|banner|intro/i;
+    const rawLines = text.split('\n');
+    const filteredLines = [];
+
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = rawLines[i].trim();
+      if (!line) continue;
+
+      if (adPatterns.test(line)) {
+        continue; // Skip ad URL/tag
+      }
+      if (line.startsWith('#EXTINF:') && i + 1 < rawLines.length && adPatterns.test(rawLines[i + 1])) {
+        i++; // Skip EXTINF and next line if it's an ad URL
+        continue;
+      }
+
+      if (!line.startsWith('#')) {
+        const absUrl = line.startsWith('http') ? line : baseUrl + line;
+        filteredLines.push(`${selfBase}?url=${encodeURIComponent(absUrl)}&referer=${encodeURIComponent(referer)}`);
+      } else {
+        filteredLines.push(line);
+      }
+    }
+
+    const rewritten = filteredLines.join('\n');
 
     res.writeHead(upstream.status, {
       'Content-Type': 'application/vnd.apple.mpegurl',

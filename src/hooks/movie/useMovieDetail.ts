@@ -167,19 +167,44 @@ export const useMovieDetail = (rawSlug: string) => {
 
   // 5. Query matching phimApi item by searching OPhim/KKPhim with the title
   const { data: searchedPhimItem } = useQuery({
-    queryKey: ["searchedPhimItem", resolvedTmdbId, finalTmdbData?.title],
+    queryKey: ["searchedPhimItem", resolvedTmdbId, finalTmdbData?.title, mediaType === 'tv' ? currentSeason : 1],
     queryFn: async () => {
       if (!finalTmdbData) return null;
       const title = finalTmdbData.title || finalTmdbData.name;
       const originalTitle = finalTmdbData.original_title || finalTmdbData.original_name;
       if (!title && !originalTitle) return null;
 
-      const keyword = title || originalTitle;
-      const results = await fetchSearch(keyword);
+      let results: any[] = [];
+      const baseKeyword = title || originalTitle;
+
+      if (mediaType === 'tv' && currentSeason > 1) {
+        // Search specific season titles (e.g. "Dr. STONE Season 3", "Dr. STONE Phần 3")
+        const seasonQueries = [
+          `${baseKeyword} Phần ${currentSeason}`,
+          `${baseKeyword} Season ${currentSeason}`,
+          `${baseKeyword} Part ${currentSeason}`,
+          baseKeyword
+        ];
+        for (const q of seasonQueries) {
+          const res = await fetchSearch(q).catch(() => []);
+          if (res && res.length > 0) {
+            results.push(...res);
+          }
+        }
+      } else {
+        results = await fetchSearch(baseKeyword).catch(() => []);
+      }
+
       if (!results || results.length === 0) return null;
 
-      // Filter out virtual TMDB-only items
-      const localResults = results.filter((item: any) => !item.isTmdbOnly);
+      // Deduplicate results by slug
+      const uniqueMap = new Map();
+      results.forEach(item => {
+        if (item && item.slug && !uniqueMap.has(item.slug)) {
+          uniqueMap.set(item.slug, item);
+        }
+      });
+      const localResults = Array.from(uniqueMap.values()).filter((item: any) => !item.isTmdbOnly);
       if (localResults.length === 0) return null;
 
       const tmdbInfo = {
@@ -193,7 +218,15 @@ export const useMovieDetail = (rawSlug: string) => {
       };
 
       const scored = localResults.map((item: any) => {
-        const score = computeMatchScore(item, tmdbInfo);
+        let score = computeMatchScore(item, tmdbInfo);
+        // Bonus for matching specific TV Season
+        if (mediaType === 'tv' && currentSeason > 1) {
+          const itemText = (cleanString(item.name || '') + ' ' + cleanString(item.slug || '')).toLowerCase();
+          const sPattern = new RegExp(`(phan|season|part|ss)\\s*0*${currentSeason}\\b`, 'i');
+          if (sPattern.test(itemText)) {
+            score += 150;
+          }
+        }
         return { item, score };
       });
 

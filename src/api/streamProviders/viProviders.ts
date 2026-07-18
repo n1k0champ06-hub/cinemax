@@ -530,7 +530,9 @@ async function fetchFromHollysheeshApi(query: StreamQuery): Promise<StreamItem[]
     const year = query.year || 0;
     const slug = query.viSlug || '';
 
-    const streamsUrl = `${proxyBase}?title=${encodeURIComponent(title)}&titleVi=${encodeURIComponent(titleVi)}&year=${year}&episode=${targetEpisode}&slug=${encodeURIComponent(slug)}`;
+    const targetSeason = query.type === 'movie' ? 1 : query.season || 1;
+    const tmdbId = query.tmdbId || '';
+    const streamsUrl = `${proxyBase}?title=${encodeURIComponent(title)}&titleVi=${encodeURIComponent(titleVi)}&year=${year}&episode=${targetEpisode}&season=${targetSeason}&tmdbId=${encodeURIComponent(tmdbId)}&slug=${encodeURIComponent(slug)}`;
     const res = await fetchWithTimeout(streamsUrl, 4000).catch(() => null);
     if (!res || !res.ok) return [];
 
