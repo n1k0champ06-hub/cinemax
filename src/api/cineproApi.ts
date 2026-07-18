@@ -211,17 +211,15 @@ const VI_CDN_PATTERNS = [
 ];
 
 export function buildProxiedM3u8Url(streamUrl: string, referer?: string | null): string {
+  if (!streamUrl) return '';
   const params = new URLSearchParams({ url: streamUrl });
   if (referer) params.set('referer', referer);
 
-  // KKPhim/OPhim/Xem20/NguonC: Phát trực tiếp trên trình duyệt (bypass proxy block)
-  // Các CDN này cấu hình CORS Allow-Origin: * nên trình duyệt chơi trực tiếp rất mượt mà
-  const isViCdn = VI_CDN_PATTERNS.some(p => streamUrl.includes(p) || (referer || '').includes(p));
-  if (isViCdn) {
-    return streamUrl;
-  }
+  const backendUrl =
+    import.meta.env.VITE_BACKEND_URL && import.meta.env.VITE_BACKEND_URL.startsWith('http')
+      ? import.meta.env.VITE_BACKEND_URL
+      : 'https://hollysheesh-bridge.onrender.com';
 
-  // Các nguồn khác: dùng Cloudflare Worker proxy (ad-filter tích hợp)
-  const base = typeof window !== 'undefined' ? '' : WORKER_URL;
-  return `${base}/api/m3u8-proxy?${params.toString()}`;
+  const base = backendUrl.endsWith('/') ? backendUrl.slice(0, -1) : backendUrl;
+  return `${base}/proxy/m3u8?${params.toString()}`;
 }

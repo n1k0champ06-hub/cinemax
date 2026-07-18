@@ -199,7 +199,7 @@ async function handleM3u8Proxy(req, res, searchParams) {
     const baseUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
     const selfBase = `https://hollysheesh-bridge.onrender.com/proxy/m3u8`;
 
-    const adPatterns = /shbet|888bet|88bet|79bet|789bet|jun88|f8bet|hi88|new88|okvip|bk8|nhacai|cobac|casino|quangcao|banner|intro/i;
+    const adPatterns = /9922|9922com|shbet|888bet|88bet|79bet|789bet|jun88|f8bet|hi88|new88|okvip|bk8|nhacai|cobac|casino|quangcao|banner|intro|slot|game68|sunwin|go88|baccarat/i;
     const rawLines = text.split('\n');
     const filteredLines = [];
 
