@@ -1022,10 +1022,8 @@ export const MovieDetail: React.FC<{
   const currentServer = currentServers[selectedServerId] || currentServers[0];
   const fallbackRawEpList = currentServer?.server_data || [];
   
-  // Use server episodes if TV to align with player's episodes list
-  const baseEpList = isTv
-    ? (fallbackRawEpList.length > 0 ? fallbackRawEpList : (seasonData?.episodes || []))
-    : fallbackRawEpList;
+  // Only display actual available episodes from the streaming provider
+  const baseEpList = fallbackRawEpList;
 
   const epList = searchEp ? baseEpList.filter((ep: any) => {
     const epName = ep.episode_number ? `${ep.episode_number}` : ep.name;
@@ -1923,8 +1921,9 @@ export const MovieDetail: React.FC<{
                         </div>
                       )}
                       {(epList.length === 0 && !isFetchingTmdbSeason) && (
-                        <div className="w-full text-center py-6 text-gray-500 text-sm">
-                           Không có tập nào cho phim này.
+                        <div className="w-full text-center py-8 px-4 bg-white/[0.02] border border-white/5 rounded-2xl my-4">
+                           <p className="text-sm font-bold text-gray-300">Mùa {currentSeason} hiện chưa được phát hành hoặc chưa có sẵn trên các nguồn phát.</p>
+                           <p className="text-xs text-gray-500 mt-1">Hệ thống sẽ tự động cập nhật ngay khi nhà cung cấp phát sóng bản Vietsub / Thuyết minh mới nhất.</p>
                         </div>
                       )}
                     </div>
