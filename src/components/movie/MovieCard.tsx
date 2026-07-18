@@ -75,6 +75,8 @@ export const MovieCard = React.memo(({ movie, onSelect, isTop10, idx, progressDa
 
   const enDetails = passedEnDetails || fetchedEnDetails || (cachedData as any);
 
+  const resolvedDisplayName = enDetails?.title || enDetails?.name || displayName;
+
   const rawPoster = movie?.tmdb?.poster_path ? (movie.tmdb.poster_path?.startsWith('http') ? movie.tmdb.poster_path : `https://image.tmdb.org/t/p/w500/${movie.tmdb.poster_path?.split('/').pop()}`) : movie.poster_url;
   const rawThumb = movie?.tmdb?.backdrop_path ? (movie.tmdb.backdrop_path?.startsWith('http') ? movie.tmdb.backdrop_path : `https://image.tmdb.org/t/p/w500/${movie.tmdb.backdrop_path?.split('/').pop()}`) : (movie.thumb_url || movie.poster_url);
   
