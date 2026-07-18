@@ -122,6 +122,19 @@ export const MovieDetail: React.FC<{
   onClose,
   onSelect,
 }) => {
+  // Extract season early from slug or URL params before calling hook
+  const _isTmdbSlugEarly = slug.startsWith('tmdb-');
+  const _slugPartsEarly = _isTmdbSlugEarly ? slug.split('-') : [];
+  const _urlSeasonFromSlug = _slugPartsEarly.length > 3 ? parseInt(_slugPartsEarly[3]) : null;
+  const _urlSeasonFromParams = (() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const s = p.get('season');
+      return s ? Number(s) : null;
+    } catch { return null; }
+  })();
+  const initialSeason = _urlSeasonFromSlug || _urlSeasonFromParams || 1;
+
   const {
     data, isLoading, isFetching,
     actorsData, imdbRating, metacriticScore, trailerYoutubeId, finalTmdbData, imdbApiData,
@@ -130,7 +143,7 @@ export const MovieDetail: React.FC<{
     isPlaying, setIsPlaying,
     inList, handleToggleList,
     servers, selectedServerId, setSelectedServerId
-  } = useMovieDetail(slug);
+  } = useMovieDetail(slug, initialSeason);
 
   // Determine media type from slug or TMDB data
   const filteredSeasons = finalTmdbData?.seasons ? finalTmdbData.seasons.filter((s: any) => s.season_number > 0) : [];

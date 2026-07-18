@@ -15,7 +15,7 @@ const cleanSearchQuery = (str: string): string => {
     .trim();
 };
 
-export const useMovieDetail = (rawSlug: string) => {
+export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
   const queryClient = useQueryClient();
 
   const slug = rawSlug.replace(/^resolved-/, '');
