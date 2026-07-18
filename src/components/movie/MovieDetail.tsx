@@ -1035,8 +1035,12 @@ export const MovieDetail: React.FC<{
   const currentServer = currentServers[selectedServerId] || currentServers[0];
   const fallbackRawEpList = currentServer?.server_data || [];
   
-  // Only display actual available episodes from the streaming provider
-  const baseEpList = fallbackRawEpList;
+  // Use server episode list if available (actual episodes from provider).
+  // If the selected server has no server_data (e.g. Hollysheesh which only provides stream URLs),
+  // fall back to TMDB season episodes so the UI episode list stays visible.
+  const baseEpList = isTv
+    ? (fallbackRawEpList.length > 0 ? fallbackRawEpList : (seasonData?.episodes || []))
+    : fallbackRawEpList;
 
   const epList = searchEp ? baseEpList.filter((ep: any) => {
     const epName = ep.episode_number ? `${ep.episode_number}` : ep.name;
