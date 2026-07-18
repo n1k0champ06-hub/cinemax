@@ -65,20 +65,35 @@ export const SearchPage = ({
     queryKey: ["local_search", debouncedKeyword, isAiSearch],
     queryFn: async () => {
       if (isAiSearch) {
-        const res = await fetch(`/api/admin/scraper/semantic-search?q=${encodeURIComponent(debouncedKeyword)}`);
-        if (!res.ok) throw new Error("Lỗi gọi API tìm kiếm AI");
-        const data = await res.json();
-        return (data.results || []).map((m: any) => ({
-          name: m.title,
-          origin_name: m.originTitle,
-          slug: m.slug,
-          thumb_url: m.thumbUrl,
-          poster_url: m.posterUrl,
-          type: m.type,
-          status: m.status,
-          year: m.year,
-          score: m.score
-        }));
+        try {
+          const backendUrl =
+            import.meta.env.VITE_BACKEND_URL && import.meta.env.VITE_BACKEND_URL.startsWith('http')
+              ? import.meta.env.VITE_BACKEND_URL
+              : '';
+          const searchApiUrl = backendUrl
+            ? `${backendUrl}/api/admin/scraper/semantic-search?q=${encodeURIComponent(debouncedKeyword)}`
+            : `/api/admin/scraper/semantic-search?q=${encodeURIComponent(debouncedKeyword)}`;
+
+          const res = await fetch(searchApiUrl);
+          if (!res.ok) throw new Error("Lỗi gọi API tìm kiếm AI");
+          const data = await res.json();
+          const mapped = (data.results || []).map((m: any) => ({
+            name: m.title || m.name,
+            origin_name: m.originTitle || m.origin_name,
+            slug: m.slug,
+            thumb_url: m.thumbUrl || m.thumb_url,
+            poster_url: m.posterUrl || m.poster_url,
+            type: m.type,
+            status: m.status,
+            year: m.year,
+            score: m.score
+          }));
+          if (mapped.length > 0) return mapped;
+        } catch (err) {
+          console.warn("[AI Search] AI search failed or empty, falling back to standard search:", err);
+        }
+        // Fallback to standard search if AI search returned 0 items or errored out
+        return fetchSearch(debouncedKeyword);
       }
       return fetchSearch(debouncedKeyword);
     },

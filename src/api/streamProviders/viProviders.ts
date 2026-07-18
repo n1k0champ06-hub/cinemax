@@ -346,8 +346,8 @@ async function fetchFromVietnameseApi(
 
       const labelPrefix = `${providerLabel} · ${serverName}`;
 
-      // Add HLS stream if available
-      if (activeEp.link_m3u8 && String(activeEp.link_m3u8).startsWith('http')) {
+      // Add HLS stream if available (skip NguonC HLS — không ổn định, chỉ giữ embed)
+      if (providerId !== 'nguonc' && activeEp.link_m3u8 && String(activeEp.link_m3u8).startsWith('http')) {
         const rawUrl = activeEp.link_m3u8;
         let referer = '';
         if (providerId === 'ophim') referer = 'https://ophim1.com/';
@@ -445,10 +445,10 @@ async function fetchFromXem20Api(query: StreamQuery): Promise<StreamItem[]> {
     
     // 1. Search
     const searchUrl = `${proxyBase}?action=search&keyword=${encodeURIComponent(query.titleVi || query.title)}`;
-    const searchRes = await fetchWithTimeout(searchUrl, 10000);
-    if (!searchRes.ok) return [];
-    const searchData = await searchRes.json();
-    if (!searchData.items || searchData.items.length === 0) return [];
+    const searchRes = await fetchWithTimeout(searchUrl, 3000).catch(() => null);
+    if (!searchRes || !searchRes.ok) return [];
+    const searchData = await searchRes.json().catch(() => ({}));
+    if (!searchData || !searchData.items || searchData.items.length === 0) return [];
 
     const bestSlug = getBestSlugMatch(
       searchData.items, 
@@ -464,10 +464,10 @@ async function fetchFromXem20Api(query: StreamQuery): Promise<StreamItem[]> {
 
     // 2. Get episodes
     const epUrl = `${proxyBase}?action=episodes&slug=${encodeURIComponent(bestSlug)}`;
-    const epRes = await fetchWithTimeout(epUrl, 10000);
-    if (!epRes.ok) return [];
-    const epData = await epRes.json();
-    if (!epData.episodes || epData.episodes.length === 0) return [];
+    const epRes = await fetchWithTimeout(epUrl, 3000).catch(() => null);
+    if (!epRes || !epRes.ok) return [];
+    const epData = await epRes.json().catch(() => ({}));
+    if (!epData || !epData.episodes || epData.episodes.length === 0) return [];
 
     let targetEpSlug = null;
     let targetEpName = String(targetEpisode);
@@ -487,11 +487,11 @@ async function fetchFromXem20Api(query: StreamQuery): Promise<StreamItem[]> {
 
     // 3. Get stream
     const streamUrl = `${proxyBase}?action=stream&epSlug=${encodeURIComponent(targetEpSlug)}`;
-    const streamRes = await fetchWithTimeout(streamUrl, 15000);
-    if (!streamRes.ok) return [];
-    const streamData = await streamRes.json();
+    const streamRes = await fetchWithTimeout(streamUrl, 4000).catch(() => null);
+    if (!streamRes || !streamRes.ok) return [];
+    const streamData = await streamRes.json().catch(() => ({}));
     
-    if (!streamData.m3u8Url) return [];
+    if (!streamData || !streamData.m3u8Url) return [];
 
     const rawM3u8Url = streamData.m3u8Url;
     const url = buildProxiedM3u8Url(rawM3u8Url, 'https://xem20.net/');
@@ -512,8 +512,7 @@ async function fetchFromXem20Api(query: StreamQuery): Promise<StreamItem[]> {
     streams.push({ ...item, score: computeScore(item) });
 
     return streams;
-  } catch (err) {
-    console.error(`[Xem20] API query failed:`, err);
+  } catch (_) {
     return [];
   }
 }
@@ -532,11 +531,11 @@ async function fetchFromHollysheeshApi(query: StreamQuery): Promise<StreamItem[]
     const slug = query.viSlug || '';
 
     const streamsUrl = `${proxyBase}?title=${encodeURIComponent(title)}&titleVi=${encodeURIComponent(titleVi)}&year=${year}&episode=${targetEpisode}&slug=${encodeURIComponent(slug)}`;
-    const res = await fetchWithTimeout(streamsUrl, 8000);
-    if (!res.ok) return [];
+    const res = await fetchWithTimeout(streamsUrl, 4000).catch(() => null);
+    if (!res || !res.ok) return [];
 
-    const data = await res.json();
-    if (!data.streams || data.streams.length === 0) return [];
+    const data = await res.json().catch(() => ({}));
+    if (!data || !data.streams || data.streams.length === 0) return [];
 
     const streams: StreamItem[] = data.streams.map((s: any) => {
       const isEmbed = s.streamUrl.includes('embed') || s.streamUrl.includes('iframe') || s.streamUrl.includes('streamc.xyz');
@@ -575,8 +574,7 @@ async function fetchFromHollysheeshApi(query: StreamQuery): Promise<StreamItem[]
     });
 
     return streams;
-  } catch (err) {
-    console.error(`[Hollysheesh] API query failed:`, err);
+  } catch (_) {
     return [];
   }
 }

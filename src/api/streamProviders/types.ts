@@ -154,7 +154,8 @@ export function computeScore(item: Omit<StreamItem, 'score'>): number {
   else if (item.provider === 'allmanga') score = 92; // Dedicated anime stream provider
   else if (item.provider === 'kkphim' && item.type === 'hls') score = 99; // KKPhim HLS (Preferred over OPhim/NguonC)
   else if (['ophim', 'nguonc'].includes(item.provider) && item.type === 'hls') score = 98; // OPhim/NguonC HLS
-  else if (['ophim', 'kkphim', 'nguonc'].includes(item.provider) && item.type === 'embed') score = 75; // Vietnamese embed sources
+  else if (item.provider === 'nguonc' && item.type === 'embed') score = 90;  // NguonC embed (HLS tắt, đây là nguồn chính)
+  else if (['ophim', 'kkphim'].includes(item.provider) && item.type === 'embed') score = 75; // Vietnamese embed sources
   else if (['vidnest', 'vidnest_animepahe'].includes(item.provider)) score = 48; // Demoted to Community (Ad Injection)
   else if (['vidsrc_to', '2embed', 'vidsrc_embed_ru', 'vidsrc_embed_su', 'vidsrc_me_ru', 'vidsrc_me_su', 'vidsrc_dash_me_ru', 'vidsrc_dash_me_su', 'vsrc_su'].includes(item.provider)) score = SCORE.EMBED_OK;
   else if (item.provider === 'cinemaos') score = SCORE.EMBED_SLOW;

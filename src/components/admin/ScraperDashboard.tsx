@@ -1,26 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Play, 
-  Square, 
-  Database, 
-  Server, 
-  Terminal, 
-  ArrowLeft, 
-  Activity, 
-  AlertCircle, 
-  Loader2, 
-  Layers, 
-  FileText,
-  Cpu,
-  Hash,
-  Type
-} from 'lucide-react';
+import { Settings, Play, Square, Loader2, Database, Terminal, ChevronDown, ChevronUp, Activity } from 'lucide-react';
 
 interface ScraperStats {
   connected: boolean;
   moviesCount: number;
   streamsCount: number;
-  cineproConnected?: boolean;
+  resolverQueue: number;
+  resolverCached: number;
   error?: string;
 }
 
@@ -33,21 +19,73 @@ interface ScraperStatus {
 }
 
 export default function ScraperDashboard() {
-  const [stats, setStats] = useState<ScraperStats>({ connected: false, moviesCount: 0, streamsCount: 0 });
+  const [stats, setStats] = useState<ScraperStats>({ connected: false, moviesCount: 0, streamsCount: 0, resolverQueue: 0, resolverCached: 0 });
   const [status, setStatus] = useState<ScraperStatus>({ isRunning: false, currentTask: 'Idle', processed: 0, total: 0, logs: [] });
   const [source, setSource] = useState<'kkphim' | 'ophim' | 'nguonc'>('kkphim');
   const [limitPages, setLimitPages] = useState<number>(2);
   const [customUrl, setCustomUrl] = useState<string>('https://phimapi.com');
   const [syncAll, setSyncAll] = useState<boolean>(false);
   
-  // Custom manual python job form
+  const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
+  const [showLogs, setShowLogs] = useState<boolean>(false);
+  
   const [customTmdbId, setCustomTmdbId] = useState<string>('');
   const [customTitle, setCustomTitle] = useState<string>('');
+
+  const [resolverTmdbId, setResolverTmdbId] = useState<string>('');
+  const [resolverType, setResolverType] = useState<'movie' | 'tv'>('movie');
+  const [resolverSeason, setResolverSeason] = useState<number>(1);
+  const [resolverEpisode, setResolverEpisode] = useState<number>(1);
   
   const [loading, setLoading] = useState<boolean>(false);
+  const [continuousMining, setContinuousMining] = useState<boolean>(false);
   const logsContainerRef = useRef<HTMLDivElement | null>(null);
+  const [focusMode, setFocusMode] = useState<boolean>(false);
+  useEffect(() => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'Enter') {
+        e.preventDefault();
+        const newFocusMode = !focusMode;
+        setFocusMode(newFocusMode);
+        try {
+          if (newFocusMode) {
+            if (document.documentElement.requestFullscreen) {
+              await document.documentElement.requestFullscreen();
+            }
+          } else {
+            if (document.fullscreenElement) {
+              await document.exitFullscreen();
+            }
+          }
+        } catch (err) {}
+        try {
+          await fetch(`http://localhost:3001/api/admin/resolver/focus?active=${newFocusMode}`, { method: 'POST' });
+        } catch (err) {}
+      }
+      if (e.key === ' ' && focusMode) {
+        const activeEl = document.activeElement;
+        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) return;
+        e.preventDefault();
+        handleToggleAllMining();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [focusMode, status.isRunning, continuousMining]);
 
-  // Poll database statistics and scraper status
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isFullscreen = !!document.fullscreenElement;
+      if (!isFullscreen && focusMode) {
+        setFocusMode(false);
+        fetch('http://localhost:3001/api/admin/resolver/focus?active=false', { method: 'POST' }).catch(() => {});
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, [focusMode]);
+
+
   const fetchStats = async () => {
     try {
       const res = await fetch('http://localhost:3001/api/admin/scraper/stats');
@@ -67,82 +105,37 @@ export default function ScraperDashboard() {
         const data = await res.json();
         setStatus(data);
       }
+      
+      const contRes = await fetch('http://localhost:3001/api/admin/resolver/continuous/status');
+      if (contRes.ok) {
+        const contData = await contRes.json();
+        setContinuousMining(contData.active);
+      }
     } catch (e) {
       console.error("Failed to fetch scraper status:", e);
     }
   };
 
-  useEffect(() => {
-    fetchStats();
-    fetchStatus();
-
-    // Poll status frequently when running, less frequently when idle
-    const interval = setInterval(() => {
-      fetchStatus();
+  const handleToggleAllMining = async () => {
+    setLoading(true);
+    try {
+      const currentlyActive = status.isRunning || continuousMining;
+      if (currentlyActive) {
+        await fetch('http://localhost:3001/api/admin/scraper/stop', { method: 'POST' });
+        if (continuousMining) {
+          await fetch('http://localhost:3001/api/admin/resolver/continuous/toggle', { method: 'POST' });
+        }
+      } else {
+        const limit = syncAll ? 9999 : limitPages;
+        await fetch(`http://localhost:3001/api/admin/scraper/start?source=all&limit=${limit}`, { method: 'POST' });
+        if (!continuousMining) {
+          await fetch('http://localhost:3001/api/admin/resolver/continuous/toggle', { method: 'POST' });
+        }
+      }
+      await fetchStatus();
       fetchStats();
-    }, status.isRunning ? 1000 : 3000);
-
-    return () => clearInterval(interval);
-  }, [status.isRunning]);
-
-  // Auto-scroll logs to bottom
-  useEffect(() => {
-    if (logsContainerRef.current) {
-      logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
-    }
-  }, [status.logs]);
-
-  const handleStartMining = async () => {
-    setLoading(true);
-    try {
-      const limit = syncAll ? 9999 : limitPages;
-      const res = await fetch(`http://localhost:3001/api/admin/scraper/start?source=${source}&limit=${limit}&customUrl=${encodeURIComponent(customUrl)}`, {
-        method: 'POST'
-      });
-      if (res.ok) {
-        await fetchStatus();
-      } else {
-        const errData = await res.json();
-        alert(errData.error || "Không thể khởi động máy đào");
-      }
-    } catch (e) {
-      alert("Lỗi kết nối API Server");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleStartAllMining = async () => {
-    setLoading(true);
-    try {
-      const limit = syncAll ? 9999 : limitPages;
-      const res = await fetch(`http://localhost:3001/api/admin/scraper/start?source=all&limit=${limit}`, {
-        method: 'POST'
-      });
-      if (res.ok) {
-        await fetchStatus();
-      } else {
-        const errData = await res.json();
-        alert(errData.error || "Không thể khởi động cào 3 nguồn");
-      }
-    } catch (e) {
-      alert("Lỗi kết nối API Server");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleStopMining = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('http://localhost:3001/api/admin/scraper/stop', {
-        method: 'POST'
-      });
-      if (res.ok) {
-        await fetchStatus();
-      }
-    } catch (e) {
-      alert("Lỗi kết nối API Server");
+    } catch (err) {
+      console.error("Lỗi điều khiển máy đào:", err);
     } finally {
       setLoading(false);
     }
@@ -150,385 +143,420 @@ export default function ScraperDashboard() {
 
   const handleRunPythonScraper = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customTmdbId) {
-      alert("Vui lòng nhập TMDB ID!");
-      return;
-    }
-    
+    if (!customTmdbId) return;
     setLoading(true);
-    let title = customTitle.trim();
-
     try {
-      if (!title) {
-        // Automatically fetch title from TMDB API via local proxy
-        try {
-          // Try movie details first
-          let resTmdb = await fetch(`/tmdb/movie/${customTmdbId}?language=vi`);
-          if (resTmdb.ok) {
-            let dataTmdb = await resTmdb.json();
-            if (dataTmdb && (dataTmdb.title || dataTmdb.name)) {
-              title = dataTmdb.title || dataTmdb.name;
-            }
-          }
-          
-          // Try tv show details if movie failed/returned no title
-          if (!title) {
-            let resTmdbTv = await fetch(`/tmdb/tv/${customTmdbId}?language=vi`);
-            if (resTmdbTv.ok) {
-              let dataTmdbTv = await resTmdbTv.json();
-              if (dataTmdbTv && (dataTmdbTv.title || dataTmdbTv.name)) {
-                title = dataTmdbTv.title || dataTmdbTv.name;
-              }
-            }
-          }
-        } catch (tmdbErr) {
-          console.error("Failed to auto-fetch TMDB details:", tmdbErr);
-        }
-
-        if (!title) {
-          alert("Không thể tìm thấy tiêu đề phim tự động từ TMDB ID này. Vui lòng điền tiêu đề thủ công!");
-          setLoading(false);
-          return;
-        }
-      }
-
-      const res = await fetch(`http://localhost:3001/api/admin/scraper/start?source=python&tmdb_id=${customTmdbId}&title=${encodeURIComponent(title)}`, {
+      let title = customTitle;
+      const res = await fetch(`http://localhost:3001/api/admin/scraper/start?source=python&tmdb_id=${customTmdbId}&title=${encodeURIComponent(title || 'Custom Phim')}`, {
         method: 'POST'
       });
       if (res.ok) {
-        alert(`Đã gửi yêu cầu chạy kịch bản Python Scrapling cho phim: ${title}`);
         setCustomTmdbId('');
         setCustomTitle('');
         await fetchStatus();
       }
     } catch (err) {
-      alert("Lỗi gọi kịch bản Python.");
+      console.error("Lỗi gọi kịch bản Python:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-[#000000] text-zinc-100 p-4 sm:p-8 font-sans selection:bg-zinc-800 selection:text-white">
-      {/* Header */}
-      <div className="max-w-6xl mx-auto flex items-center justify-between mb-8 pb-5 border-b border-zinc-900">
-        <div className="flex items-center gap-4">
-          <div>
-            <h1 className="text-base sm:text-lg font-black tracking-widest text-white flex items-center gap-2 font-mono">
-              <Server className="text-zinc-500" size={18} />
-              CINEMAX MINER
-            </h1>
+  const handleRunResolverManual = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resolverTmdbId) return;
+    setLoading(true);
+    try {
+      const res = await fetch('http://localhost:3001/api/resolver/queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tmdbId: resolverTmdbId,
+          type: resolverType,
+          season: resolverType === 'tv' ? resolverSeason : 1,
+          episode: resolverType === 'tv' ? resolverEpisode : 1
+        })
+      });
+      if (res.ok) {
+        setResolverTmdbId('');
+        fetchStats();
+        await fetchStatus();
+      }
+    } catch (err) {
+      console.error("Lỗi kết nối API Server:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStats();
+    fetchStatus();
+    const interval = setInterval(() => {
+      fetchStatus();
+      fetchStats();
+    }, (status.isRunning || continuousMining) ? 1500 : 3000);
+    return () => clearInterval(interval);
+  }, [status.isRunning, continuousMining]);
+
+  useEffect(() => {
+    if (logsContainerRef.current) {
+      logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
+    }
+  }, [status.logs, showLogs]);
+
+  const activeAll = status.isRunning || continuousMining;
+
+  
+  if (focusMode) {
+    return (
+      <div className="fixed inset-0 bg-black z-50 flex flex-col items-center justify-between p-12 font-sans select-none overflow-hidden">
+        <div className="absolute inset-0 bg-radial-gradient flex items-center justify-center pointer-events-none opacity-40">
+          <div className={`w-[500px] h-[500px] rounded-full filter blur-[120px] transition-all duration-1000 ${activeAll ? 'bg-emerald-500/10' : 'bg-zinc-800/10'}`} />
+        </div>
+        <div className="w-full max-w-4xl flex items-center justify-between border-b border-zinc-950 pb-5 z-10">
+          <div className="flex items-center gap-2">
+            <span className={`h-1.5 w-1.5 rounded-full ${stats.connected ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 'bg-red-500'}`} />
+            <h1 className="text-[10px] font-bold tracking-[0.25em] text-zinc-500 uppercase font-mono">CINEMAX CORE</h1>
+          </div>
+          <div className="flex items-center gap-2 text-[10px] font-bold tracking-[0.2em] text-emerald-500 font-mono animate-pulse">
+            <Activity size={10} />
+            <span>FOCUS MODE ACTIVE (100% BOOSTED - 12 THREADS)</span>
           </div>
         </div>
-        
-        {/* Status indicators */}
-        <div className="flex items-center gap-2.5">
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold font-mono transition-all duration-300 ${
-            stats.cineproConnected 
-              ? 'bg-emerald-950/20 border-emerald-900/50 text-emerald-400' 
-              : 'bg-zinc-950 border-zinc-900 text-zinc-500'
-          }`}>
-            <Cpu size={12} className={stats.cineproConnected ? 'animate-pulse' : ''} />
-            <span>CINEPRO: {stats.cineproConnected ? 'CONNECTED' : 'OFFLINE'}</span>
+        <div className="flex flex-col items-center justify-center z-10">
+          <button
+            onClick={handleToggleAllMining}
+            disabled={loading || !stats.connected}
+            className={`relative h-56 w-56 rounded-full border flex flex-col items-center justify-center gap-4 transition-all duration-1000 cursor-pointer active:scale-95 disabled:opacity-50 ${activeAll ? 'bg-black border-emerald-500 text-emerald-400 shadow-[0_0_80px_rgba(16,185,129,0.25)] scale-105' : 'bg-black border-zinc-900 text-zinc-600 hover:border-zinc-850 hover:text-zinc-400'}`}
+          >
+            <div className={`absolute inset-3.5 rounded-full border transition-all duration-1000 ${activeAll ? 'border-emerald-500/20 animate-ping' : 'border-zinc-950'}`} />
+            {loading ? (
+              <Loader2 size={36} className="animate-spin text-zinc-400" />
+            ) : activeAll ? (
+              <Activity size={42} className="text-emerald-400 animate-pulse" />
+            ) : (
+              <Play size={42} fill="currentColor" className="text-zinc-700 hover:text-zinc-400 transition-colors" />
+            )}
+            <div className="flex flex-col items-center gap-0.5">
+              <span className="text-[11px] font-black tracking-[0.3em] font-mono">{activeAll ? 'BOOST MINING' : 'READY TO MINING'}</span>
+              <span className="text-[9px] font-bold text-zinc-650 font-mono tracking-widest uppercase">{activeAll ? 'Luồng bẻ khóa: 12/12' : 'Nhấn SPACE để bắt đầu'}</span>
+            </div>
+          </button>
+          <div className="mt-8 text-center space-y-1">
+            <div className="text-[10px] font-bold text-zinc-550 font-mono uppercase tracking-widest">{activeAll ? `Đang xử lý: ${status.currentTask}` : 'Trạng thái: Tạm dừng'}</div>
+            <div className="text-[9px] text-zinc-700 font-mono">Nhấn <span className="text-zinc-500 border border-zinc-900 px-1 py-0.5 rounded">Ctrl + Enter</span> để thoát</div>
           </div>
+        </div>
+        <div className="w-full max-w-4xl grid grid-cols-2 md:grid-cols-4 gap-8 py-5 border-t border-zinc-950 z-10 text-center md:text-left">
+          <div className="flex flex-col">
+            <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase font-mono">Phim Đã Cào</span>
+            <span className="text-2xl font-light text-zinc-100 mt-1.5 font-mono tracking-tight">{stats.moviesCount.toLocaleString()}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase font-mono">Tập Phim (Streams)</span>
+            <span className="text-2xl font-light text-zinc-100 mt-1.5 font-mono tracking-tight">{stats.streamsCount.toLocaleString()}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase font-mono">VidSrc Clean</span>
+            <span className="text-2xl font-light text-emerald-400 mt-1.5 font-mono tracking-tight">{stats.resolverCached}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase font-mono">Hàng Đợi</span>
+            <span className="text-2xl font-light text-amber-400 mt-1.5 font-mono tracking-tight">{stats.resolverQueue}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold font-mono transition-all duration-300 ${
-            stats.connected 
-              ? 'bg-emerald-950/20 border-emerald-900/50 text-emerald-400' 
-              : 'bg-red-950/20 border-red-900/50 text-red-400'
-          }`}>
-            <Database size={12} className={stats.connected ? 'animate-pulse' : ''} />
-            <span>DB: {stats.connected ? 'CONNECTED' : 'DISCONNECTED'}</span>
+  return (
+    <div className="min-h-screen bg-black text-zinc-400 p-6 sm:p-12 font-sans flex flex-col justify-between select-none">
+      
+      {/* Top Header & Complications stats */}
+      <div className="max-w-4xl mx-auto w-full flex flex-col gap-6">
+        <div className="flex items-center justify-between border-b border-zinc-950 pb-5">
+          <div className="flex items-center gap-2">
+            <span className={`h-1.5 w-1.5 rounded-full ${stats.connected ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 'bg-red-500'}`} />
+            <h1 className="text-[10px] font-bold tracking-[0.25em] text-zinc-500 uppercase font-mono">CINEMAX CORE</h1>
+          </div>
+          <span className="text-[10px] font-bold tracking-[0.2em] text-zinc-600 font-mono">MINER ENGINE v1.2</span>
+        </div>
+
+        {/* Apple watch complications design stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 py-2">
+          <div className="flex flex-col">
+            <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase font-mono">Phim Đã Cào</span>
+            <span className="text-xl font-light text-zinc-200 mt-1 font-mono tracking-tight">{stats.moviesCount.toLocaleString()}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase font-mono">Tập Phim (Streams)</span>
+            <span className="text-xl font-light text-zinc-200 mt-1 font-mono tracking-tight">{stats.streamsCount.toLocaleString()}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase font-mono">VidSrc Clean</span>
+            <span className="text-xl font-light text-emerald-500 mt-1 font-mono tracking-tight">{stats.resolverCached}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase font-mono">Hàng Đợi</span>
+            <span className="text-xl font-light text-amber-500 mt-1 font-mono tracking-tight">{stats.resolverQueue}</span>
           </div>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Left Column Controls */}
-        <div className="lg:col-span-1 space-y-6">
-          
-          {/* Card: Stats */}
-          <div className="bg-black border border-zinc-900 rounded-xl p-5">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-[#030303] border border-zinc-900 rounded-lg p-4 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-zinc-950 flex items-center justify-center border border-zinc-900">
-                  <Layers size={14} className="text-violet-400" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Movies</span>
-                  <span className="text-lg font-black text-white font-mono">{stats.moviesCount}</span>
-                </div>
-              </div>
-              <div className="bg-[#030303] border border-zinc-900 rounded-lg p-4 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-zinc-950 flex items-center justify-center border border-zinc-900">
-                  <FileText size={14} className="text-emerald-400" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Streams</span>
-                  <span className="text-lg font-black text-white font-mono">{stats.streamsCount}</span>
-                </div>
-              </div>
+      {/* Center: Apple-style Power Toggle Button */}
+      <div className="max-w-4xl mx-auto w-full flex flex-col items-center justify-center py-8">
+        <button
+          onClick={handleToggleAllMining}
+          disabled={loading || !stats.connected}
+          className={`relative h-48 w-48 rounded-full border flex flex-col items-center justify-center gap-3 transition-all duration-700 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+            activeAll 
+              ? 'bg-black border-emerald-500 text-emerald-400 shadow-[0_0_55px_rgba(16,185,129,0.18)]' 
+              : 'bg-black border-zinc-900 text-zinc-600 hover:border-zinc-800 hover:text-zinc-400'
+          }`}
+        >
+          <div className={`absolute inset-2.5 rounded-full border transition-all duration-700 ${
+            activeAll ? 'border-emerald-500/20 animate-pulse' : 'border-zinc-950'
+          }`} />
+
+          {loading ? (
+            <Loader2 size={24} className="animate-spin text-zinc-400" />
+          ) : activeAll ? (
+            <div className="relative flex h-8 w-8 items-center justify-center">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-20"></span>
+              <Activity size={24} className="text-emerald-400 animate-pulse" />
             </div>
-            
-            {stats.error && (
-              <div className="mt-4 p-3 rounded-lg bg-amber-950/20 border border-amber-900/50 text-xs font-mono text-amber-400 flex items-start gap-2">
-                <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                <span>{stats.error}</span>
-              </div>
-            )}
+          ) : (
+            <Play size={24} fill="currentColor" className="text-zinc-700 hover:text-zinc-400 transition-colors" />
+          )}
+
+          <div className="flex flex-col items-center gap-0.5 mt-1">
+            <span className="text-[10px] font-black tracking-[0.25em] font-mono">
+              {activeAll ? 'RUNNING' : 'START MINING'}
+            </span>
+            <span className="text-[8px] font-bold text-zinc-600 font-mono tracking-wider uppercase">
+              {activeAll ? 'Đang chạy 24/7' : 'Kích hoạt máy đào'}
+            </span>
           </div>
+        </button>
 
-          {/* Card: Config Sync */}
-          <div className="bg-black border border-zinc-900 rounded-xl p-5 space-y-4">
-            {/* Source */}
-            <div className="flex flex-col gap-1.5">
+        {activeAll && (
+          <div className="mt-8 flex items-center gap-4 text-[9px] font-mono tracking-wider text-zinc-500">
+            <span className="flex items-center gap-1.5">
+              <span className="h-1 w-1 rounded-full bg-emerald-500 animate-ping" />
+              Đồng bộ VN: ON
+            </span>
+            <span className="h-2 w-px bg-zinc-900" />
+            <span className="flex items-center gap-1.5">
+              <span className="h-1 w-1 rounded-full bg-emerald-500 animate-ping" />
+              VidSrc 24/7: ON
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Collapsible Sections & Controls */}
+      <div className="max-w-4xl mx-auto w-full flex flex-col gap-4 border-t border-zinc-950 pt-5">
+        <div className="flex items-center justify-center gap-8">
+          <button
+            onClick={() => { setShowAdvanced(!showAdvanced); if (showLogs) setShowLogs(false); }}
+            className="flex items-center gap-1.5 text-[9px] font-bold tracking-widest uppercase text-zinc-500 hover:text-zinc-300 font-mono cursor-pointer transition-colors"
+          >
+            <Settings size={11} />
+            <span>Advanced Settings</span>
+            {showAdvanced ? <ChevronUp size={9} /> : <ChevronDown size={9} />}
+          </button>
+          
+          <button
+            onClick={() => { setShowLogs(!showLogs); if (showAdvanced) setShowAdvanced(false); }}
+            className="flex items-center gap-1.5 text-[9px] font-bold tracking-widest uppercase text-zinc-500 hover:text-zinc-300 font-mono cursor-pointer transition-colors"
+          >
+            <Terminal size={11} />
+            <span>System Logs</span>
+            {showLogs ? <ChevronUp size={9} /> : <ChevronDown size={9} />}
+          </button>
+        </div>
+
+        {showAdvanced && (
+          <div className="p-5 rounded-xl border border-zinc-950 bg-black grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
+            
+            {/* VN Sync Config */}
+            <div className="space-y-4">
+              <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest font-mono border-b border-zinc-950 pb-2">Đồng Bộ Nguồn Lẻ</h3>
               <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => {
-                    setSource('kkphim');
-                    setCustomUrl('https://phimapi.com');
-                  }}
-                  disabled={status.isRunning}
-                  className={`py-2 rounded-lg border text-xs font-bold font-mono tracking-wide transition-all ${
-                    source === 'kkphim' 
-                      ? 'bg-zinc-900 border-zinc-800 text-white' 
-                      : 'bg-black border-zinc-950 text-zinc-600 hover:text-zinc-400 hover:border-zinc-900 disabled:opacity-50'
-                  }`}
-                >
-                  KKPHIM
-                </button>
-                <button
-                  onClick={() => {
-                    setSource('ophim');
-                    setCustomUrl('https://ophim1.com');
-                  }}
-                  disabled={status.isRunning}
-                  className={`py-2 rounded-lg border text-xs font-bold font-mono tracking-wide transition-all ${
-                    source === 'ophim' 
-                      ? 'bg-zinc-900 border-zinc-800 text-white' 
-                      : 'bg-black border-zinc-950 text-zinc-600 hover:text-zinc-400 hover:border-zinc-900 disabled:opacity-50'
-                  }`}
-                >
-                  OPHIM
-                </button>
-                <button
-                  onClick={() => {
-                    setSource('nguonc');
-                    setCustomUrl('https://phim.nguonc.com/api');
-                  }}
-                  disabled={status.isRunning}
-                  className={`py-2 rounded-lg border text-xs font-bold font-mono tracking-wide transition-all ${
-                    source === 'nguonc' 
-                      ? 'bg-zinc-900 border-zinc-800 text-white' 
-                      : 'bg-black border-zinc-950 text-zinc-600 hover:text-zinc-400 hover:border-zinc-900 disabled:opacity-50'
-                  }`}
-                >
-                  NGUONC
-                </button>
-              </div>
-            </div>
-
-            {/* Custom URL */}
-            <div className="flex flex-col gap-1 bg-[#030303] border border-zinc-900 rounded-lg px-3.5 py-2">
-              <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider font-mono">API URL</span>
-              <input
-                type="text"
-                value={customUrl}
-                disabled={status.isRunning}
-                onChange={(e) => setCustomUrl(e.target.value)}
-                className="bg-transparent text-xs text-white focus:outline-none w-full font-mono mt-0.5"
-              />
-              <div className="flex flex-wrap gap-1 mt-1.5 pt-1 border-t border-zinc-950">
-                {(source === 'kkphim' 
-                  ? ['https://phimapi.com', 'https://phimapi.cc'] 
-                  : source === 'nguonc'
-                  ? ['https://phim.nguonc.com/api', 'https://nguonc.com/api']
-                  : ['https://ophim1.com', 'https://ophim1.cc', 'https://ophim10.cc', 'https://ophim17.cc', 'https://ophim.tv']
-                ).map((qUrl) => (
+                {(['kkphim', 'ophim', 'nguonc'] as const).map((src) => (
                   <button
-                    key={qUrl}
-                    type="button"
+                    key={src}
+                    onClick={() => {
+                      setSource(src);
+                      setCustomUrl(src === 'kkphim' ? 'https://phimapi.com' : src === 'nguonc' ? 'https://phim.nguonc.com/api' : 'https://ophim1.com');
+                    }}
                     disabled={status.isRunning}
-                    onClick={() => setCustomUrl(qUrl)}
-                    className="text-[9px] bg-black border border-zinc-900 hover:border-zinc-800 hover:text-white px-2 py-0.5 rounded text-zinc-500 font-mono transition-all disabled:opacity-50"
+                    className={`py-1.5 rounded-lg border text-[9px] font-bold font-mono tracking-wider transition-all cursor-pointer ${
+                      source === src 
+                        ? 'bg-zinc-900 border-zinc-800 text-zinc-100' 
+                        : 'bg-black border-zinc-950 text-zinc-600 hover:border-zinc-900 hover:text-zinc-400'
+                    }`}
                   >
-                    {qUrl.replace('https://', '')}
+                    {src.toUpperCase()}
                   </button>
                 ))}
               </div>
-            </div>
 
-            {/* Pages input */}
-            <div className="flex flex-col gap-2 bg-[#030303] border border-zinc-900 rounded-lg px-3.5 py-2">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider font-mono">Pages</span>
-                <input
-                  type={syncAll ? "text" : "number"}
-                  min={1}
-                  max={20}
-                  value={syncAll ? 'ALL' : limitPages}
-                  disabled={status.isRunning || syncAll}
-                  onChange={(e) => setLimitPages(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="bg-transparent text-right text-sm text-white font-bold font-mono focus:outline-none w-16 disabled:text-zinc-600"
-                />
-              </div>
-              <div className="flex items-center justify-between border-t border-zinc-950 pt-2">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono">Sync All</span>
-                <input
-                  type="checkbox"
-                  checked={syncAll}
-                  disabled={status.isRunning}
-                  onChange={(e) => setSyncAll(e.target.checked)}
-                  className="w-3.5 h-3.5 accent-emerald-500 bg-black border-zinc-900 rounded cursor-pointer disabled:opacity-50"
-                />
-              </div>
-            </div>
-
-            {/* Sync control button */}
-            <div>
-              {status.isRunning ? (
-                <button
-                  onClick={handleStopMining}
-                  disabled={loading}
-                  className="w-full bg-red-950/20 hover:bg-red-900/30 text-red-400 font-extrabold py-2.5 rounded-lg border border-red-900/50 transition-all flex items-center justify-center gap-2 cursor-pointer text-xs tracking-widest uppercase font-mono"
-                >
-                  {loading ? <Loader2 size={14} className="animate-spin" /> : <Square size={14} />}
-                  <span>STOP</span>
-                </button>
-              ) : (
-                <div className="space-y-2">
-                  <button
-                    onClick={handleStartMining}
-                    disabled={loading || !stats.connected}
-                    className="w-full bg-white hover:bg-zinc-200 text-black font-extrabold py-2.5 rounded-lg border border-white transition-all flex items-center justify-center gap-2 cursor-pointer text-xs tracking-widest uppercase font-mono disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {loading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} fill="currentColor" />}
-                    <span>START SYNC ({source.toUpperCase()})</span>
-                  </button>
-
-                  <button
-                    onClick={handleStartAllMining}
-                    disabled={loading || !stats.connected}
-                    className="w-full bg-emerald-950/20 hover:bg-emerald-900/30 text-emerald-400 font-extrabold py-2.5 rounded-lg border border-emerald-900/50 transition-all flex items-center justify-center gap-2 cursor-pointer text-xs tracking-widest uppercase font-mono disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {loading ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />}
-                    <span>CÀO CẢ 3 NGUỒN CÙNG LÚC</span>
-                  </button>
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between text-xs font-mono">
+                  <span className="text-zinc-600 font-bold uppercase tracking-wider text-[9px]">Giới hạn trang</span>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => setSyncAll(!syncAll)}
+                      className={`px-1.5 py-0.5 rounded border text-[8px] font-bold transition-all cursor-pointer ${
+                        syncAll ? 'bg-zinc-900 border-zinc-850 text-zinc-200' : 'bg-black border-zinc-950 text-zinc-600'
+                      }`}
+                    >
+                      TẤT CẢ
+                    </button>
+                    {!syncAll && (
+                      <input 
+                        type="number" 
+                        value={limitPages}
+                        onChange={(e) => setLimitPages(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-10 bg-black border border-zinc-950 rounded px-1 py-0.5 text-center text-zinc-300 font-mono focus:outline-none focus:border-zinc-850"
+                        min="1"
+                      />
+                    )}
+                  </div>
                 </div>
+
+                <div className="space-y-1">
+                  <span className="text-[8px] font-bold text-zinc-700 uppercase tracking-wider font-mono">Endpoint API</span>
+                  <input
+                    type="text"
+                    value={customUrl}
+                    onChange={(e) => setCustomUrl(e.target.value)}
+                    placeholder="URL máy chủ cào phim..."
+                    className="w-full bg-black border border-zinc-950 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-300 focus:outline-none focus:border-zinc-900"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* VidSrc Manual */}
+            <div className="space-y-4">
+              <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest font-mono border-b border-zinc-950 pb-2">Giải Mã Thủ Công VidSrc</h3>
+              <form onSubmit={handleRunResolverManual} className="space-y-3">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="TMDB ID"
+                    value={resolverTmdbId}
+                    onChange={(e) => setResolverTmdbId(e.target.value)}
+                    className="flex-1 bg-black border border-zinc-950 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-300 focus:outline-none focus:border-zinc-900"
+                  />
+                  <select
+                    value={resolverType}
+                    onChange={(e) => setResolverType(e.target.value as 'movie' | 'tv')}
+                    className="bg-black border border-zinc-950 rounded-lg px-2 py-1.5 text-xs font-mono text-zinc-500 focus:outline-none focus:border-zinc-900"
+                  >
+                    <option value="movie">Movie</option>
+                    <option value="tv">TV</option>
+                  </select>
+                </div>
+
+                {resolverType === 'tv' && (
+                  <div className="flex gap-2 text-xs font-mono">
+                    <div className="flex-1 flex items-center justify-between bg-black border border-zinc-950 rounded-lg px-2.5 py-1">
+                      <span className="text-zinc-650">S</span>
+                      <input
+                        type="number"
+                        value={resolverSeason}
+                        onChange={(e) => setResolverSeason(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-8 bg-transparent text-right text-zinc-300 focus:outline-none"
+                      />
+                    </div>
+                    <div className="flex-1 flex items-center justify-between bg-black border border-zinc-950 rounded-lg px-2.5 py-1">
+                      <span className="text-zinc-655">E</span>
+                      <input
+                        type="number"
+                        value={resolverEpisode}
+                        onChange={(e) => setResolverEpisode(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-8 bg-transparent text-right text-zinc-300 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading || !resolverTmdbId}
+                  className="w-full bg-zinc-950 hover:bg-zinc-900 border border-zinc-900 text-zinc-300 font-bold py-1.5 rounded-lg text-xs font-mono tracking-wider transition-all cursor-pointer disabled:opacity-50"
+                >
+                  GIẢI MÃ ON-DEMAND
+                </button>
+              </form>
+
+              <div className="pt-2 border-t border-zinc-950">
+                <form onSubmit={handleRunPythonScraper} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Python TMDB ID"
+                    value={customTmdbId}
+                    onChange={(e) => setCustomTmdbId(e.target.value)}
+                    className="w-2/3 bg-black border border-zinc-950 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-300 focus:outline-none focus:border-zinc-900"
+                  />
+                  <button
+                    type="submit"
+                    disabled={loading || !customTmdbId}
+                    className="w-1/3 bg-black hover:bg-zinc-950 border border-zinc-950 text-zinc-500 font-bold rounded-lg text-[9px] font-mono tracking-wider transition-all cursor-pointer"
+                  >
+                    PY-SCRAP
+                  </button>
+                </form>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {showLogs && (
+          <div className="rounded-xl border border-zinc-950 overflow-hidden bg-black mt-2">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-950 bg-black">
+              <span className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest font-mono flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                SYSTEM CONSOLE OUTPUT
+              </span>
+              <button 
+                onClick={() => setStatus({ ...status, logs: [] })}
+                className="text-[9px] text-zinc-700 hover:text-zinc-500 font-mono tracking-wide transition-colors cursor-pointer"
+              >
+                CLEAR
+              </button>
+            </div>
+            
+            <div 
+              ref={logsContainerRef}
+              className="h-48 overflow-y-auto p-4 font-mono text-[9px] leading-relaxed text-zinc-500 space-y-1 bg-[#020202] select-text"
+            >
+              {status.logs.length === 0 ? (
+                <div className="text-zinc-750 italic text-center py-8">Không có logs hệ thống...</div>
+              ) : (
+                status.logs.map((log, idx) => {
+                  let colorClass = 'text-zinc-500';
+                  if (log.includes('[ERROR]')) colorClass = 'text-red-400/80';
+                  else if (log.includes('[WARN]')) colorClass = 'text-amber-500/80';
+                  else if (log.includes('✅') || log.includes('thành công') || log.includes('hoàn tất')) colorClass = 'text-emerald-500/80';
+                  else if (log.includes('[RESOLVER]')) colorClass = 'text-zinc-300';
+                  else if (log.includes('[24/7 MINER]')) colorClass = 'text-zinc-400';
+                  
+                  return (
+                    <div key={idx} className={`${colorClass} hover:bg-zinc-950/20 px-1 py-0.5 rounded transition-colors`}>
+                      {log}
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
-
-          {/* Card: Custom Target python */}
-          <div className="bg-black border border-zinc-900 rounded-xl p-5 space-y-4">
-            <div className="flex items-center gap-2 text-zinc-500 font-bold uppercase tracking-wider text-xs font-mono">
-              <Cpu size={14} />
-              <span>Target Miner</span>
-            </div>
-            
-            <form onSubmit={handleRunPythonScraper} className="space-y-3">
-              <div className="flex items-center gap-2 bg-[#030303] border border-zinc-900 rounded-lg px-3 py-2">
-                <Hash size={14} className="text-zinc-600" />
-                <input
-                  type="text"
-                  placeholder="TMDB ID"
-                  value={customTmdbId}
-                  disabled={status.isRunning}
-                  onChange={(e) => setCustomTmdbId(e.target.value)}
-                  className="bg-transparent text-sm text-white font-mono focus:outline-none w-full placeholder-zinc-700"
-                />
-              </div>
-
-              <div className="flex items-center gap-2 bg-[#030303] border border-zinc-900 rounded-lg px-3 py-2">
-                <Type size={14} className="text-zinc-600" />
-                <input
-                  type="text"
-                  placeholder="Tiêu đề (Không bắt buộc - tự lấy từ TMDB)"
-                  value={customTitle}
-                  disabled={status.isRunning}
-                  onChange={(e) => setCustomTitle(e.target.value)}
-                  className="bg-transparent text-sm text-white focus:outline-none w-full placeholder-zinc-700"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading || status.isRunning || !stats.connected}
-                className="w-full bg-[#030303] border border-zinc-900 hover:border-zinc-800 text-zinc-400 hover:text-white font-extrabold py-2.5 rounded-lg text-xs tracking-widest uppercase active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer font-mono disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? <Loader2 size={12} className="animate-spin" /> : <Terminal size={12} />}
-                <span>EXECUTE PY</span>
-              </button>
-            </form>
-          </div>
-
-        </div>
-
-        {/* Right Column: Console Terminal Box */}
-        <div className="lg:col-span-2 flex flex-col h-[600px] bg-black border border-zinc-900 rounded-xl overflow-hidden">
-          
-          {/* Terminal Header */}
-          <div className="px-5 py-3.5 border-b border-zinc-900 flex items-center justify-between bg-[#030303]">
-            <div className="flex items-center gap-2">
-              <Terminal className="text-zinc-500" size={14} />
-              <span className="text-xs font-mono font-bold text-zinc-400 uppercase tracking-widest">Logs</span>
-            </div>
-            
-            {status.isRunning && (
-              <div className="flex items-center gap-1.5 text-[10px] font-black font-mono tracking-widest text-emerald-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                RUNNING
-              </div>
-            )}
-          </div>
-
-          {/* Active Job Progress */}
-          {status.isRunning && (
-            <div className="px-5 py-3 border-b border-zinc-900 bg-zinc-950/20">
-              <div className="flex items-center justify-between mb-1.5 text-[10px] font-mono font-bold uppercase tracking-wider">
-                <span className="text-emerald-400 flex items-center gap-1.5">
-                  <Activity size={10} className="animate-spin" />
-                  {status.currentTask}
-                </span>
-                <span className="text-zinc-500">
-                  Page {status.processed} / {status.total} ({Math.round((status.processed / status.total) * 100)}%)
-                </span>
-              </div>
-              <div className="w-full bg-zinc-950 h-1.5 rounded-full overflow-hidden border border-zinc-900">
-                <div 
-                  className="bg-emerald-500 h-full rounded-full transition-all duration-300" 
-                  style={{ width: `${(status.processed / status.total) * 100}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Console Logs Output */}
-          <div 
-            ref={logsContainerRef}
-            className="flex-1 p-5 bg-[#030303] overflow-y-auto font-mono text-[11px] leading-relaxed space-y-1.5 selection:bg-zinc-800 selection:text-white"
-          >
-            {status.logs.length === 0 ? (
-              <div className="text-zinc-600 italic text-center py-8">No logs available.</div>
-            ) : (
-              status.logs.map((log, idx) => {
-                let colorClass = 'text-zinc-500';
-                if (log.includes('[Error]') || log.includes('Lỗi')) colorClass = 'text-red-400 font-bold';
-                else if (log.includes('[Success]') || log.includes('thành công') || log.includes('hoàn tất')) colorClass = 'text-emerald-400 font-bold';
-                else if (log.includes('[Scraper]') || log.includes('Đồng bộ')) colorClass = 'text-blue-400';
-                else if (log.includes('Đang tải')) colorClass = 'text-amber-500';
-                
-                return (
-                  <div key={idx} className={`whitespace-pre-wrap ${colorClass}`}>
-                    {log}
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-        </div>
+        )}
 
       </div>
     </div>

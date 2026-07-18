@@ -104,7 +104,17 @@ async function handleStreams(req, res, searchParams) {
     if (!matchedSlug) return json(res, { ok: true, streams: [] });
 
     const targetEpNum = getEpNum(episode);
-    const allStreams = await db.collection('streams').find({ slug: matchedSlug }).toArray();
+
+    // Timeout MongoDB query 5s để không treo khi DB chậm
+    const queryPromise = db.collection('streams')
+      .find({ slug: matchedSlug })
+      .limit(50)
+      .toArray();
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('MongoDB query timeout')), 5000)
+    );
+    const allStreams = await Promise.race([queryPromise, timeoutPromise]);
+
     const streams = allStreams.filter(s => {
       const sEpNum = getEpNum(s.episode);
       return sEpNum === targetEpNum || String(s.episode).toLowerCase() === String(episode).toLowerCase();
@@ -206,6 +216,89 @@ async function handleM3u8Proxy(req, res, searchParams) {
   return res.end(buf);
 }
 
+async function getGeminiEmbedding(text) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key=${apiKey}`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'models/gemini-embedding-2',
+        content: { parts: [{ text: text.slice(0, 1000) }] }
+      }),
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.embedding?.values || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function handleSemanticSearch(req, res, searchParams) {
+  if (!db) return json(res, { ok: false, error: 'Database not connected', results: [] }, 503);
+
+  const query = searchParams.get('q') || '';
+  if (!query.trim()) return json(res, { ok: true, results: [] });
+
+  try {
+    let results = [];
+
+    // 1. Vector Search (Atlas Vector Index)
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        const embedding = await getGeminiEmbedding(query);
+        if (embedding) {
+          const pipeline = [
+            {
+              $vectorSearch: {
+                index: "default",
+                path: "embedding",
+                queryVector: embedding,
+                numCandidates: 50,
+                limit: 20
+              }
+            },
+            {
+              $project: {
+                _id: 0, title: 1, originTitle: 1, slug: 1, thumbUrl: 1, posterUrl: 1, type: 1, status: 1, year: 1,
+                score: { $meta: "vectorSearchScore" }
+              }
+            }
+          ];
+          results = await db.collection('movies').aggregate(pipeline).toArray();
+        }
+      } catch (e) {
+        console.warn('[Bridge Semantic Search] Vector search fallback to regex:', e.message);
+      }
+    }
+
+    // 2. Multi-word Regex Fallback trên MongoDB
+    if (!results || results.length === 0) {
+      const words = query.trim().split(/\s+/).filter(Boolean);
+      const regexPatterns = words.map(w => new RegExp(escapeRegex(w), 'i'));
+
+      const filter = {
+        $or: [
+          { title: { $regex: escapeRegex(query), $options: 'i' } },
+          { originTitle: { $regex: escapeRegex(query), $options: 'i' } },
+          { content: { $regex: escapeRegex(query), $options: 'i' } },
+          { $and: regexPatterns.map(r => ({ $or: [{ title: r }, { originTitle: r }, { content: r }] })) }
+        ]
+      };
+      results = await db.collection('movies').find(filter).limit(20).toArray();
+    }
+
+    return json(res, { ok: true, results });
+  } catch (err) {
+    console.error('[Bridge Semantic Search] Error:', err.message);
+    return json(res, { ok: false, error: err.message, results: [] }, 500);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // HTTP Server
 // ---------------------------------------------------------------------------
@@ -224,7 +317,11 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
-  if (req.method !== 'GET') {
+  // POST chỉ được phép cho /api/resolver/queue
+  if (req.method === 'POST' && pathname !== '/api/resolver/queue') {
+    return json(res, { error: 'Method not allowed' }, 405);
+  }
+  if (req.method !== 'GET' && req.method !== 'POST') {
     return json(res, { error: 'Method not allowed' }, 405);
   }
 
@@ -236,12 +333,79 @@ const server = http.createServer(async (req, res) => {
     return await handleStreams(req, res, searchParams);
   }
 
+  if (pathname === '/api/admin/scraper/semantic-search') {
+    return await handleSemanticSearch(req, res, searchParams);
+  }
+
   if (pathname === '/api/admin/scraper/stats') {
     return await handleStats(req, res);
   }
 
   if (pathname === '/proxy/m3u8') {
     return await handleM3u8Proxy(req, res, searchParams);
+  }
+
+  // ---------------------------------------------------------------------------
+  // On-Demand Resolver Routes
+  // ---------------------------------------------------------------------------
+
+  // GET /api/resolver/check — Kiểm tra có link sạch còn hạn không
+  if (pathname === '/api/resolver/check') {
+    if (!db) return json(res, { ok: false, error: 'Database not connected' }, 503);
+    const tmdbId  = searchParams.get('tmdbId')  || '';
+    const type    = searchParams.get('type')     || 'movie';
+    const season  = parseInt(searchParams.get('season')  || '1');
+    const episode = parseInt(searchParams.get('episode') || '1');
+    if (!tmdbId) return json(res, { ok: false, error: 'tmdbId required' }, 400);
+    try {
+      const cached = await db.collection('vidsrc_streams').findOne({
+        tmdbId: String(tmdbId), type, season, episode,
+        expiredAt: { $gt: new Date() },
+      });
+      if (cached) {
+        return json(res, { ok: true, streamUrl: cached.streamUrl, provider: cached.provider, resolvedAt: cached.resolvedAt });
+      }
+      return json(res, { ok: false, reason: 'no_cache' });
+    } catch (err) {
+      return json(res, { ok: false, error: err.message }, 500);
+    }
+  }
+
+  // POST /api/resolver/queue — Đẩy yêu cầu giải mã vào hàng đợi
+  if (pathname === '/api/resolver/queue' && req.method === 'POST') {
+    if (!db) return json(res, { ok: false, error: 'Database not connected' }, 503);
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    let payload;
+    try { payload = JSON.parse(body); } catch { return json(res, { ok: false, error: 'Invalid JSON' }, 400); }
+
+    const { tmdbId, type = 'movie', season = 1, episode = 1 } = payload;
+    if (!tmdbId) return json(res, { ok: false, error: 'tmdbId required' }, 400);
+
+    try {
+      // Idempotent: không thêm nếu job cùng key đang pending/processing
+      const existing = await db.collection('resolving_queue').findOne({
+        tmdbId: String(tmdbId), type,
+        season: parseInt(season), episode: parseInt(episode),
+        status: { $in: ['pending', 'processing'] },
+      });
+
+      if (existing) {
+        return json(res, { ok: true, queued: false, note: 'Job đã tồn tại trong hàng đợi' });
+      }
+
+      await db.collection('resolving_queue').insertOne({
+        tmdbId: String(tmdbId), type,
+        season: parseInt(season), episode: parseInt(episode),
+        status: 'pending',
+        createdAt: new Date(),
+        retries: 0,
+      });
+
+      return json(res, { ok: true, queued: true });
+    } catch (err) {
+      return json(res, { ok: false, error: err.message }, 500);
+    }
   }
 
   return json(res, { error: 'Not found' }, 404);
@@ -254,6 +418,29 @@ connectDB()
   .then(() => {
     server.listen(PORT, () => {
       console.log(`[Bridge] Server listening on port ${PORT}`);
+
+      // Tự động khởi chạy resolver.cjs dưới dạng tiến trình con chạy nền
+      try {
+        const { fork } = require('child_process');
+        const path = require('path');
+        const resolverPath = path.join(__dirname, 'resolver.cjs');
+        
+        console.log('[Bridge] Khởi chạy tiến trình bẻ khóa VidSrc (resolver.cjs)...');
+        const resolverProcess = fork(resolverPath);
+        
+        resolverProcess.on('error', (err) => {
+          console.error('[Bridge] Tiến trình bẻ khóa lỗi:', err.message);
+        });
+
+        resolverProcess.on('exit', (code) => {
+          console.warn(`[Bridge] Tiến trình bẻ khóa thoát với mã code: ${code}. Đang khởi động lại sau 5s...`);
+          setTimeout(() => {
+            fork(resolverPath);
+          }, 5000);
+        });
+      } catch (err) {
+        console.error('[Bridge] Không thể khởi chạy resolver process:', err.message);
+      }
     });
   })
   .catch(err => {
