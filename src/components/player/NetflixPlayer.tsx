@@ -844,17 +844,33 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                       </div>
                     )}
 
-                    {servers && servers.length > 0 && (
+                    {((servers && servers.length > 0) || (streams && streams.length > 0)) && (
                       <div className="px-5 py-3.5 border-t border-white/[0.04]">
                         <p className="text-xs text-white/40 mb-2 uppercase tracking-wider">Nguồn phát</p>
                         <div className="flex flex-col gap-1">
-                          {servers.map((s, i) => (
-                            <button key={i} onClick={() => onServerChange?.(i)}
-                              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer text-left ${i === selectedServerId ? 'bg-[#E50914]/10 border border-[#E50914]/30 text-[#E50914]' : 'bg-white/[0.03] border border-white/[0.05] text-white/60 hover:bg-white/[0.06]'}`}>
-                              {i === selectedServerId && <Check size={12} className="shrink-0" />}
-                              <span className="truncate">{s.server_name || `Server ${i+1}`}</span>
-                            </button>
-                          ))}
+                          {streams?.map((s, i) => {
+                            const isActive = activeStream?.providerLabel === s.providerLabel && activeStream?.url === s.url;
+                            return (
+                              <button key={`stream-${i}`} onClick={() => onStreamSelect?.(s)}
+                                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer text-left ${isActive ? 'bg-[#E50914]/10 border border-[#E50914]/30 text-[#E50914]' : 'bg-white/[0.03] border border-white/[0.05] text-white/60 hover:bg-white/[0.06]'}`}>
+                                {isActive && <Check size={12} className="shrink-0" />}
+                                <span className="truncate flex-1">{s.providerLabel || 'Nguồn không tên'}</span>
+                                {s.quality && <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-white/60">{s.quality}</span>}
+                              </button>
+                            );
+                          })}
+                          
+                          {servers?.map((s, i) => {
+                            const isActive = i === selectedServerId && !activeStream;
+                            return (
+                              <button key={`server-${i}`} onClick={() => onServerChange?.(i)}
+                                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer text-left ${isActive ? 'bg-[#E50914]/10 border border-[#E50914]/30 text-[#E50914]' : 'bg-white/[0.03] border border-white/[0.05] text-white/60 hover:bg-white/[0.06]'}`}>
+                                {isActive && <Check size={12} className="shrink-0" />}
+                                <span className="truncate flex-1">{s.server_name || `Server ${i+1}`}</span>
+                                <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-white/60">Web</span>
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
