@@ -1241,10 +1241,7 @@ export const MovieDetail: React.FC<{
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, height: 0 }}
-                  className={cn(
-                      "w-full rounded-2xl overflow-hidden bg-black shadow-2xl relative z-[110]",
-                      activeStream?.type === 'embed' ? "" : "aspect-video"
-                    )}
+                  className="w-full rounded-2xl overflow-hidden bg-black shadow-2xl relative z-[110] aspect-video"
                 >
                   <NetflixPlayer
                     key={isTv ? `player-${slug}-${currentSeason}-${activeEp?.name || '1'}` : `player-${slug}-movie`}
