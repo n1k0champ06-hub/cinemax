@@ -383,9 +383,10 @@ export const MovieDetail: React.FC<{
 
   const handleSeasonSwitch = (sn: number) => {
     setActiveSeasonNumber(sn);
+    setActiveEpSeason(sn);
     setSelectedServerId(0);
-    // Do NOT call setIsPlaying(false) here — that would collapse the player.
-    // The season list in the drawer updates reactively; user selects an episode manually.
+    // Reset active episode to Episode 1 of the newly selected season
+    setActiveEp({ name: '1', episode_number: 1 });
   };
 
   const { data: seasonServerData } = useQuery({

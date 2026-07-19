@@ -588,77 +588,63 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   const settingsPanelOpen = panelOpen === 'settings' || panelOpen === 'quality' || panelOpen === 'speed' || panelOpen === 'sub';
 
   return (
-    <div className="relative w-full h-full bg-black overflow-hidden select-none" ref={containerRef}>
-      {isEmbed ? (
-        <iframe
-          key={resolvedEmbedUrl}
-          src={resolvedEmbedUrl}
-          className="w-full h-full border-0 absolute inset-0 z-0 bg-black pointer-events-auto"
-          allow="autoplay; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-        />
-      ) : (
-        <video
-          ref={videoRef}
-          className="w-full h-full object-contain"
-          playsInline
-          preload="auto"
-          onClick={handleVideoClick}
-          onMouseMove={resetControls}
-        />
-      )}
-
-      {isEmbed && (
-        <>
-          {/* Top hover trigger zone */}
-          <div
-            className="absolute top-0 left-0 right-0 h-12 z-30 pointer-events-auto cursor-default"
+    <div className="relative w-full h-full flex flex-col bg-black overflow-hidden select-none" ref={containerRef}>
+      <div className="relative w-full flex-1 bg-black overflow-hidden">
+        {isEmbed ? (
+          <iframe
+            key={resolvedEmbedUrl}
+            src={resolvedEmbedUrl}
+            className="w-full h-full border-0 bg-black pointer-events-auto relative z-10"
+            allow="autoplay; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        ) : (
+          <video
+            ref={videoRef}
+            className="w-full h-full object-contain"
+            playsInline
+            preload="auto"
+            onClick={handleVideoClick}
             onMouseMove={resetControls}
           />
-          {/* Bottom hover trigger zone */}
-          <div
-            className="absolute bottom-0 left-0 right-0 h-12 z-30 pointer-events-auto cursor-default"
-            onMouseMove={resetControls}
+        )}
+
+        {activeSubUrl && subEnabled && !isEmbed && (
+          <SubtitleOverlay
+            subtitleUrl={activeSubUrl}
+            videoRef={videoRef}
+            offsetMs={subOffset}
+            onError={(u) => setFailedSubs(p => { const n = new Set(p); n.add(u); return n; })}
           />
-        </>
-      )}
-
-      {activeSubUrl && subEnabled && !isEmbed && (
-        <SubtitleOverlay
-          subtitleUrl={activeSubUrl}
-          videoRef={videoRef}
-          offsetMs={subOffset}
-          onError={(u) => setFailedSubs(p => { const n = new Set(p); n.add(u); return n; })}
-        />
-      )}
-
-      <AnimatePresence>
-        {isBuffering && !isEmbed && (
-          <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
-            className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-            <Loader2 size={44} className="animate-spin text-white/70" />
-          </motion.div>
         )}
-      </AnimatePresence>
 
-      <AnimatePresence>
-        {seekFx && !isEmbed && (
-          <motion.div key={seekFx} initial={{ opacity:0, scale:0.8 }} animate={{ opacity:1, scale:1 }} exit={{ opacity:0 }}
-            transition={{ duration: 0.18 }}
-            className={`absolute top-1/2 -translate-y-1/2 pointer-events-none z-30 flex flex-col items-center gap-1 ${seekFx === 'fwd' ? 'right-12 md:right-24' : 'left-12 md:left-24'}`}>
-            <div className="bg-white/15 backdrop-blur-sm rounded-full w-16 h-16 md:w-20 md:h-20 flex items-center justify-center">
-              {seekFx === 'fwd' ? <RotateCw size={28} className="text-white" /> : <RotateCcw size={28} className="text-white" />}
-            </div>
-            <span className="text-white text-xs font-semibold">{seekFx === 'fwd' ? '+10s' : '-10s'}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        <AnimatePresence>
+          {isBuffering && !isEmbed && (
+            <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
+              className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+              <Loader2 size={44} className="animate-spin text-white/70" />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-      <AnimatePresence>
-        {showControls && (
-          <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration:0.2 }}
-            className="absolute inset-0 z-40 flex flex-col justify-between pointer-events-none"
-            onMouseMove={resetControls}>
+        <AnimatePresence>
+          {seekFx && !isEmbed && (
+            <motion.div key={seekFx} initial={{ opacity:0, scale:0.8 }} animate={{ opacity:1, scale:1 }} exit={{ opacity:0 }}
+              transition={{ duration: 0.18 }}
+              className={`absolute top-1/2 -translate-y-1/2 pointer-events-none z-30 flex flex-col items-center gap-1 ${seekFx === 'fwd' ? 'right-12 md:right-24' : 'left-12 md:left-24'}`}>
+              <div className="bg-white/15 backdrop-blur-sm rounded-full w-16 h-16 md:w-20 md:h-20 flex items-center justify-center">
+                {seekFx === 'fwd' ? <RotateCw size={28} className="text-white" /> : <RotateCcw size={28} className="text-white" />}
+              </div>
+              <span className="text-white text-xs font-semibold">{seekFx === 'fwd' ? '+10s' : '-10s'}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {showControls && !isEmbed && (
+            <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration:0.2 }}
+              className="absolute inset-0 z-40 flex flex-col justify-between pointer-events-none"
+              onMouseMove={resetControls}>
             {/* Top bar */}
             <div className="pointer-events-auto flex items-center justify-between px-4 pt-4 pb-10 bg-gradient-to-b from-black/70 via-black/20 to-transparent">
               <button onClick={(e) => { e.stopPropagation(); onClose?.(); }}
@@ -1045,6 +1031,44 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
           </>
         )}
       </AnimatePresence>
+
+      </div>
+
+      {/* Embed bottom controls bar */}
+      {isEmbed && (
+        <div className="w-full bg-[#0a0a0c] border-t border-white/[0.06] p-2.5 sm:p-3 flex items-center justify-between gap-3 shrink-0 z-30 pointer-events-auto select-none">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="w-2 h-2 rounded-full animate-pulse bg-emerald-400 shrink-0" />
+            <div className="flex flex-col min-w-0">
+              <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">Đang phát (Embed)</span>
+              <span className="text-xs font-bold text-white truncate max-w-[200px] sm:max-w-md">{movieName || title}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {((servers && servers.length > 0) || (streams && streams.length > 0)) && (
+              <button 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  setPanelOpen(prev => prev === 'settings' ? 'none' : 'settings'); 
+                }} 
+                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 bg-white/[0.06] hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/90 cursor-pointer transition-colors"
+              >
+                <Settings size={14} className="text-white/70" />
+                <span>Nguồn phát</span>
+              </button>
+            )}
+
+            <button 
+              onClick={() => onClose?.()}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 bg-white/[0.06] hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/90 cursor-pointer transition-colors"
+            >
+              <ArrowLeft size={14} />
+              <span>Thoát</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       <ReportModal
         isOpen={showReport}
