@@ -862,11 +862,13 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                                   const isActive = activeStream?.providerLabel === s.providerLabel && activeStream?.url === s.url;
                                   return (
                                     <button key={`vi-${idx}`} onClick={() => onStreamSelect?.(s)}
-                                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer text-left ${isActive ? 'bg-[#E50914]/10 border border-[#E50914]/30 text-[#E50914] font-medium' : 'bg-white/[0.02] border border-white/[0.04] text-white/60 hover:bg-white/[0.06]'}`}>
-                                      {isActive && <Check size={11} className="shrink-0" />}
+                                      className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-xs transition-colors cursor-pointer text-left ${isActive ? 'bg-[#E50914]/10 border border-[#E50914]/30 text-white font-medium' : 'bg-white/[0.02] border border-white/[0.04] text-white/60 hover:bg-white/[0.06]'}`}>
+                                      <div className="w-3.5 flex justify-center shrink-0">
+                                        {isActive && <Check size={11} className="text-[#E50914] shrink-0" />}
+                                      </div>
                                       <span className="truncate flex-1">{s.providerLabel || 'Nguồn Việt'}</span>
                                       {s.quality && <span className="text-[9px] bg-white/10 px-1 py-0.2 rounded text-white/50">{s.quality}</span>}
-                                      {s.score !== undefined && <span className="text-[9px] text-[#E50914]/80 ml-1">★ {s.score}</span>}
+                                      {s.score !== undefined && <span className="text-[9px] text-[#E50914]/80 ml-1 font-bold">★ {s.score}</span>}
                                     </button>
                                   );
                                 })}
@@ -889,11 +891,13 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                                   const isActive = activeStream?.providerLabel === s.providerLabel && activeStream?.url === s.url;
                                   return (
                                     <button key={`vip-${idx}`} onClick={() => onStreamSelect?.(s)}
-                                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer text-left ${isActive ? 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 font-medium' : 'bg-white/[0.02] border border-white/[0.04] text-white/60 hover:bg-white/[0.06]'}`}>
-                                      {isActive && <Check size={11} className="shrink-0" />}
+                                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer text-left ${isActive ? 'bg-yellow-500/10 border border-yellow-500/30 text-white font-medium' : 'bg-white/[0.02] border border-white/[0.04] text-white/60 hover:bg-white/[0.06]'}`}>
+                                      <div className="w-3.5 flex justify-center shrink-0">
+                                        {isActive && <Check size={11} className="text-yellow-500 shrink-0" />}
+                                      </div>
                                       <span className="truncate flex-1">{s.providerLabel || 'Nguồn VIP'}</span>
                                       {s.quality && <span className="text-[9px] bg-white/10 px-1 py-0.2 rounded text-white/50">{s.quality}</span>}
-                                      {s.score !== undefined && <span className="text-[9px] text-yellow-500/80 ml-1">★ {s.score}</span>}
+                                      {s.score !== undefined && <span className="text-[9px] text-yellow-500/80 ml-1 font-bold">★ {s.score}</span>}
                                     </button>
                                   );
                                 })}
@@ -917,10 +921,12 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                                   return (
                                     <button key={`comm-${idx}`} onClick={() => onStreamSelect?.(s)}
                                       className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer text-left ${isActive ? 'bg-white/10 border border-white/20 text-white font-medium' : 'bg-white/[0.02] border border-white/[0.04] text-white/60 hover:bg-white/[0.06]'}`}>
-                                      {isActive && <Check size={11} className="shrink-0" />}
+                                      <div className="w-3.5 flex justify-center shrink-0">
+                                        {isActive && <Check size={11} className="text-white shrink-0" />}
+                                      </div>
                                       <span className="truncate flex-1">{s.providerLabel || 'Nguồn Community'}</span>
                                       {s.quality && <span className="text-[9px] bg-white/10 px-1 py-0.2 rounded text-white/50">{s.quality}</span>}
-                                      {s.score !== undefined && <span className="text-[9px] text-white/40 ml-1">★ {s.score}</span>}
+                                      {s.score !== undefined && <span className="text-[9px] text-white/40 ml-1 font-bold">★ {s.score}</span>}
                                     </button>
                                   );
                                 })}
@@ -938,8 +944,10 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                                 const isActive = i === selectedServerId && !activeStream;
                                 return (
                                   <button key={`server-${i}`} onClick={() => onServerChange?.(i)}
-                                    className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer text-left ${isActive ? 'bg-[#E50914]/10 border border-[#E50914]/30 text-[#E50914] font-medium' : 'bg-white/[0.02] border border-white/[0.04] text-white/60 hover:bg-white/[0.06]'}`}>
-                                    {isActive && <Check size={11} className="shrink-0" />}
+                                    className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer text-left ${isActive ? 'bg-[#E50914]/10 border border-[#E50914]/30 text-white font-medium' : 'bg-white/[0.02] border border-white/[0.04] text-white/60 hover:bg-white/[0.06]'}`}>
+                                    <div className="w-3.5 flex justify-center shrink-0">
+                                      {isActive && <Check size={11} className="text-[#E50914] shrink-0" />}
+                                    </div>
                                     <span className="truncate flex-1">{s.server_name || `Server ${i+1}`}</span>
                                     <span className="text-[9px] bg-white/10 px-1 py-0.2 rounded text-white/50">HLS</span>
                                   </button>
