@@ -158,8 +158,6 @@ export const MovieCard = React.memo(({ movie, onSelect, isTop10, idx, progressDa
     <div
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      onTouchStart={handleMouseEnter}
-      onFocus={() => setShouldFetch(true)}
       onClick={(e) => {
         const rect = e.currentTarget.getBoundingClientRect();
         const clickDetails = {

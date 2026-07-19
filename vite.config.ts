@@ -27,12 +27,12 @@ export default defineConfig(({mode}) => {
           secure: false,
         },
         '/tmdb': {
-          target: 'http://localhost:3001',
+          target: 'https://focusflow.id.vn',
           changeOrigin: true,
           secure: false,
         },
         '/img': {
-          target: 'http://localhost:3001',
+          target: 'https://focusflow.id.vn',
           changeOrigin: true,
           secure: false,
         },

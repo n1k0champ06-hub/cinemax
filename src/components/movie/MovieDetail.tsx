@@ -60,8 +60,8 @@ const isGenericEpisodeName = (name: string | undefined | null, epNum: number | s
 
   // Stripped check for patterns like "3:3", "3.3", "3-3", "3/3", "3x3", "3x03", "s3e3", "s03e03"
   const stripped = cleanedName.replace(/^tập\s*/i, '').replace(/^episode\s*/i, '').trim();
-  if (/^\d+[\s\.\:\x\-x/e]\d+$/i.test(stripped)) return true;
-  if (/^s?\d+[\s\.\:\x\-x/e]s?\d+$/i.test(stripped)) return true;
+  if (/^\d+[\s\.\:x\-x/e]\d+$/i.test(stripped)) return true;
+  if (/^s?\d+[\s\.\:x\-x/e]s?\d+$/i.test(stripped)) return true;
   if (/^\d+$/i.test(stripped)) return true;
   
   return false;
@@ -178,11 +178,20 @@ export const MovieDetail: React.FC<{
   const [copied, setCopied] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
 
-  // Lock body scroll when movie details are open
+  // Lock body scroll khi modal mở — dùng position:fixed thay vì overflow:hidden
+  // để tránh layout recalculation gây jank trên mobile
   useEffect(() => {
-    document.body.style.overflow = "hidden";
+    const scrollY = window.scrollY;
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = '100%';
+    document.body.style.overflowY = 'scroll'; // giữ scrollbar width ổn định (desktop)
     return () => {
-      document.body.style.overflow = "";
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
+      document.body.style.overflowY = '';
+      window.scrollTo(0, scrollY);
     };
   }, []);
 

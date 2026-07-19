@@ -18,7 +18,6 @@ import {
   MyListRow,
 } from "./components/movie/MovieRows";
 import { ImdbRow } from "./components/movie/ImdbRow";
-import { AnimeRankingRow } from "./components/movie/AnimeRankingRow";
 import { initFetchInterceptor, godModeStore } from "./lib/godmode";
 import "./lib/firebase";
 
@@ -300,13 +299,19 @@ export default function App() {
         
         .card-spring-hover {
           transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), z-index 0.35s step-end, box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-          will-change: transform;
           z-index: 10;
         }
-        .card-spring-hover:hover {
-          transform: scale(1.08) translateY(-8px);
-          z-index: 40;
-          transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), z-index 0s, box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        /* Desktop hover: promote to GPU only when actively hovering */
+        @media (hover: hover) and (pointer: fine) {
+          .card-spring-hover:hover {
+            will-change: transform;
+            transform: scale(1.08) translateY(-8px);
+            z-index: 40;
+            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), z-index 0s, box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+          }
+          .card-spring-hover:not(:hover) {
+            will-change: auto;
+          }
         }
       `;
 
@@ -486,9 +491,6 @@ export default function App() {
                 id="movie-lists"
                 className="pb-32 mt-4 sm:mt-12 relative z-20 flex flex-col gap-0"
               >
-                <div className="lazy-row-section">
-                  <AnimeRankingRow title="Top 10 Anime Thịnh Hành (MAL)" onSelect={setSelectedMovieSlug} />
-                </div>
                 <div className="lazy-row-section">
                   <MovieRow
                     title="Anime Mới Cập Nhật"

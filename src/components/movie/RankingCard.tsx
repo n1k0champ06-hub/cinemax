@@ -176,8 +176,6 @@ export const RankingCard = React.memo(({ movie, idx, onSelect, type, rowTitle, e
       )} 
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      onTouchStart={handleMouseEnter}
-      onFocus={() => setShouldFetch(true)}
       onClick={(e) => {
         const rect = e.currentTarget.getBoundingClientRect();
         const clickDetails = {

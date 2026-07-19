@@ -147,6 +147,7 @@ export const MovieRow = ({
   onSelect: (slug: string) => void;
   isTop10?: boolean;
   aspectRatio?: 'landscape' | 'poster';
+  isAnime?: boolean;
 }) => {
   const ref = useRef<HTMLDivElement>(null);
   // Stage 1: trigger API fetch khi còn cách viewport 1200px

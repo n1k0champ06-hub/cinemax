@@ -15,6 +15,15 @@ const cleanSearchQuery = (str: string): string => {
     .trim();
 };
 
+const cleanString = (str: string): string => {
+  if (!str) return "";
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+};
+
 export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
   const queryClient = useQueryClient();
 
@@ -600,38 +609,34 @@ export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
   const isServerIdValid = selectedServerId >= 0 && (selectedServerId >= servers.length || servers[selectedServerId]?.status !== 'empty');
   const validatedSelectedServerId = isServerIdValid ? selectedServerId : 0;
 
-  useEffect(() => {
-    if (servers.length > 0 && !isServerIdValid) {
-      const firstValidIdx = servers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error');
-      setSelectedServerId(firstValidIdx !== -1 ? firstValidIdx : 0);
-    }
-  }, [servers, isServerIdValid]);
-
   const prevSlugRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!isDataValid) return;
+  const isSelectingServerRef = useRef(false);
 
-    if (servers && servers.length > 0) {
-      const isNewSlug = slug !== prevSlugRef.current;
-      const isInvalidIndex = selectedServerId < 0;
-      
-      if (isNewSlug || isInvalidIndex) {
-        prevSlugRef.current = slug;
-        
-        const firstFastIdx = servers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && !s.server_name.includes("CinemaOS"));
-        if (firstFastIdx !== -1) {
-          setSelectedServerId(firstFastIdx);
-        } else {
-          const firstValidIdx = servers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error');
-          if (firstValidIdx !== -1) {
-            setSelectedServerId(firstValidIdx);
-          } else {
-            setSelectedServerId(0);
-          }
-        }
+  // Gộp 2 effects về selectedServerId thành 1 để tránh double re-render
+  useEffect(() => {
+    if (!isDataValid || servers.length === 0) return;
+    if (isSelectingServerRef.current) return;
+
+    const isNewSlug = slug !== prevSlugRef.current;
+    const isInvalidIndex = selectedServerId < 0 || selectedServerId >= servers.length || servers[selectedServerId]?.status === 'empty';
+
+    if (isNewSlug || isInvalidIndex) {
+      isSelectingServerRef.current = true;
+      prevSlugRef.current = slug;
+
+      const firstFastIdx = servers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && !s.server_name.includes("CinemaOS"));
+      const firstValidIdx = servers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error');
+      const nextIdx = firstFastIdx !== -1 ? firstFastIdx : (firstValidIdx !== -1 ? firstValidIdx : 0);
+
+      if (nextIdx !== selectedServerId) {
+        setSelectedServerId(nextIdx);
       }
+
+      // Reset guard sau 1 frame để không chặn update hợp lệ tiếp theo
+      requestAnimationFrame(() => { isSelectingServerRef.current = false; });
     }
   }, [servers, slug, selectedServerId, isDataValid]);
+
 
   useEffect(() => {
     if (!isDataValid) return;
