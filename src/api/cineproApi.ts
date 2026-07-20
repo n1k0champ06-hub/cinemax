@@ -230,27 +230,24 @@ const VI_CDN_PATTERNS = [
  * Build stream URL for a given raw m3u8.
  * VI CDN sources (KKPhim, OPhim, NguonC) are served directly from the browser —
  * they have CORS Allow-Origin:* and do NOT need the Render proxy.
- * Only non-VI sources are routed through the proxy bridge for ad-filtering.
+ * All streams are routed through the proxy bridge for ad-filtering.
  */
 export function buildProxiedM3u8Url(streamUrl: string, referer?: string | null): string {
   if (!streamUrl) return '';
 
-  // Check if stream originates from a VI CDN
-  const isViCdn = VI_CDN_PATTERNS.some(p => streamUrl.includes(p) || (referer || '').includes(p));
-  if (isViCdn) {
-    // Play directly — no proxy, no cold-start delay
-    return streamUrl;
-  }
-
-  // Non-VI sources: route through Render bridge for ad-filtering
   const params = new URLSearchParams({ url: streamUrl });
   if (referer) params.set('referer', referer);
+
+  // Always route through /api/m3u8-proxy so that the M3U8 ad-filter strips out gambling ads (9922.com, convertv, etc.)
+  if (typeof window !== 'undefined') {
+    return `/api/m3u8-proxy?${params.toString()}`;
+  }
 
   const backendUrl =
     import.meta.env.VITE_BACKEND_URL && import.meta.env.VITE_BACKEND_URL.startsWith('http')
       ? import.meta.env.VITE_BACKEND_URL
-      : 'https://hollysheesh-bridge.onrender.com';
+      : 'https://focusflow.id.vn';
 
   const base = backendUrl.endsWith('/') ? backendUrl.slice(0, -1) : backendUrl;
-  return `${base}/proxy/m3u8?${params.toString()}`;
+  return `${base}/api/m3u8-proxy?${params.toString()}`;
 }

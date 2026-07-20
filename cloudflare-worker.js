@@ -2405,12 +2405,16 @@ async function fetchStremioSubtitles(addonUrl, type, imdbId, season, episode, la
 // ---------------------------------------------------------------------------
 
 const REMOVE_URI_PATTERNS = [
+  // KKPhim / OPhim convertv ad segment pattern
+  /convertv\d*/i,
   // Original: opstream/ophim convertv pattern
   /\/v\d+\/[a-f0-9]{16,}\/segment_\d+\.ts(?:[?#].*)?$/i,
   // Ad segment with random hex token in path
   /\/[a-f0-9]{32,}\/[^/]+\.ts(?:[?#].*)?$/i,
   // Segments from paths with "ads", "advert", "commercial" keywords
   /\/(?:ads?|advert|commercial|sponsor|promo)[_\-/][^/]*\.ts(?:[?#].*)?$/i,
+  // Gambling & betting ads (e.g. 9922, kubet, shbet, okvip, 789bet)
+  /(?:9922|nhacai|cacuoc|kubet|shbet|okvip|789bet|new88|hi88|jun88|f8bet|bk8|w88|fun88|fb88|v9bet|ae888|mb66)/i,
   // Segments from paths matching typical gambling ad CDN structure
   /\/(?:quangcao|qc|banner)[_\-/][^/]*\.ts(?:[?#].*)?$/i,
 ];
@@ -2419,6 +2423,7 @@ const REMOVE_URI_PATTERNS = [
 // These are domains known to inject gambling/betting ads into OPhim/KKPhim streams
 const AD_CDN_HOSTNAMES = new Set([
   // Known ad injection CDNs for VN streaming
+  '9922.com',
   'cdn-ads.vip',
   'ads.opstream.vip',
   'adstream.vip',
@@ -2471,9 +2476,9 @@ function isPlaylist(text) {
 /**
  * Returns true if the segment URI is from a known ad CDN or matches an ad URI pattern.
  */
-function isAdUri(line, isKKPhim = false) {
+function isAdUri(line) {
   const value = line.trim();
-  if (isKKPhim && CONVERT_PREFIX_PATTERN.test(value)) {
+  if (CONVERT_PREFIX_PATTERN.test(value)) {
     return true;
   }
   // Check URI patterns
@@ -2527,19 +2532,8 @@ function filterPlaylistAds(text, url = '') {
     return { text, removed: 0 };
   }
 
-  const isKKPhim = url && (url.includes('kkphim') || url.includes('phimapi'));
   const hadTrailingNewline = /\r?\n$/.test(text);
-  let normalized = false;
-  const lines = text.split(/\r?\n/).map((line) => {
-    if (isSegmentUri(line) && CONVERT_PREFIX_PATTERN.test(line.trim())) {
-      if (isKKPhim) {
-        return line; // Keep the convertv prefix for KKPhim so we can match and filter it
-      }
-      normalized = true;
-      return normalizeSegmentUri(line);
-    }
-    return line;
-  });
+  const lines = text.split(/\r?\n/);
 
   const blocks = [];
   let blockStart = 0;
