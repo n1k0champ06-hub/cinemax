@@ -383,10 +383,7 @@ export const MovieDetail: React.FC<{
 
   const handleSeasonSwitch = (sn: number) => {
     setActiveSeasonNumber(sn);
-    setActiveEpSeason(sn);
     setSelectedServerId(0);
-    // Reset active episode to Episode 1 of the newly selected season
-    setActiveEp({ name: '1', episode_number: 1 });
   };
 
   const { data: seasonServerData } = useQuery({
@@ -912,11 +909,7 @@ export const MovieDetail: React.FC<{
   useEffect(() => { activeStreamRef.current = activeStream; }, [activeStream]);
   useEffect(() => {
     if (!isTv || !seasonServerData || seasonServerData.length === 0) return;
-    // Avoid re-processing the exact same data object (React Query ref-equality)
-    if (seasonServerData === lastProcessedSeasonDataRef.current) return;
-    lastProcessedSeasonDataRef.current = seasonServerData;
 
-    // 1. Only find the best server automatically if the player is NOT actively playing
     let targetServerIdx = -1;
     if (!isPlaying) {
       targetServerIdx = seasonServerData.findIndex((s: any) => 
@@ -943,19 +936,27 @@ export const MovieDetail: React.FC<{
       targetServerIdx = selectedServerId;
     }
 
-    // 2. Only auto-select an episode when the player is NOT actively playing.
-    //    When the user browses seasons inside the drawer, isPlaying is true,
-    //    so we skip episode selection entirely — the user picks one manually.
-    if (isPlaying) return;
+    const validIdx = targetServerIdx !== -1 ? targetServerIdx : 0;
+    const selectedServer = currentServers[validIdx] || currentServers[0];
 
-    if (targetServerIdx !== -1) {
-      const selectedServer = currentServers[targetServerIdx];
-      if (!selectedServer) return;
-      // Check URL query parameter first
+    // Check if season was switched (activeEpSeason !== currentSeason)
+    const seasonSwitched = activeEpSeason !== (currentSeason || 1);
+
+    if (seasonSwitched) {
+      if (selectedServer?.server_data?.length > 0) {
+        setActiveEp(selectedServer.server_data[0]);
+      } else if (seasonData?.episodes?.length > 0) {
+        const ep1Num = String(seasonData.episodes[0].episode_number);
+        setActiveEp({ name: ep1Num, episode_number: seasonData.episodes[0].episode_number });
+      }
+      setActiveEpSeason(currentSeason || 1);
+      return;
+    }
+
+    if (!isPlaying && selectedServer?.server_data?.length > 0) {
       const params = new URLSearchParams(window.location.search);
       const urlEp = params.get("ep");
       
-      // Then check localStorage progress
       let progressEpName = urlEp;
       if (!progressEpName) {
         try {
@@ -963,7 +964,7 @@ export const MovieDetail: React.FC<{
           if (stored) {
             const parsed = JSON.parse(stored);
             const saved = parsed[slug];
-            if (saved && saved.episodeName) {
+            if (saved && saved.episodeName && (!saved.season || saved.season === currentSeason)) {
               progressEpName = saved.episodeName;
             }
           }
@@ -987,7 +988,7 @@ export const MovieDetail: React.FC<{
       setActiveEp(matchedEp || selectedServer.server_data[0]);
       setActiveEpSeason(currentSeason || 1);
     }
-  }, [currentSeason, seasonServerData, currentServers, isTv, setActiveEp, setSelectedServerId, slug, isPlaying]);
+  }, [currentSeason, seasonServerData, seasonData, currentServers, isTv, activeEpSeason, setActiveEp, setSelectedServerId, slug, isPlaying, selectedServerId]);
 
   const parseEpNum = (epNumberStr: string | undefined | null) => {
     if (!epNumberStr) return NaN;
