@@ -1062,28 +1062,6 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                             </div>
                           );
                         })()}
-
-                        {/* 4. Nguồn Web dự phòng (Servers) */}
-                        {servers && servers.length > 0 && (
-                          <div>
-                            <p className="text-[9px] text-white/40 font-bold mb-1.5 uppercase tracking-widest">Nguồn Web dự phòng</p>
-                            <div className="flex flex-col gap-1">
-                              {servers.map((s, i) => {
-                                const isActive = i === selectedServerId && !activeStream;
-                                return (
-                                  <button key={`server-${i}`} onClick={() => onServerChange?.(i)}
-                                    className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer text-left ${isActive ? 'bg-[#E50914]/10 border border-[#E50914]/30 text-white font-medium' : 'bg-white/[0.02] border border-white/[0.04] text-white/60 hover:bg-white/[0.06]'}`}>
-                                    <div className="w-3.5 flex justify-center shrink-0">
-                                      {isActive && <Check size={11} className="text-[#E50914] shrink-0" />}
-                                    </div>
-                                    <span className="truncate flex-1">{s.server_name || `Server ${i+1}`}</span>
-                                    <span className="text-[9px] bg-white/10 px-1 py-0.2 rounded text-white/50">HLS</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     )}
                   </>

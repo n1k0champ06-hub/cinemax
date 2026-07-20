@@ -156,8 +156,18 @@ async function fetchFromVietnameseApi(
     let detailData: any = null;
     let detailFetched = false;
 
-    // 1. Try direct slug fetch first if it exists and is not tmdb- (unless we are using KKPhim which natively supports tmdb- slugs)
-    if (slug && (providerId === 'kkphim' || !slug.startsWith('tmdb-'))) {
+    // 1. Try direct slug fetch first if it exists and is not tmdb-
+    // If season > 1, do NOT use direct slug unless the slug explicitly specifies the season (e.g. diem-lanh-phan-2)
+    let canDirectFetch = !!slug && (providerId === 'kkphim' || !slug.startsWith('tmdb-'));
+    if (canDirectFetch && query.season && query.season > 1 && slug) {
+      const sNum = String(query.season);
+      const hasSeasonInSlug = slug.includes(`season-${sNum}`) || slug.includes(`phan-${sNum}`) || slug.includes(`mua-${sNum}`) || slug.includes(`ss${sNum}`);
+      if (!hasSeasonInSlug) {
+        canDirectFetch = false;
+      }
+    }
+
+    if (canDirectFetch && slug) {
       let detailUrl = '';
       if (providerId === 'ophim') {
         detailUrl = `https://ophim1.com/phim/${slug}`;

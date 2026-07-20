@@ -383,6 +383,7 @@ export const MovieDetail: React.FC<{
 
   const handleSeasonSwitch = (sn: number) => {
     setActiveSeasonNumber(sn);
+    setActiveEpSeason(sn);
     setSelectedServerId(0);
   };
 
@@ -1296,7 +1297,7 @@ export const MovieDetail: React.FC<{
                     onEpisodeSelect={handleSelectEpisode}
                     isTv={isTv}
                     currentSeason={currentSeason}
-                    activeEpSeason={validatedActiveEpSeason}
+                    activeEpSeason={currentSeason}
                     seasons={filteredSeasons}
                     onSeasonChange={handleSeasonSwitch}
                     tmdbEpisodes={seasonData?.episodes || []}

@@ -234,7 +234,18 @@ export function useStreamAggregator({
       for (let i = servers.length - 1; i >= 0; i--) {
         const server = servers[i];
         if (server && Array.isArray(server.server_data)) {
-          const epObj = server.server_data.find((ep: any) => ep.name === activeEpName);
+          const isSameEp = (eName?: string, pName?: string) => {
+            if (!eName || !pName) return false;
+            const clean = (s: string) => String(s).toLowerCase().replace(/\D/g, '').trim();
+            const eStr = String(eName).toLowerCase().trim();
+            const pStr = String(pName).toLowerCase().trim();
+            if (eStr === pStr) return true;
+            const eClean = clean(eStr);
+            const pClean = clean(pStr);
+            return eClean && pClean && eClean === pClean;
+          };
+
+          const epObj = server.server_data.find((ep: any) => isSameEp(ep.name, activeEpName) || isSameEp(ep.slug, activeEpName));
           if (epObj) {
             const serverLabel = server.server_name || 'Nguồn Việt Nam';
 
