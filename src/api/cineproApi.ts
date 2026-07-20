@@ -67,12 +67,19 @@ export async function fetchMovieStreams(
     tmdbId: String(tmdbId),
   });
 
-  const res = await fetch(apiUrl(`/api/cinepro-proxy?${params}`));
-  if (!res.ok) throw new Error(`CinePro movie request failed: ${res.status}`);
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
-
-  return normalizeResponse(data, tmdbId, 'movie');
+  try {
+    const res = await fetch(apiUrl(`/api/cinepro-proxy?${params}`));
+    if (!res.ok) {
+      return { tmdbId, type: 'movie', sources: [] };
+    }
+    const data = await res.json();
+    if (data.error) {
+      return { tmdbId, type: 'movie', sources: [] };
+    }
+    return normalizeResponse(data, tmdbId, 'movie');
+  } catch (e) {
+    return { tmdbId, type: 'movie', sources: [] };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -91,12 +98,19 @@ export async function fetchTvStreams(
     episode: String(episode),
   });
 
-  const res = await fetch(apiUrl(`/api/cinepro-proxy?${params}`));
-  if (!res.ok) throw new Error(`CinePro TV request failed: ${res.status}`);
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
-
-  return normalizeResponse(data, tmdbId, 'tv');
+  try {
+    const res = await fetch(apiUrl(`/api/cinepro-proxy?${params}`));
+    if (!res.ok) {
+      return { tmdbId, type: 'tv', sources: [] };
+    }
+    const data = await res.json();
+    if (data.error) {
+      return { tmdbId, type: 'tv', sources: [] };
+    }
+    return normalizeResponse(data, tmdbId, 'tv');
+  } catch (e) {
+    return { tmdbId, type: 'tv', sources: [] };
+  }
 }
 
 // ---------------------------------------------------------------------------

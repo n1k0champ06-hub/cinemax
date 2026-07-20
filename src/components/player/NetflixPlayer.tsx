@@ -791,13 +791,25 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
         {settingsPanelOpen && (
           <>
             <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
-              className="absolute inset-0 z-50" onClick={closePanel} />
+              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs" onClick={closePanel} />
             <motion.div
-              initial={{ x:'100%', opacity:0 }} animate={{ x:0, opacity:1 }} exit={{ x:'100%', opacity:0 }}
-              transition={{ type:'tween', ease:[0.16,1,0.3,1], duration:0.22 }}
-              className="absolute right-0 top-0 bottom-0 z-50 w-72 bg-[#0a0a0c]/95 backdrop-blur-md border-l border-white/[0.07] flex flex-col shadow-2xl"
+              initial={isMobile ? { y: '100%', opacity: 0 } : { x: '100%', opacity: 0 }}
+              animate={{ x: 0, y: 0, opacity: 1 }}
+              exit={isMobile ? { y: '100%', opacity: 0 } : { x: '100%', opacity: 0 }}
+              transition={{ type: 'tween', ease: [0.16, 1, 0.3, 1], duration: 0.25 }}
+              className={cn(
+                "z-50 bg-[#0a0a0c]/98 backdrop-blur-xl border-white/[0.08] flex flex-col shadow-2xl overflow-hidden",
+                isMobile
+                  ? "fixed inset-x-0 bottom-0 top-auto max-h-[80vh] rounded-t-2xl border-t shadow-[0_-10px_30px_rgba(0,0,0,0.95)]"
+                  : "absolute right-0 top-0 bottom-0 w-80 border-l"
+              )}
               onClick={e => e.stopPropagation()}>
-              <div className="flex items-center gap-3 px-5 py-4 border-b border-white/[0.06]">
+              
+              {isMobile && (
+                <div className="w-10 h-1 bg-white/20 rounded-full mx-auto my-2.5 shrink-0" />
+              )}
+
+              <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06] shrink-0">
                 {panelOpen !== 'settings' && (
                   <button onClick={() => setPanelOpen('settings')} className="p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer">
                     <ArrowLeft size={16} className="text-white/70" />
@@ -847,16 +859,26 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
                     {selectedSub !== 'off' && subEnabled && (
                       <div className="px-5 py-3.5 border-t border-white/[0.04]">
-                        <p className="text-xs text-white/40 mb-2">Bù trừ phụ đề</p>
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => setSubOffset(p=>p-250)} className="px-3 py-1 bg-white/[0.05] hover:bg-white/10 rounded-lg text-xs text-white cursor-pointer transition-colors">−0.25s</button>
-                          <span className={`flex-1 text-center text-sm font-mono font-bold ${subOffset===0 ? 'text-white/30' : 'text-[#E50914]'}`}>
-                            {subOffset>=0 ? '+':''}{(subOffset/1000).toFixed(2)}s
+                        <p className="text-xs text-white/40 mb-2 font-medium">Bù trừ phụ đề</p>
+                        <div className="flex items-center justify-between gap-2.5 bg-white/[0.03] p-2 rounded-xl border border-white/[0.05]">
+                          <button 
+                            onClick={() => setSubOffset(p => p - 250)} 
+                            className="px-3 py-2 bg-white/[0.06] hover:bg-white/12 active:scale-95 rounded-lg text-xs font-bold text-white shrink-0 cursor-pointer transition-all border border-white/5"
+                          >
+                            −0.25s
+                          </button>
+                          <span className={`flex-1 text-center text-xs sm:text-sm font-mono font-bold px-1 truncate ${subOffset === 0 ? 'text-white/30' : 'text-emerald-400'}`}>
+                            {subOffset >= 0 ? '+' : ''}{(subOffset / 1000).toFixed(2)}s
                           </span>
-                          <button onClick={() => setSubOffset(p=>p+250)} className="px-3 py-1 bg-white/[0.05] hover:bg-white/10 rounded-lg text-xs text-white cursor-pointer transition-colors">+0.25s</button>
+                          <button 
+                            onClick={() => setSubOffset(p => p + 250)} 
+                            className="px-3 py-2 bg-white/[0.06] hover:bg-white/12 active:scale-95 rounded-lg text-xs font-bold text-white shrink-0 cursor-pointer transition-all border border-white/5"
+                          >
+                            +0.25s
+                          </button>
                         </div>
                         {subOffset !== 0 && (
-                          <button onClick={() => setSubOffset(0)} className="mt-2 w-full text-xs text-white/30 hover:text-white/60 transition-colors cursor-pointer">Reset</button>
+                          <button onClick={() => setSubOffset(0)} className="mt-2 w-full text-xs text-white/30 hover:text-white/60 transition-colors cursor-pointer text-center">Reset delay</button>
                         )}
                       </div>
                     )}

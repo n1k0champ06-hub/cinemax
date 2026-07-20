@@ -41,24 +41,34 @@ self.addEventListener('fetch', (e) => {
   }
 
   e.respondWith(
-    fetch(e.request)
-      .then((networkResponse) => {
+    (async () => {
+      try {
+        const networkResponse = await fetch(e.request);
         if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(e.request, responseToCache);
-          });
+          }).catch(() => {});
         }
         return networkResponse;
-      })
-      .catch(() => {
+      } catch (err) {
         // Fallback to cache when offline
-        return caches.match(e.request).then((cachedResponse) => {
+        try {
+          const cachedResponse = await caches.match(e.request);
           if (cachedResponse) return cachedResponse;
           if (e.request.mode === 'navigate') {
-            return caches.match('/index.html');
+            const indexMatch = await caches.match('/index.html');
+            if (indexMatch) return indexMatch;
           }
+        } catch (cacheErr) {}
+
+        // Always return a valid Response object, never undefined/null
+        return new Response('Network error', {
+          status: 408,
+          statusText: 'Request Timeout',
+          headers: { 'Content-Type': 'text/plain' },
         });
-      })
+      }
+    })()
   );
 });
