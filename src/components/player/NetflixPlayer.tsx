@@ -23,6 +23,10 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string) {
   if (!text || !text.includes('#EXTM3U')) return text;
 
   const AD_PATTERNS = [
+    /\/v\d+\/[a-f0-9]{16,}\/segment_\d+\.ts/i,
+    /\/v\d+\/.*\/segment_\d+\.ts/i,
+    /\/segment_\d+\.ts/i,
+    /\/v\d+\//i,
     /convertv\d*/i,
     /convert\d*/i,
     /9922/i,
@@ -78,7 +82,13 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string) {
       let start = block.uriIndex;
       for (let i = block.uriIndex - 1; i >= block.start; i--) {
         const l = lines[i].trim().toUpperCase();
-        if (l.startsWith('#EXTINF') || l === '#EXT-X-DISCONTINUITY' || l.startsWith('#EXT-X-KEY') || l === '') {
+        if (
+          l.startsWith('#EXTINF') ||
+          l.startsWith('#EXT-X-DISCONTINUITY') ||
+          l.startsWith('#EXT-X-KEY') ||
+          l.startsWith('#EXT-X-BYTERANGE') ||
+          l === ''
+        ) {
           start = i;
           continue;
         }
