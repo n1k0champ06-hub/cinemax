@@ -718,6 +718,21 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                     <button onClick={() => skip(10)} className="hover:scale-110 active:scale-95 transition-transform cursor-pointer">
                       <RotateCw size={20} className="text-white" />
                     </button>
+
+                    {!isMobile && (
+                      <div className="group/vol flex items-center gap-1">
+                        <button onClick={toggleMute} className="p-1.5 hover:scale-110 active:scale-95 transition-all cursor-pointer" title="Âm lượng">
+                          {isMuted || volume === 0 ? <VolumeX size={20} className="text-white/80" />
+                            : volume < 0.5 ? <Volume1 size={20} className="text-white/80" />
+                            : <Volume2 size={20} className="text-white/80" />}
+                        </button>
+                        <input type="range" min="0" max="1" step="0.05" value={isMuted ? 0 : volume}
+                          onChange={(e) => { const v = parseFloat(e.target.value); if (videoRef.current) { videoRef.current.volume = v; videoRef.current.muted = v === 0; } }}
+                          onClick={e => e.stopPropagation()}
+                          className="w-0 opacity-0 group-hover/vol:w-20 group-hover/vol:opacity-100 transition-[width,opacity] duration-200 accent-[#E50914] h-1 cursor-pointer" />
+                      </div>
+                    )}
+
                     <span className="text-white/70 text-xs font-mono tabular-nums hidden sm:block">
                       {formatTime(currentTime)} / {formatTime(duration)}
                     </span>
@@ -759,21 +774,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                     <Settings size={20} />
                   </button>
 
-                  {!isMobile && !isEmbed && (
-                    <div className="group/vol flex items-center gap-1">
-                      <button onClick={toggleMute} className="p-1.5 hover:scale-110 active:scale-95 transition-all cursor-pointer">
-                        {isMuted || volume === 0 ? <VolumeX size={20} className="text-white/80" />
-                          : volume < 0.5 ? <Volume1 size={20} className="text-white/80" />
-                          : <Volume2 size={20} className="text-white/80" />}
-                      </button>
-                      <input type="range" min="0" max="1" step="0.05" value={isMuted ? 0 : volume}
-                        onChange={(e) => { const v = parseFloat(e.target.value); if (videoRef.current) { videoRef.current.volume = v; videoRef.current.muted = v === 0; } }}
-                        onClick={e => e.stopPropagation()}
-                        className="w-0 opacity-0 group-hover/vol:w-20 group-hover/vol:opacity-100 transition-[width,opacity] duration-200 accent-[#E50914] h-1 cursor-pointer" />
-                    </div>
-                  )}
-
-                  <button onClick={toggleFullscreen} className="p-1.5 hover:scale-110 active:scale-95 transition-all cursor-pointer">
+                  <button onClick={toggleFullscreen} className="p-1.5 hover:scale-110 active:scale-95 transition-all cursor-pointer" title="Toàn màn hình">
                     {isFullscreen ? <Minimize size={20} className="text-white/80" /> : <Maximize size={20} className="text-white/80" />}
                   </button>
                 </div>
