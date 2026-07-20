@@ -17,16 +17,23 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, Api-Key",
 };
 
-export default {
-  // Cron trigger: ping Render bridge mỗi 10 phút để tránh cold start
+  // Cron trigger: ping Render bridge + sync AI Movie Mappings
   async scheduled(event, env, ctx) {
     const bridgeUrl = (env.HOLLYSHEESH_API_URL || '').trim();
-    if (!bridgeUrl) return;
+    if (bridgeUrl) {
+      try {
+        const res = await fetch(`${bridgeUrl}/health`, { signal: AbortSignal.timeout(10000) });
+        console.log(`[cron-ping] Bridge health: ${res.status}`);
+      } catch (err) {
+        console.error(`[cron-ping] Bridge ping failed: ${err.message}`);
+      }
+    }
+
+    // Trigger AI movie mappings sync
     try {
-      const res = await fetch(`${bridgeUrl}/health`, { signal: AbortSignal.timeout(10000) });
-      console.log(`[cron-ping] Bridge health: ${res.status}`);
+      ctx.waitUntil(syncAiMovieMappings(env));
     } catch (err) {
-      console.error(`[cron-ping] Bridge ping failed: ${err.message}`);
+      console.error(`[cron-sync] AI mapping sync failed: ${err.message}`);
     }
   },
 
@@ -112,6 +119,49 @@ async function handleRequest(request, env, ctx) {
         status: 204,
         headers: CORS_HEADERS
       });
+    }
+
+    // 0. AI Movie Mapping Endpoint
+    if (url.pathname === "/api/ai-mapping") {
+      if (request.method === "GET") {
+        const key = url.searchParams.get("key");
+        if (!key) {
+          return new Response(JSON.stringify({ error: "Missing key parameter" }), {
+            status: 400,
+            headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
+          });
+        }
+        if (typeof env.MOVIE_CACHE !== "undefined") {
+          try {
+            const cached = await env.MOVIE_CACHE.get(key);
+            if (cached) {
+              return new Response(cached, {
+                status: 200,
+                headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
+              });
+            }
+          } catch (e) {
+            console.warn("[ai-mapping] KV read error:", e.message);
+          }
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), {
+          status: 404,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
+        });
+      } else if (request.method === "POST" && url.pathname.endsWith("/sync")) {
+        try {
+          const syncResult = await syncAiMovieMappings(env);
+          return new Response(JSON.stringify(syncResult), {
+            status: 200,
+            headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
+          });
+        } catch (e) {
+          return new Response(JSON.stringify({ error: e.message }), {
+            status: 500,
+            headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
+          });
+        }
+      }
     }
 
     // 1a. Bulk TMDB details resolver
@@ -4279,6 +4329,99 @@ async function handleXem20Proxy(request, url) {
   } catch (err) {
     return jsonResponse({ error: err.message }, 500);
   }
+}
+
+async function syncAiMovieMappings(env) {
+  const apiKey = env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY environment variable is not configured.");
+  }
+  if (!env.MOVIE_CACHE) {
+    throw new Error("MOVIE_CACHE KV Namespace is not bound.");
+  }
+
+  const sources = [
+    { name: "ophim", url: "https://ophim1.com/v1/api/danh-sach/phim-moi-cap-nhat?page=1" },
+    { name: "kkphim", url: "https://phimapi.com/danh-sach/phim-moi-cap-nhat?page=1" }
+  ];
+
+  let totalMapped = 0;
+  const logDetails = [];
+
+  for (const src of sources) {
+    try {
+      const res = await fetch(src.url);
+      if (!res.ok) continue;
+      const data = await res.json();
+      const items = data.data?.items || data.items || [];
+
+      for (const item of items.slice(0, 10)) {
+        const title = item.name || item.origin_name;
+        if (!title) continue;
+
+        // Query TMDB search for candidates
+        const tmdbToken = env.TMDB_ACCESS_TOKEN || env.VITE_TMDB_ACCESS_TOKEN || "";
+        const searchUrl = `https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(title)}&language=vi`;
+        const tmdbRes = await fetch(searchUrl, {
+          headers: { "Authorization": `Bearer ${tmdbToken}`, "Accept": "application/json" }
+        });
+
+        if (!tmdbRes.ok) continue;
+        const tmdbData = await tmdbRes.json();
+        const candidates = (tmdbData.results || []).slice(0, 5).map(c => ({
+          id: c.id,
+          media_type: c.media_type,
+          title: c.title || c.name,
+          original_title: c.original_title || c.original_name,
+          release_date: c.release_date || c.first_air_date,
+          overview: (c.overview || '').substring(0, 150)
+        }));
+
+        if (candidates.length === 0) continue;
+
+        const systemPrompt = `You are a precise movie library matcher. Match the provided Vietnamese site movie entry with ONE candidate from the TMDB candidates list.
+Respond ONLY with a JSON object format:
+{"tmdb_id": number|null, "media_type": "movie"|"tv", "season": number, "slug": string, "confidence": number}
+If no candidate matches, set tmdb_id to null.`;
+
+        const userPrompt = `Item: "${item.name}" (Original: "${item.origin_name}", Year: ${item.year}, Slug: "${item.slug}")
+TMDB Candidates: ${JSON.stringify(candidates)}`;
+
+        const geminiRes = await callGemini(apiKey, systemPrompt, userPrompt);
+        let text = geminiRes.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+
+        let parsed;
+        try {
+          parsed = JSON.parse(text);
+        } catch(e) { continue; }
+
+        if (parsed && parsed.tmdb_id) {
+          const mediaType = parsed.media_type || 'movie';
+          const seasonTag = mediaType === 'tv' ? `:s${parsed.season || 1}` : '';
+          const kvKey = `tmdb_map:${mediaType}:${parsed.tmdb_id}${seasonTag}`;
+
+          const mappingValue = {
+            slug: item.slug,
+            provider: src.name,
+            confidence: parsed.confidence || 0.95,
+            mapped_at: new Date().toISOString()
+          };
+
+          await env.MOVIE_CACHE.put(kvKey, JSON.stringify(mappingValue), {
+            expirationTtl: 30 * 24 * 3600 // 30 days cache
+          });
+
+          totalMapped++;
+          logDetails.push({ kvKey, slug: item.slug });
+        }
+      }
+    } catch (e) {
+      console.warn(`[syncAiMovieMappings] Error syncing ${src.name}:`, e.message);
+    }
+  }
+
+  return { success: true, totalMapped, logDetails };
 }
 
 async function callGemini(apiKey, systemPrompt, userPrompt) {

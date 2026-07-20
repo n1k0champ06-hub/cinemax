@@ -7,6 +7,7 @@
 import type { StreamItem, StreamProvider, StreamQuery } from './types';
 import { computeScore } from './types';
 import { buildProxiedM3u8Url } from '../cineproApi';
+import { fetchAiMapping } from '../aiMappingApi';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -222,7 +223,38 @@ async function fetchFromVietnameseApi(
       }
     }
 
-    // 2. If direct slug fetch failed or was skipped, search by title or slug to resolve slug
+    // 1b. Check AI Mapping from Cloudflare KV
+    if (!detailFetched && query.tmdbId) {
+      try {
+        const aiMapping = await fetchAiMapping(query.tmdbId, query.type || 'movie', query.season || 1);
+        if (aiMapping && aiMapping.slug) {
+          const aiSlug = aiMapping.slug;
+          let aiDetailUrl = '';
+          if (providerId === 'ophim') {
+            aiDetailUrl = `https://ophim1.com/phim/${aiSlug}`;
+          } else if (providerId === 'nguonc') {
+            aiDetailUrl = `https://phim.nguonc.com/api/film/${aiSlug}`;
+          } else {
+            aiDetailUrl = `https://phimapi.com/phim/${aiSlug}`;
+          }
+
+          const res = await fetchWithTimeout(aiDetailUrl, 5000);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && (data.status === true || data.status === 'success' || data.movie || data.film || data.data)) {
+              detailData = data;
+              detailFetched = true;
+              slug = aiSlug;
+              console.log(`[${providerLabel}] AI KV Mapping hit! Matched slug: ${aiSlug}`);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`[${providerLabel}] AI KV Mapping lookup error:`, err);
+      }
+    }
+
+    // 2. If direct slug fetch and AI mapping failed or were skipped, search by title or slug to resolve slug
     if (!detailFetched) {
       const searchKeywords: string[] = [];
 
