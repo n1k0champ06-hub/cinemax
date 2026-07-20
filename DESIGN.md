@@ -13,7 +13,7 @@ Unlike other platforms that use rounded, pill-like shapes (such as Spotify), Net
 **Key Characteristics:**
 *   **Immersive Dark Theme:** True black (`#000000`) and near-black (`#141414`) background surfaces.
 *   **Netflix Red (`#E50914`):** Used exclusively for primary calls to action, active navigation tabs, brand logos, and progress tracking.
-*   **Clean Geometry:** Rectangular grids and buttons with subtle `4px` rounding (never use pills or round badges unless representing avatars).
+*   **Clean Geometry:** Rectangular grids and buttons with subtle `4px` to `8px` rounding.
 *   **Micro-interactions:** Hover zoom scale (`1.05x` to `1.15x`) on movie cards with smooth transitions (`cubic-bezier(0.25, 1, 0.5, 1)`).
 *   **Content-first Visual Density:** Margins and paddings are structured to maximize screen real estate for media list rows.
 
@@ -122,11 +122,62 @@ Unlike other platforms that use rounded, pill-like shapes (such as Spotify), Net
 
 ---
 
-## 6. Do's and Don'ts
+## 6. Video Player UI (Netflix Style)
+
+### Center Overlay Controls
+*   **Layout:** The main playback controls (Skip -10s, Big Play/Pause, Skip +10s) are positioned directly in the center of the video screen overlay.
+*   **Minimalist Aesthetics:** Pure, borderless, backgroundless white SVG icons (`drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]`) without heavy dark circular background disks, ensuring maximum transparency over video content.
+*   **Visibility:** Displayed only when controls are active (`showControls = true` on hover or screen tap).
+*   **Interactions:** Hover zoom scale (`1.15x`) and active press shrink (`0.90x`).
+
+### Scrim & Control Bar
+*   **Cinematic Scrim:** The control bar uses a smooth gradient overlay running from bottom to top:
+    `background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.6) 60%, rgba(0,0,0,0) 100%)`
+*   **Backdrop Filter:** `backdrop-filter: blur(8px)` to separate controls gracefully from video background.
+
+### Seekbar (Time Progress Bar)
+*   **Default State:** Ultra-thin bar (`4px` / `h-1`), subtle dark background with buffered indicator (`rgba(255,255,255,0.2)`).
+*   **Hover State:** Expands to `8px` (`h-2`) smoothly (`transition: height 0.15s ease-in-out`).
+*   **Progress & Handle:** Netflix Red (`#E50914`) progress line with a circular red slider handle (`w-3.5 h-3.5 bg-[#E50914]`) that scales in on seekbar hover.
+
+### Control Bar Buttons Layout
+*   **Horizontal Distribution:** Rather than clustering buttons exclusively at screen edges, Netflix places primary action items evenly across the bottom bar:
+    *   **Volume & Time:** Left side volume control and current time / total duration (`05:12 / 01:48:58`).
+    *   **Tốc độ phát:** Speed indicator with icon + label (`Tốc độ (1x)`).
+    *   **Các tập:** Episode drawer toggle with icon + label (`Các tập`).
+    *   **Âm thanh và phụ đề:** Subtitle overlay toggle with icon + label (`Âm thanh và phụ đề`).
+    *   **Tập tiếp theo:** Next episode shortcut with icon + label (`Tập tiếp theo`).
+    *   **Right Utilities:** Settings gear icon (Nguồn phát), Flag button (Báo lỗi), and Fullscreen toggle.
+
+### Episode Selector UI & Modal Panels (Apple-Style Popover on Desktop / Bottom Sheet on Mobile)
+*   **Desktop View (`!isMobile`):** Overlay panels (Episodes, Speed, Subtitles, Settings) open as a compact floating **Apple-style Popover Card** (`rounded-2xl`, `backdrop-blur-2xl`, `border border-white/15`, `shadow-2xl`) positioned **directly above the exact button clicked** (`absolute bottom-16`, `w-60` to `w-[460px]`, `max-h-[55vh]`). This keeps the player UI clean and prevents covering the main video frame.
+*   **Mobile View (`isMobile`):** Retains full-width **Bottom Sheet** sliding up from the bottom (`y: 100%` -> `y: 0`) with `rounded-t-2xl` top corners.
+*   **Rich Episode Cards:** Replaces simple number grids with full 16:9 media cards matching Netflix TV interface:
+    *   **Thumbnail:** 16:9 image preview with subtle rounded corners (`rounded-lg`), play icon overlay, and bottom watch progress bar.
+    *   **Title Header:** `[Tập]. [Tên tập]` (e.g. `1. Rồi đời ai cũng sẽ có bước ngoặt`).
+    *   **Duration:** Subtle metadata string (e.g. `1 giờ 8 phút` / `45 phút`).
+    *   **Overview Text:** Episode synopsis text below title for rich context.
+
+### Sidebar Settings & Stream Sources Panel
+*   **Header & Quick Settings:**
+    *   Single-row 2-column grid for `Tốc độ phát` (Speed) and `Phụ đề` (Subtitles).
+    *   No "Chất lượng" (Quality) button in main panel menu.
+*   **Stream Sources Tabs:**
+    *   Categorized into horizontal tabs: `[ Việt Nam ]`, `[ VIP ]`, `[ Cộng Đồng ]`.
+    *   Active tab highlighted with Netflix Red bottom border (`border-b-2 border-[#E50914]`).
+*   **Source Cards:**
+    *   Rounded corners (`rounded-lg` / `8px`).
+    *   Translucent dark background (`bg-white/5`, `hover:bg-white/10`).
+    *   Badges (1080p, Auto) and star scores (`★ 126`) aligned neatly to the right edge.
+*   **Custom Scrollbar:** Thin `4px` dark translucent scrollbar (`custom-scrollbar`).
+
+---
+
+## 7. Do's and Don'ts
 
 ### Do
 *   **Do** keep background colors restricted to True Black (`#000000`) and Netflix Dark (`#141414`).
-*   **Do** use the `4px` border-radius rule for buttons and media cards to preserve the premium cinematic geometry.
+*   **Do** use `4px` to `8px` border-radius rules for buttons, cards, and source tiles to preserve cinematic geometry.
 *   **Do** use smooth transition animations for card zoom scales and transparent navbar fades.
 *   **Do** highlight match rates using Positive Green (`#46D369`) (e.g., `97% Match`).
 *   **Do** hide scrollbars on horizontal lists to simulate native TV player UI scrolling.

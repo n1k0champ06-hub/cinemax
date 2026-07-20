@@ -3,6 +3,7 @@ import {
   Play, Pause, RotateCcw, RotateCw, Maximize, Minimize,
   VolumeX, Volume1, Volume2, Settings, ArrowLeft,
   Loader2, Check, ChevronRight, X, List, Flag,
+  Gauge, MessageSquare, SkipForward, Layers, Lock, Unlock, Server,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Hls from 'hls.js';
@@ -273,7 +274,14 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   const [isMuted,      setIsMuted]      = useState(false);
   const [volume,       setVolume]       = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [seekFx,       setSeekFx]       = useState<'fwd' | 'rev' | null>(null);
+  const [simulatedFullscreen, setSimulatedFullscreen] = useState(false);
+  const [isLocked,     setIsLocked]     = useState(false);
+  const [isMobile,     setIsMobile]     = useState(false);
+  const [isLandscape,  setIsLandscape]  = useState(false);
+
+  const effectiveFullscreen = isFullscreen || simulatedFullscreen;
+  const isMobileFullscreenMode = isMobile && (effectiveFullscreen || isLandscape);
+  const [seekFx,       setSeekFx]       = useState<{ type: 'fwd' | 'rev'; amount: number } | null>(null);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [qualities,    setQualities]    = useState<{ id: number; name: string }[]>([]);
   const [activeQuality,setActiveQuality]= useState(-1);
@@ -284,8 +292,9 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   const [subEnabled,   setSubEnabled]   = useState(false);
   const [subOffset,    setSubOffset]    = useState(0);
   const [failedSubs,   setFailedSubs]   = useState<Set<string>>(new Set());
-  const [isMobile,     setIsMobile]     = useState(false);
   const [progressMap,  setProgressMap]  = useState<Record<string, any>>({});
+  const [episodeProgressMap, setEpisodeProgressMap] = useState<Record<string, any>>({});
+  const [activeSourceTab, setActiveSourceTab] = useState<'vi' | 'vip' | 'comm'>('vi');
 
   const resolvedUrl = useMemo(() =>
     activeStream?.type === 'hls' ? activeStream.url : url,
@@ -437,9 +446,18 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
         setQualities([{ id:-1, name:'Tự động' }, ...lvls]);
         setActiveQuality(hls.currentLevel);
         const subs = hls.subtitleTracks
-          .map((s,i) => ({ id:i, name: s.name || s.lang || `Phụ đề ${i+1}`, lang: s.lang||'' }))
-          .filter(s => s.lang.toLowerCase().includes('vi') || s.lang.toLowerCase().includes('viet'))
-          .map(s => ({ id:s.id, name:s.name }));
+          .map((s, i) => {
+            const lang = (s.lang || s.name || '').toLowerCase();
+            let name = s.name || s.lang || `Phụ đề ${i + 1}`;
+            if (lang.includes('vi') || lang.includes('viet')) name = `Tiếng Việt (HLS #${i + 1})`;
+            else if (lang.includes('en') || lang.includes('eng')) name = `Tiếng Anh (HLS #${i + 1})`;
+            return { id: i, name, lang };
+          })
+          .filter(s => {
+            const l = s.lang.toLowerCase();
+            return l.includes('vi') || l.includes('viet') || l.includes('en') || l.includes('eng') || !s.lang;
+          })
+          .map(s => ({ id: s.id, name: s.name }));
         setSubTracks(subs);
       });
 
@@ -498,7 +516,14 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     const onPause= () => setIsPlaying(false);
     const onBuf  = () => setIsBuffering(true);
     const onCan  = () => setIsBuffering(false);
-    const onVol  = () => { setVolume(v.volume); setIsMuted(v.muted); };
+    const onVol  = () => {
+      setVolume(v.volume);
+      setIsMuted(v.muted);
+      try {
+        localStorage.setItem('cinemax_player_volume', String(v.volume));
+        localStorage.setItem('cinemax_player_muted', String(v.muted));
+      } catch {}
+    };
     const onEnd  = () => {
       const idx = episodes.findIndex((ep) => isSameEp(ep.name, episodeName));
       if (idx !== -1 && idx < episodes.length - 1 && onEpisodeSelect) onEpisodeSelect(episodes[idx+1]);
@@ -534,6 +559,22 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   }, []);
 
   useEffect(() => {
+    const handleResize = () => {
+      if (typeof window === 'undefined') return;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const ua = navigator.userAgent.toLowerCase();
+      const isMobileUA = /iphone|ipad|ipod|android|blackberry|mini|windows\sce|palm/i.test(ua);
+      const isTouch = navigator.maxTouchPoints > 0;
+      setIsMobile(isMobileUA || (isTouch && w < 1024) || w <= 960);
+      setIsLandscape(w > h);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
     const hls = hlsRef.current;
     if (!hls) return;
     hls.subtitleTrack = (subEnabled && typeof selectedSub === 'number') ? selectedSub : -1;
@@ -544,7 +585,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       if (panelOpen === 'none') setShowControls(false);
-    }, 3500);
+    }, 2000);
   }, [panelOpen]);
 
   useEffect(() => { resetControls(); return () => { if (timerRef.current) clearTimeout(timerRef.current); }; }, [resetControls]);
@@ -554,6 +595,8 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     try {
       const s = localStorage.getItem('cinemax_progress');
       if (s) setProgressMap(JSON.parse(s));
+      const epS = localStorage.getItem('cinemax_episodes_progress');
+      if (epS) setEpisodeProgressMap(JSON.parse(epS));
     } catch {}
   }, [panelOpen]);
 
@@ -565,13 +608,21 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     else { const p = v.play(); if (p) p.catch(err => { if (err.name !== 'AbortError') setIsPlaying(false); }); }
   }, [isPlaying]);
 
-  const skip = useCallback((sec) => {
+  const skip = useCallback((sec: number) => {
     const v = videoRef.current;
     if (!v) return;
     v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + sec));
-    setSeekFx(sec > 0 ? 'fwd' : 'rev');
+    
+    setSeekFx(prev => {
+      const type = sec > 0 ? 'fwd' : 'rev';
+      if (prev && prev.type === type) {
+        return { type, amount: prev.amount + 10 };
+      }
+      return { type, amount: 10 };
+    });
+
     if (seekFxRef.current) clearTimeout(seekFxRef.current);
-    seekFxRef.current = setTimeout(() => setSeekFx(null), 700);
+    seekFxRef.current = setTimeout(() => setSeekFx(null), 450);
     resetControls();
   }, [resetControls]);
 
@@ -581,19 +632,21 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     if (v) v.muted = !v.muted;
   };
 
-  const toggleFullscreen = async (e) => {
-    e.stopPropagation();
+  const toggleFullscreen = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     const el = containerRef.current;
     if (!el) return;
     const d = document as any;
-    const isFull = !!(d.fullscreenElement || d.webkitFullscreenElement);
+    const isFull = !!(d.fullscreenElement || d.webkitFullscreenElement || simulatedFullscreen);
     if (!isFull) {
+      setSimulatedFullscreen(true);
       try {
         if (el.requestFullscreen) await el.requestFullscreen();
         else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen();
         if (screen.orientation && (screen.orientation as any).lock) await (screen.orientation as any).lock('landscape').catch(()=>{});
       } catch {}
     } else {
+      setSimulatedFullscreen(false);
       try {
         if (d.exitFullscreen) await d.exitFullscreen();
         else if (d.webkitExitFullscreen) await d.webkitExitFullscreen();
@@ -602,7 +655,41 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     }
   };
 
-  const handleRate = (r) => { if (videoRef.current) videoRef.current.playbackRate = r; setPlaybackRate(r); };
+  const handleRate = (r: number) => {
+    if (videoRef.current) videoRef.current.playbackRate = r;
+    setPlaybackRate(r);
+    try {
+      localStorage.setItem('cinemax_playback_rate', String(r));
+    } catch {}
+  };
+
+  useEffect(() => {
+    try {
+      const savedVol = localStorage.getItem('cinemax_player_volume');
+      if (savedVol && videoRef.current) {
+        const v = parseFloat(savedVol);
+        videoRef.current.volume = v;
+        setVolume(v);
+      }
+
+      const savedMuted = localStorage.getItem('cinemax_player_muted');
+      if (savedMuted && videoRef.current) {
+        const m = savedMuted === 'true';
+        videoRef.current.muted = m;
+        setIsMuted(m);
+      }
+
+      const savedRate = localStorage.getItem('cinemax_playback_rate');
+      if (savedRate) {
+        const r = parseFloat(savedRate);
+        setPlaybackRate(r);
+        if (videoRef.current) videoRef.current.playbackRate = r;
+      }
+
+      const savedOffset = localStorage.getItem('cinemax_sub_offset');
+      if (savedOffset) setSubOffset(parseInt(savedOffset, 10));
+    } catch {}
+  }, []);
   const handleQuality = (id) => { if (hlsRef.current) hlsRef.current.currentLevel = id; setActiveQuality(id); };
 
   const handleSubChange = (id) => {
@@ -707,7 +794,10 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   const settingsPanelOpen = panelOpen === 'settings' || panelOpen === 'quality' || panelOpen === 'speed' || panelOpen === 'sub';
 
   return (
-    <div className="relative w-full h-full flex flex-col bg-black overflow-hidden select-none" ref={containerRef}>
+    <div className={cn(
+      "relative w-full h-full flex flex-col bg-black overflow-hidden select-none",
+      simulatedFullscreen && "fixed inset-0 z-[100] w-screen h-screen"
+    )} ref={containerRef}>
       <div className="relative w-full flex-1 bg-black overflow-hidden">
         {isEmbed ? (
           <iframe
@@ -725,6 +815,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
             preload="auto"
             onClick={handleVideoClick}
             onMouseMove={resetControls}
+            onTouchStart={resetControls}
           />
         )}
 
@@ -733,6 +824,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
             subtitleUrl={activeSubUrl}
             videoRef={videoRef}
             offsetMs={subOffset}
+            isControlVisible={showControls}
             onError={(u) => setFailedSubs(p => { const n = new Set(p); n.add(u); return n; })}
           />
         )}
@@ -747,156 +839,485 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
         </AnimatePresence>
 
         <AnimatePresence>
-          {seekFx && !isEmbed && (
-            <motion.div key={seekFx} initial={{ opacity:0, scale:0.8 }} animate={{ opacity:1, scale:1 }} exit={{ opacity:0 }}
-              transition={{ duration: 0.18 }}
-              className={`absolute top-1/2 -translate-y-1/2 pointer-events-none z-30 flex flex-col items-center gap-1 ${seekFx === 'fwd' ? 'right-12 md:right-24' : 'left-12 md:left-24'}`}>
-              <div className="bg-white/15 backdrop-blur-sm rounded-full w-16 h-16 md:w-20 md:h-20 flex items-center justify-center">
-                {seekFx === 'fwd' ? <RotateCw size={28} className="text-white" /> : <RotateCcw size={28} className="text-white" />}
-              </div>
-              <span className="text-white text-xs font-semibold">{seekFx === 'fwd' ? '+10s' : '-10s'}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <AnimatePresence>
           {showControls && !isEmbed && (
             <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration:0.2 }}
               className="absolute inset-0 z-40 flex flex-col justify-between pointer-events-none"
               onMouseMove={resetControls}>
-            {/* Top bar */}
-            <div className="pointer-events-auto flex items-center justify-between px-4 pt-4 pb-10 bg-gradient-to-b from-black/70 via-black/20 to-transparent">
-              <button onClick={(e) => { e.stopPropagation(); onClose?.(); }}
-                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors cursor-pointer">
-                <ArrowLeft size={20} className="text-white" />
-              </button>
-              <div className="flex-1 text-center px-4">
-                {movieName && <p className="text-white text-sm font-semibold truncate">{movieName}</p>}
-                {episodeName && isTv && <p className="text-white/50 text-xs truncate">{episodeName}</p>}
+              {isLocked ? (
+                /* Locked screen overlay: only show Unlock button in center */
+                <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setIsLocked(false); resetControls(); }}
+                    className="pointer-events-auto flex items-center gap-2 px-4 py-2.5 rounded-full bg-black/80 backdrop-blur-md border border-white/20 text-white font-bold text-xs shadow-2xl hover:bg-black/90 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <Lock size={16} className="text-[#E50914]" />
+                    <span>Màn hình đang khóa (Bấm để mở)</span>
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Top bar */}
+                  <div className="pointer-events-none flex items-center justify-between px-4 sm:px-6 pt-3 sm:pt-4 pb-8 sm:pb-12 bg-gradient-to-b from-black/90 via-black/40 to-transparent">
+                    {isMobile && isMobileFullscreenMode ? (
+                      <button onClick={(e) => { e.stopPropagation(); onClose?.(); }}
+                        className="pointer-events-auto w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-all cursor-pointer hover:scale-105 active:scale-95" title="Trở về">
+                        <ArrowLeft size={20} className="text-white" />
+                      </button>
+                    ) : isMobile ? <div className="w-8" /> : null}
+
+                    <div className="pointer-events-auto flex-1 text-center px-3 min-w-0">
+                      <p className="text-white text-xs sm:text-base font-bold truncate tracking-wide">
+                        {movieName || title}
+                        {isTv && episodeName ? ` • Tập ${episodeName}` : ''}
+                      </p>
+                    </div>
+
+                    {isMobile && isMobileFullscreenMode ? (
+                      <button onClick={(e) => { e.stopPropagation(); setIsLocked(true); setPanelOpen('none'); resetControls(); }}
+                        className="pointer-events-auto p-2 rounded-full hover:bg-white/10 transition-all cursor-pointer text-white hover:scale-110 active:scale-95"
+                        title="Khóa màn hình">
+                        <Lock size={20} />
+                      </button>
+                    ) : isMobile ? <div className="w-8" /> : null}
+                  </div>
+
+                  {/* Center controls (Netflix Style) */}
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-6 sm:gap-12 md:gap-16 z-50">
+                    {/* Left button (-10s) */}
+                    <div className="relative flex items-center justify-center">
+                      <button onClick={(e) => { e.stopPropagation(); skip(-10); }}
+                        className="pointer-events-auto text-white hover:text-white/80 transition-all transform hover:scale-110 active:scale-90 cursor-pointer drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] p-1.5 relative flex items-center justify-center"
+                        title="Tua lùi 10 giây">
+                        <RotateCcw className="w-6 h-6 sm:w-9 sm:h-9 md:w-11 md:h-11 text-white stroke-[1.8]" />
+                        <span className="absolute text-[7px] sm:text-[10px] font-black text-white pointer-events-none select-none">10</span>
+                      </button>
+
+                      <AnimatePresence>
+                        {seekFx?.type === 'rev' && (
+                          <motion.span
+                            key={`rev-${seekFx.amount}`}
+                            initial={{ opacity: 1, x: 0 }}
+                            animate={{ opacity: 0, x: -20 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.38, ease: "easeOut" }}
+                            className="absolute right-full mr-1 text-white font-extrabold text-xs sm:text-sm md:text-base pointer-events-none select-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)] whitespace-nowrap"
+                          >
+                            -{seekFx.amount}
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </div>
+
+                    {/* Center Play/Pause button */}
+                    <button onClick={(e) => { e.stopPropagation(); togglePlay(e); }}
+                      className="pointer-events-auto text-white hover:text-white/80 transition-all transform hover:scale-110 active:scale-90 cursor-pointer drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)] p-1.5"
+                      title={isPlaying ? "Tạm dừng" : "Phát"}>
+                      {isPlaying ? (
+                        <Pause className="w-9 h-9 sm:w-14 sm:h-14 md:w-18 md:h-18 fill-white text-white" />
+                      ) : (
+                        <Play className="w-9 h-9 sm:w-14 sm:h-14 md:w-18 md:h-18 fill-white text-white ml-0.5" />
+                      )}
+                    </button>
+
+                    {/* Right button (+10s) */}
+                    <div className="relative flex items-center justify-center">
+                      <button onClick={(e) => { e.stopPropagation(); skip(10); }}
+                        className="pointer-events-auto text-white hover:text-white/80 transition-all transform hover:scale-110 active:scale-90 cursor-pointer drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] p-1.5 relative flex items-center justify-center"
+                        title="Tua tới 10 giây">
+                        <RotateCw className="w-6 h-6 sm:w-9 sm:h-9 md:w-11 md:h-11 text-white stroke-[1.8]" />
+                        <span className="absolute text-[7px] sm:text-[10px] font-black text-white pointer-events-none select-none">10</span>
+                      </button>
+
+                      <AnimatePresence>
+                        {seekFx?.type === 'fwd' && (
+                          <motion.span
+                            key={`fwd-${seekFx.amount}`}
+                            initial={{ opacity: 1, x: 0 }}
+                            animate={{ opacity: 0, x: 20 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.38, ease: "easeOut" }}
+                            className="absolute left-full ml-1 text-white font-extrabold text-xs sm:text-sm md:text-base pointer-events-none select-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)] whitespace-nowrap"
+                          >
+                            +{seekFx.amount}
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+
+                  {/* Bottom control bar with scrim gradient */}
+                  {(isMobile && !isMobileFullscreenMode) ? (
+                    /* Windowed Mode (!isMobileFullscreenMode) — YouTube Style Minimalist Layout */
+                    <div className="pointer-events-none absolute bottom-0 inset-x-0 flex flex-col justify-end px-3 pb-0 pt-8 bg-gradient-to-t from-black/95 via-black/60 to-transparent z-40">
+                      {/* Top row: Time counter (Left) & Only 3 essential buttons (Right: Sub, Settings, Fullscreen) */}
+                      <div className="pointer-events-auto flex items-center justify-between px-1 mb-1.5">
+                        <span className="text-white/80 text-[11px] font-mono tabular-nums font-medium select-none">
+                          {formatTime(currentTime)} / {formatTime(duration)}
+                        </span>
+
+                        <div className="flex items-center gap-1">
+                          {!isEmbed && (
+                            <button onClick={() => setPanelOpen('sub')}
+                              className={`p-1.5 rounded-md transition-colors cursor-pointer ${panelOpen === 'sub' ? 'text-[#E50914] bg-white/10' : 'text-white/80 hover:text-white hover:bg-white/10'}`}
+                              title="Phụ đề">
+                              <span className="font-bold text-[9px] leading-none px-1 py-[1.5px] border border-current/80 rounded-[3px] select-none inline-flex items-center justify-center font-sans tracking-wide">
+                                CC
+                              </span>
+                            </button>
+                          )}
+
+                          <button onClick={openPanel('settings')}
+                            className={`p-1.5 rounded-md transition-colors cursor-pointer ${settingsPanelOpen ? 'text-[#E50914] bg-white/10' : 'text-white/80 hover:text-white hover:bg-white/10'}`}
+                            title="Nguồn phát & Cài đặt">
+                            <Settings size={16} />
+                          </button>
+
+                          <button onClick={toggleFullscreen}
+                            className="p-1.5 rounded-md text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                            title="Toàn màn hình">
+                            <Maximize size={16} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* YouTube-style Seekbar pinned to VERY BOTTOM EDGE (bottom-0) below subtitles */}
+                      {!isEmbed && (
+                        <div className="pointer-events-auto relative w-full h-3 flex items-center group/seek cursor-pointer">
+                          <div className="absolute left-0 h-1 group-hover/seek:h-1.5 bg-white/20 rounded-full transition-all duration-150" style={{ width: `${buffered}%` }} />
+                          <div className="absolute left-0 h-1 group-hover/seek:h-1.5 bg-[#E50914] rounded-full transition-all duration-150 pointer-events-none" style={{ width: `${progress}%` }}>
+                            <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-2.5 h-2.5 rounded-full bg-[#E50914] shadow-[0_0_8px_#E50914] opacity-0 group-hover/seek:opacity-100 transition-all" />
+                          </div>
+                          <div className="absolute left-0 right-0 h-1 group-hover/seek:h-1.5 bg-white/10 rounded-full -z-10 transition-all duration-150" />
+                          <input type="range" min="0" max={duration || 0} step="0.5" value={currentTime}
+                            onChange={handleSeekBar} onClick={e => e.stopPropagation()}
+                            className="absolute inset-0 w-full opacity-0 cursor-pointer h-full z-10" />
+                        </div>
+                      )}
+                    </div>
+                  ) : isMobile && isMobileFullscreenMode ? (
+                    /* Mobile Fullscreen Mode — Netflix Mobile Layout */
+                    <div className="pointer-events-none flex flex-col gap-2 px-3 sm:px-6 pb-3 sm:pb-5 pt-10 bg-gradient-to-t from-black/95 via-black/75 to-transparent z-40">
+                      {/* Seek bar with remaining time on far right */}
+                      {!isEmbed && (
+                        <div className="pointer-events-auto flex items-center gap-3 w-full">
+                          <div className="relative flex-1 h-3 flex items-center group/seek cursor-pointer">
+                            <div className="absolute left-0 h-1 group-hover/seek:h-1.5 bg-white/20 rounded-full transition-all duration-150" style={{ width: `${buffered}%` }} />
+                            <div className="absolute left-0 h-1 group-hover/seek:h-1.5 bg-[#E50914] rounded-full transition-all duration-150 pointer-events-none" style={{ width: `${progress}%` }}>
+                              <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-3 h-3 rounded-full bg-[#E50914] shadow-[0_0_8px_#E50914] transition-all" />
+                            </div>
+                            <div className="absolute left-0 right-0 h-1 group-hover/seek:h-1.5 bg-white/10 rounded-full -z-10 transition-all duration-150" />
+                            <input type="range" min="0" max={duration || 0} step="0.5" value={currentTime}
+                              onChange={handleSeekBar} onClick={e => e.stopPropagation()}
+                              className="absolute inset-0 w-full opacity-0 cursor-pointer h-full z-10" />
+                          </div>
+                          <span className="text-white/90 text-xs sm:text-sm font-mono tabular-nums font-medium shrink-0 select-none">
+                            {formatTime(Math.max(0, duration - currentTime))}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* 5 Mobile Fullscreen Buttons — Evenly distributed across bottom */}
+                      <div className="pointer-events-auto flex items-center justify-between sm:justify-evenly gap-1.5 w-full pt-1 overflow-x-auto scrollbar-hide">
+                        {!isEmbed && (
+                          <button onClick={() => setPanelOpen('speed')}
+                            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0 ${panelOpen === 'speed' ? 'text-[#E50914] bg-white/10' : 'text-white/80 hover:text-white'}`}
+                            title="Tốc độ phát">
+                            <Gauge size={16} />
+                            <span>Tốc độ ({playbackRate}x)</span>
+                          </button>
+                        )}
+
+                        {isTv && episodes.length > 0 && (
+                          <button onClick={openPanel('episodes')}
+                            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0 ${panelOpen === 'episodes' ? 'text-[#E50914] bg-white/10' : 'text-white/80 hover:text-white'}`}
+                            title="Các tập phim">
+                            <Layers size={16} />
+                            <span>Các tập</span>
+                          </button>
+                        )}
+
+                        {!isEmbed && (
+                          <button onClick={() => setPanelOpen('sub')}
+                            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0 ${panelOpen === 'sub' ? 'text-[#E50914] bg-white/10' : 'text-white/80 hover:text-white'}`}
+                            title="Âm thanh và phụ đề">
+                            <span className="font-bold text-[9px] leading-none px-1 py-[1.5px] border border-current/80 rounded-[3px] select-none inline-flex items-center justify-center font-sans tracking-wide shrink-0">
+                              CC
+                            </span>
+                            <span>Âm thanh & Phụ đề</span>
+                          </button>
+                        )}
+
+                        <button onClick={openPanel('settings')}
+                          className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0 ${settingsPanelOpen ? 'text-[#E50914] bg-white/10' : 'text-white/80 hover:text-white'}`}
+                          title="Nguồn phát">
+                          <Server size={16} />
+                          <span>Nguồn phát</span>
+                        </button>
+
+                        {isTv && nextEp && (
+                          <button onClick={(e) => { e.stopPropagation(); onEpisodeSelect?.(nextEp); }}
+                            className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-semibold text-white/80 hover:text-white transition-colors cursor-pointer shrink-0"
+                            title="Tập tiếp theo">
+                            <SkipForward size={16} />
+                            <span>Tập tiếp theo</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    /* Fullscreen Mode or Desktop View — Netflix Layout */
+                    <div className="pointer-events-none flex flex-col gap-0 px-3 sm:px-6 pb-3 sm:pb-5 pt-10 sm:pt-16 bg-gradient-to-t from-black/95 via-black/70 to-transparent z-40">
+                      {/* Seek bar */}
+                      {!isEmbed && (
+                        <div className="pointer-events-auto relative w-full h-4 sm:h-5 flex items-center group/seek mb-1 cursor-pointer">
+                          <div className="absolute left-0 h-1 group-hover/seek:h-2 bg-white/20 rounded-full transition-all duration-150" style={{ width: `${buffered}%` }} />
+                          <div className="absolute left-0 h-1 group-hover/seek:h-2 bg-[#E50914] rounded-full transition-all duration-150 pointer-events-none" style={{ width: `${progress}%` }}>
+                            <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-[#E50914] shadow-[0_0_10px_#E50914] opacity-0 group-hover/seek:opacity-100 transition-all transform group-hover/seek:scale-110" />
+                          </div>
+                          <div className="absolute left-0 right-0 h-1 group-hover/seek:h-2 bg-white/10 rounded-full -z-10 transition-all duration-150" />
+                          <input type="range" min="0" max={duration || 0} step="0.5" value={currentTime}
+                            onChange={handleSeekBar} onClick={e => e.stopPropagation()}
+                            className="absolute inset-0 w-full opacity-0 cursor-pointer h-full z-10" />
+                        </div>
+                      )}
+
+                      {/* Button row - Horizontal Layout */}
+                      <div className="pointer-events-auto flex items-center justify-between gap-1 sm:gap-2 mt-1">
+                        {!isEmbed ? (
+                          <div className="flex items-center gap-2 sm:gap-4">
+                            <button onClick={togglePlay} className="p-1 hover:scale-110 active:scale-95 transition-transform cursor-pointer" title={isPlaying ? "Tạm dừng" : "Phát"}>
+                              {isPlaying ? <Pause size={20} className="text-white" /> : <Play size={20} className="text-white" fill="white" />}
+                            </button>
+
+                            <div className="group/vol flex items-center gap-1">
+                              <button onClick={toggleMute} className="p-1 hover:scale-110 active:scale-95 transition-all cursor-pointer" title="Âm lượng">
+                                {isMuted || volume === 0 ? <VolumeX size={18} className="text-white/80" />
+                                  : volume < 0.5 ? <Volume1 size={18} className="text-white/80" />
+                                  : <Volume2 size={18} className="text-white/80" />}
+                              </button>
+                              <input type="range" min="0" max="1" step="0.05" value={isMuted ? 0 : volume}
+                                onChange={(e) => { const v = parseFloat(e.target.value); if (videoRef.current) { videoRef.current.volume = v; videoRef.current.muted = v === 0; } }}
+                                onClick={e => e.stopPropagation()}
+                                className="w-0 opacity-0 group-hover/vol:w-16 sm:group-hover/vol:w-20 group-hover/vol:opacity-100 transition-[width,opacity] duration-200 accent-[#E50914] h-1 cursor-pointer" />
+                            </div>
+
+                            <span className="text-white/70 text-[11px] sm:text-xs font-mono tabular-nums">
+                              {formatTime(currentTime)} / {formatTime(duration)}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className="text-white/40 text-[10px] sm:text-xs font-semibold uppercase tracking-wider bg-white/5 px-2 py-0.5 rounded border border-white/5">
+                              Nguồn nhúng
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Center/Right Distributed Actions */}
+                        <div className="flex items-center gap-1.5 sm:gap-3 md:gap-4 overflow-x-auto scrollbar-hide py-1">
+                          {!isEmbed && (
+                            <button onClick={() => setPanelOpen('speed')}
+                              className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] sm:text-xs font-medium transition-all cursor-pointer ${panelOpen === 'speed' ? 'text-[#E50914] bg-white/10' : 'text-white/80 hover:text-white hover:bg-white/5'}`}
+                              title="Tốc độ phát">
+                              <Gauge size={15} />
+                              <span className="hidden xs:inline">Tốc độ ({playbackRate}x)</span>
+                              <span className="xs:hidden">{playbackRate}x</span>
+                            </button>
+                          )}
+
+                          {isTv && episodes.length > 0 && (
+                            <button onClick={openPanel('episodes')}
+                              className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] sm:text-xs font-medium transition-all cursor-pointer ${panelOpen === 'episodes' ? 'text-[#E50914] bg-white/10' : 'text-white/80 hover:text-white hover:bg-white/5'}`}
+                              title="Các tập phim">
+                              <Layers size={15} />
+                              <span>Các tập</span>
+                            </button>
+                          )}
+
+                          {!isEmbed && (
+                            <button onClick={() => setPanelOpen('sub')}
+                              className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] sm:text-xs font-medium transition-all cursor-pointer ${panelOpen === 'sub' ? 'text-[#E50914] bg-white/10' : 'text-white/80 hover:text-white hover:bg-white/5'}`}
+                              title="Phụ đề">
+                              <span className="font-bold text-[9px] leading-none px-1 py-[1.5px] border border-current/80 rounded-[3px] select-none inline-flex items-center justify-center font-sans tracking-wide">
+                                CC
+                              </span>
+                              <span className="hidden sm:inline">Phụ đề</span>
+                            </button>
+                          )}
+
+                          {isTv && nextEp && (
+                            <button onClick={(e) => { e.stopPropagation(); onEpisodeSelect?.(nextEp); }}
+                              className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] sm:text-xs font-medium text-white/80 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                              title="Tập tiếp theo">
+                              <SkipForward size={15} />
+                              <span className="hidden sm:inline">Tập tiếp</span>
+                            </button>
+                          )}
+
+                          {/* Settings / Stream Sources button */}
+                          <button onClick={openPanel('settings')}
+                            className={`p-1.5 rounded-md hover:bg-white/10 transition-all cursor-pointer ${settingsPanelOpen ? 'text-[#E50914]' : 'text-white/80 hover:text-white'}`}
+                            title="Cài đặt & Nguồn phát">
+                            <Settings size={18} />
+                          </button>
+
+                          {/* Fullscreen button */}
+                          <button onClick={toggleFullscreen} className="p-1.5 rounded-md hover:bg-white/10 transition-all cursor-pointer text-white/80 hover:text-white" title="Toàn màn hình">
+                            {effectiveFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+      {/* Mobile Fullscreen Audio & Subtitles Panel (Matching Netflix Mobile UI Screenshot 1) */}
+      <AnimatePresence>
+        {isMobile && panelOpen === 'sub' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[100] bg-black/95 p-4 sm:p-8 flex flex-col justify-between overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            
+            {/* 2-Column Split Body */}
+            <div className="flex-1 grid grid-cols-2 gap-6 sm:gap-12 pt-2 pb-3 overflow-hidden min-h-0">
+              {/* Left Column: Âm thanh (Nguồn phát HLS / Thuyết minh / Lồng tiếng) */}
+              <div className="flex flex-col min-h-0 overflow-hidden">
+                <h3 className="text-lg sm:text-xl font-bold text-white mb-4 tracking-wide shrink-0">Âm thanh</h3>
+                <div className="space-y-2.5 overflow-y-auto custom-scrollbar pr-2 flex-1">
+                  {(() => {
+                    const formatAudioName = (s: any, idx: number) => {
+                      if (!s) return 'Ngôn ngữ gốc [Gốc]';
+                      const label = (s.providerLabel || s.label || s.name || s.provider || '').toLowerCase();
+                      const lang = (s.lang || '').toLowerCase();
+                      
+                      // 1. CHỈ KHI luồng HLS/nguồn có chứa từ khóa thuyết minh / lồng tiếng thì mới được hiện Tiếng Việt
+                      const isVietDub = label.includes('thuyết minh') || label.includes('thuyet minh') ||
+                                        label.includes('lồng tiếng') || label.includes('long tieng') ||
+                                        label.includes('lồng tiếng việt') || label.includes('thuyết minh việt');
+
+                      if (isVietDub) {
+                        if (label.includes('thuyết minh') || label.includes('thuyet minh')) return 'Tiếng Việt [Thuyết minh]';
+                        if (label.includes('lồng tiếng') || label.includes('long tieng')) return 'Tiếng Việt [Lồng tiếng]';
+                        return 'Tiếng Việt';
+                      }
+
+                      // 2. Nếu là nguồn phim sản xuất tại Việt Nam:
+                      if (label.includes('phim việt') || label.includes('phim viet')) return 'Tiếng Việt [Gốc]';
+
+                      // 3. Phim Nhật (Anime), Hàn, Anh, Mỹ:
+                      if (lang === 'ja' || label.includes('japanese') || label.includes('anime')) {
+                        return idx === 0 ? 'Tiếng Nhật [Gốc]' : `Tiếng Nhật (Server ${idx + 1})`;
+                      }
+                      if (lang === 'ko' || label.includes('korean')) {
+                        return idx === 0 ? 'Tiếng Hàn [Gốc]' : `Tiếng Hàn (Server ${idx + 1})`;
+                      }
+                      if (lang === 'en' || label.includes('english')) {
+                        return idx === 0 ? 'Tiếng Anh [Gốc]' : `Tiếng Anh (Server ${idx + 1})`;
+                      }
+
+                      // 4. Mặc định là Ngôn ngữ gốc [Gốc]
+                      return idx === 0 ? 'Ngôn ngữ gốc [Gốc]' : `Ngôn ngữ gốc (Server ${idx + 1})`;
+                    };
+
+                    // CHỈ lọc các nguồn phim HLS (loại bỏ các nguồn embed iframe 3rd party không can thiệp được)
+                    const hlsStreamsOnly = (streams && streams.length > 0)
+                      ? streams.filter((s: any) => s.type !== 'embed' && s.type !== 'iframe')
+                      : [];
+
+                    const rawList = (hlsStreamsOnly.length > 0)
+                      ? hlsStreamsOnly.map((s: any, idx: number) => ({
+                          ...s,
+                          displayName: formatAudioName(s, idx)
+                        }))
+                      : [
+                          { displayName: 'Ngôn ngữ gốc [Gốc]', url: url },
+                        ];
+
+                    const seenNames = new Set<string>();
+                    const audioList = rawList.filter((item: any) => {
+                      if (seenNames.has(item.displayName)) return false;
+                      seenNames.add(item.displayName);
+                      return true;
+                    });
+
+                    return audioList.map((s: any, idx: number) => {
+                      const isActive = activeStream
+                        ? (activeStream.providerLabel === s.providerLabel && activeStream.url === s.url)
+                        : idx === 0;
+
+                      return (
+                        <button key={idx} onClick={() => s.url && onStreamSelect?.(s)}
+                          className={`flex items-center gap-3 text-left w-full cursor-pointer py-2 px-3 rounded-xl transition-all group ${isActive ? 'bg-white/10 border border-white/20' : 'hover:bg-white/5'}`}>
+                          <Check size={18} className={isActive ? "text-[#E50914] opacity-100" : "opacity-0"} />
+                          <span className={`text-sm sm:text-base truncate ${isActive ? 'text-white font-bold' : 'text-white/70 group-hover:text-white'}`}>
+                            {s.displayName}
+                          </span>
+                        </button>
+                      );
+                    });
+                  })()}
+                </div>
               </div>
-              <button onClick={(e) => { e.stopPropagation(); setShowReport(true); }}
-                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors cursor-pointer" title="Báo lỗi">
-                <Flag size={17} className="text-white/70" />
-              </button>
+
+              {/* Right Column: Phụ đề */}
+              <div className="flex flex-col min-h-0 overflow-hidden">
+                <h3 className="text-lg sm:text-xl font-bold text-white mb-4 tracking-wide shrink-0">Phụ đề</h3>
+                <div className="space-y-2.5 overflow-y-auto custom-scrollbar pr-2 flex-1">
+                  {combinedSubs.map(s => {
+                    const isActive = selectedSub === s.id;
+                    return (
+                      <button key={String(s.id)} onClick={() => handleSubChange(s.id)}
+                        className={`flex items-center gap-3 text-left w-full cursor-pointer py-2 px-3 rounded-xl transition-all group ${isActive ? 'bg-white/10 border border-white/20' : 'hover:bg-white/5'}`}>
+                        <Check size={18} className={isActive ? "text-[#E50914] opacity-100" : "opacity-0"} />
+                        <span className={`text-sm sm:text-base ${isActive ? 'text-white font-bold' : 'text-white/70 group-hover:text-white'}`}>
+                          {s.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
-            {/* Bottom controls */}
-            <div className="pointer-events-auto flex flex-col gap-0 px-4 pb-4 pt-12 bg-gradient-to-t from-black/80 via-black/30 to-transparent">
-              {/* Seek bar */}
-              {!isEmbed && (
-                <div className="relative w-full h-5 flex items-center group/seek mb-1 cursor-pointer">
-                  <div className="absolute left-0 h-[3px] group-hover/seek:h-1 bg-white/20 rounded-full transition-all duration-150" style={{ width: `${buffered}%` }} />
-                  <div className="absolute left-0 h-[3px] group-hover/seek:h-1 bg-[#E50914] rounded-full transition-all duration-150 pointer-events-none" style={{ width: `${progress}%` }}>
-                    <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-3 h-3 rounded-full bg-white shadow opacity-0 group-hover/seek:opacity-100 transition-opacity" />
-                  </div>
-                  <div className="absolute left-0 right-0 h-[3px] group-hover/seek:h-1 bg-white/10 rounded-full -z-10 transition-all duration-150" />
-                  <input type="range" min="0" max={duration || 0} step="0.5" value={currentTime}
-                    onChange={handleSeekBar} onClick={e => e.stopPropagation()}
-                    className="absolute inset-0 w-full opacity-0 cursor-pointer h-full" />
-                </div>
-              )}
-
-              {/* Button row */}
-              <div className="flex items-center justify-between mt-1">
-                {!isEmbed ? (
-                  <div className="flex items-center gap-3 md:gap-4">
-                    <button onClick={togglePlay} className="p-1.5 hover:scale-110 active:scale-95 transition-transform cursor-pointer">
-                      {isPlaying ? <Pause size={22} className="text-white" /> : <Play size={22} className="text-white" fill="white" />}
-                    </button>
-                    <button onClick={() => skip(-10)} className="hover:scale-110 active:scale-95 transition-transform cursor-pointer">
-                      <RotateCcw size={20} className="text-white" />
-                    </button>
-                    <button onClick={() => skip(10)} className="hover:scale-110 active:scale-95 transition-transform cursor-pointer">
-                      <RotateCw size={20} className="text-white" />
-                    </button>
-
-                    {!isMobile && (
-                      <div className="group/vol flex items-center gap-1">
-                        <button onClick={toggleMute} className="p-1.5 hover:scale-110 active:scale-95 transition-all cursor-pointer" title="Âm lượng">
-                          {isMuted || volume === 0 ? <VolumeX size={20} className="text-white/80" />
-                            : volume < 0.5 ? <Volume1 size={20} className="text-white/80" />
-                            : <Volume2 size={20} className="text-white/80" />}
-                        </button>
-                        <input type="range" min="0" max="1" step="0.05" value={isMuted ? 0 : volume}
-                          onChange={(e) => { const v = parseFloat(e.target.value); if (videoRef.current) { videoRef.current.volume = v; videoRef.current.muted = v === 0; } }}
-                          onClick={e => e.stopPropagation()}
-                          className="w-0 opacity-0 group-hover/vol:w-20 group-hover/vol:opacity-100 transition-[width,opacity] duration-200 accent-[#E50914] h-1 cursor-pointer" />
-                      </div>
-                    )}
-
-                    <span className="text-white/70 text-xs font-mono tabular-nums hidden sm:block">
-                      {formatTime(currentTime)} / {formatTime(duration)}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-white/40 text-xs font-semibold uppercase tracking-wider bg-white/5 px-2.5 py-1 rounded-md border border-white/5">
-                      Nguồn nhúng (Embed)
-                    </span>
-                  </div>
-                )}
-
-                {!isEmbed && (
-                  <div className="flex-1 text-center sm:hidden px-2">
-                    <span className="text-white/50 text-xs truncate block">{formatTime(currentTime)} / {formatTime(duration)}</span>
-                  </div>
-                )}
-
-                <div className="flex items-center gap-2 md:gap-3">
-                  {isTv && nextEp && (
-                    <button onClick={(e) => { e.stopPropagation(); onEpisodeSelect?.(nextEp); }}
-                      className="hidden sm:flex items-center gap-1 text-white/70 hover:text-white text-xs font-medium transition-colors cursor-pointer" title="Tập tiếp theo">
-                      <RotateCw size={16} />
-                      <span className="hidden md:inline">Tập tiếp</span>
-                    </button>
-                  )}
-
-                  {isTv && episodes.length > 0 && (
-                    <button onClick={openPanel('episodes')}
-                      className={`p-1.5 hover:scale-110 active:scale-95 transition-all cursor-pointer ${panelOpen === 'episodes' ? 'text-[#E50914]' : 'text-white/80 hover:text-white'}`}
-                      title="Danh sách tập">
-                      <List size={20} />
-                    </button>
-                  )}
-
-                  <button onClick={openPanel('settings')}
-                    className={`p-1.5 hover:scale-110 active:scale-95 transition-all cursor-pointer ${settingsPanelOpen ? 'text-[#E50914]' : 'text-white/80 hover:text-white'}`}
-                    title="Cài đặt">
-                    <Settings size={20} />
-                  </button>
-
-                  <button onClick={toggleFullscreen} className="p-1.5 hover:scale-110 active:scale-95 transition-all cursor-pointer" title="Toàn màn hình">
-                    {isFullscreen ? <Minimize size={20} className="text-white/80" /> : <Maximize size={20} className="text-white/80" />}
-                  </button>
-                </div>
-              </div>
+            {/* Sticky Fixed Footer Action Buttons */}
+            <div className="flex items-center justify-end gap-3 pt-3 pb-1 border-t border-white/10 shrink-0 sticky bottom-0 bg-black/95 z-30">
+              <button onClick={closePanel} className="px-6 py-2 rounded-full bg-neutral-800 text-white text-xs sm:text-sm font-bold hover:bg-neutral-700 active:scale-95 transition-all cursor-pointer shadow-md">
+                Hủy
+              </button>
+              <button onClick={closePanel} className="px-6 py-2 rounded-full bg-white text-black text-xs sm:text-sm font-bold hover:bg-white/90 active:scale-95 transition-all cursor-pointer shadow-md">
+                Áp dụng
+              </button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Settings panel */}
+      {/* Settings / Quality / Speed Panel */}
       <AnimatePresence>
-        {settingsPanelOpen && (
+        {settingsPanelOpen && panelOpen !== 'sub' && (
           <>
-            <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
-              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs" onClick={closePanel} />
+            <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration: 0.12 }}
+              className="fixed inset-0 z-50 bg-black/50" onClick={closePanel} />
             <motion.div
-              initial={isMobile ? { y: '100%', opacity: 0 } : { x: '100%', opacity: 0 }}
-              animate={{ x: 0, y: 0, opacity: 1 }}
-              exit={isMobile ? { y: '100%', opacity: 0 } : { x: '100%', opacity: 0 }}
-              transition={{ type: 'tween', ease: [0.16, 1, 0.3, 1], duration: 0.25 }}
+              initial={isMobile ? { opacity: 0, scale: 0.95 } : { scale: 0.96, opacity: 0, y: 6 }}
+              animate={isMobile ? { opacity: 1, scale: 1 } : { scale: 1, opacity: 1, y: 0 }}
+              exit={isMobile ? { opacity: 0, scale: 0.95 } : { scale: 0.96, opacity: 0, y: 6 }}
+              transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
               className={cn(
-                "z-50 bg-[#0a0a0c]/98 backdrop-blur-xl border-white/[0.08] flex flex-col shadow-2xl overflow-hidden",
+                "z-[100] bg-[#0a0a0d]/95 backdrop-blur-2xl border border-white/15 flex flex-col shadow-[0_20px_60px_rgba(0,0,0,0.85)] overflow-hidden transform-gpu will-change-transform",
                 isMobile
-                  ? "fixed inset-x-0 bottom-0 top-auto max-h-[80vh] rounded-t-2xl border-t shadow-[0_-10px_30px_rgba(0,0,0,0.95)]"
-                  : "absolute right-0 top-0 bottom-0 w-80 border-l"
+                  ? "fixed inset-0 w-full h-full rounded-0 border-0 p-6 flex flex-col justify-between"
+                  : cn(
+                      "absolute bottom-16 rounded-2xl shadow-2xl transition-all duration-200",
+                      panelOpen === 'speed' && "right-32 sm:right-48 w-60 sm:w-68 max-h-[48vh]",
+                      panelOpen === 'settings' && "right-4 sm:right-10 w-[320px] sm:w-[380px] max-h-[55vh]"
+                    )
               )}
               onClick={e => e.stopPropagation()}>
-              
-              {isMobile && (
-                <div className="w-10 h-1 bg-white/20 rounded-full mx-auto my-2.5 shrink-0" />
-              )}
 
               <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06] shrink-0 sticky top-0 z-20 bg-[#0a0a0c]/98 backdrop-blur-md">
                 {panelOpen !== 'settings' && (
@@ -905,10 +1326,9 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                   </button>
                 )}
                 <h3 className="text-sm font-bold text-white/90 uppercase tracking-wider flex-1">
-                  {panelOpen === 'settings' && 'Cài đặt'}
+                  {panelOpen === 'settings' && 'Nguồn phát'}
                   {panelOpen === 'quality'  && 'Chất lượng'}
                   {panelOpen === 'speed'    && 'Tốc độ phát'}
-                  {panelOpen === 'sub'      && 'Phụ đề'}
                 </h3>
                 <button onClick={closePanel} className="p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer">
                   <X size={16} className="text-white/60" />
@@ -918,36 +1338,10 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
               <div className="flex-1 overflow-y-auto">
                 {panelOpen === 'settings' && (
                   <>
-                    {!isEmbed && qualities.length > 0 && (
-                      <button className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.04] transition-colors cursor-pointer text-sm text-white/80" onClick={() => setPanelOpen('quality')}>
-                        <span>Chất lượng</span>
-                        <div className="flex items-center gap-2 text-white/40 text-xs">
-                          <span>{activeQuality === -1 ? 'Tự động' : qualities.find(q=>q.id===activeQuality)?.name}</span>
-                          <ChevronRight size={14} />
-                        </div>
-                      </button>
-                    )}
-                    {!isEmbed && (
-                      <button className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.04] transition-colors cursor-pointer text-sm text-white/80" onClick={() => setPanelOpen('speed')}>
-                        <span>Tốc độ phát</span>
-                        <div className="flex items-center gap-2 text-white/40 text-xs">
-                          <span>{playbackRate === 1 ? 'Chuẩn' : `${playbackRate}x`}</span>
-                          <ChevronRight size={14} />
-                        </div>
-                      </button>
-                    )}
-                    {!isEmbed && (
-                      <button className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.04] transition-colors cursor-pointer text-sm text-white/80" onClick={() => setPanelOpen('sub')}>
-                        <span>Phụ đề</span>
-                        <div className="flex items-center gap-2 text-white/40 text-xs">
-                          <span className="max-w-[120px] truncate">{activeSubLabel}</span>
-                          <ChevronRight size={14} />
-                        </div>
-                      </button>
-                    )}
+
 
                     {selectedSub !== 'off' && subEnabled && (
-                      <div className="px-5 py-3.5 border-t border-white/[0.04]">
+                      <div className="px-5 py-3.5 border-b border-white/10">
                         <p className="text-xs text-white/40 mb-2 font-medium">Bù trừ phụ đề</p>
                         <div className="flex items-center justify-between gap-2.5 bg-white/[0.03] p-2 rounded-xl border border-white/[0.05]">
                           <button 
@@ -973,93 +1367,80 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                     )}
 
                     {((servers && servers.length > 0) || (streams && streams.length > 0)) && (
-                      <div className="px-5 py-3.5 border-t border-white/[0.04]">
-                        <p className="text-xs text-white/40 mb-3 uppercase tracking-wider font-semibold">Nguồn phát</p>
+                      <div className="flex flex-col flex-1 p-5 overflow-hidden">
+                        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Nguồn Phát</h3>
                         
-                        {/* 1. Nguồn Việt Nam */}
+                        {/* Tab Headers */}
                         {(() => {
-                          const viStreams = streams
-                            ?.filter(s => s.category === 'vi' || s.lang === 'vi')
-                            .sort((a, b) => (b.score || 0) - (a.score || 0)) || [];
-                          if (viStreams.length === 0) return null;
-                          return (
-                            <div className="mb-3">
-                              <p className="text-[9px] text-[#E50914] font-bold mb-1.5 uppercase tracking-widest">Nguồn Việt Nam</p>
-                              <div className="flex flex-col gap-1">
-                                {viStreams.map((s, idx) => {
-                                  const isActive = activeStream?.providerLabel === s.providerLabel && activeStream?.url === s.url;
-                                  return (
-                                    <button key={`vi-${idx}`} onClick={() => onStreamSelect?.(s)}
-                                      className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-xs transition-colors cursor-pointer text-left ${isActive ? 'bg-[#E50914]/10 border border-[#E50914]/30 text-white font-medium' : 'bg-white/[0.02] border border-white/[0.04] text-white/60 hover:bg-white/[0.06]'}`}>
-                                      <div className="w-3.5 flex justify-center shrink-0">
-                                        {isActive && <Check size={11} className="text-[#E50914] shrink-0" />}
-                                      </div>
-                                      <span className="truncate flex-1">{s.providerLabel || 'Nguồn Việt'}</span>
-                                      {s.quality && <span className="text-[9px] bg-white/10 px-1 py-0.2 rounded text-white/50">{s.quality}</span>}
-                                      {s.score !== undefined && <span className="text-[9px] text-[#E50914]/80 ml-1 font-bold">★ {s.score}</span>}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })()}
+                          const viStreams = streams?.filter(s => s.category === 'vi' || s.lang === 'vi').sort((a, b) => (b.score || 0) - (a.score || 0)) || [];
+                          const premiumStreams = streams?.filter(s => s.category === 'premium' && s.lang !== 'vi').sort((a, b) => (b.score || 0) - (a.score || 0)) || [];
+                          const commStreams = streams?.filter(s => (s.category === 'standard' || s.category === 'free' || !s.category) && s.lang !== 'vi').sort((a, b) => (b.score || 0) - (a.score || 0)) || [];
 
-                        {/* 2. Nguồn VIP */}
-                        {(() => {
-                          const premiumStreams = streams
-                            ?.filter(s => s.category === 'premium' && s.lang !== 'vi')
-                            .sort((a, b) => (b.score || 0) - (a.score || 0)) || [];
-                          if (premiumStreams.length === 0) return null;
-                          return (
-                            <div className="mb-3">
-                              <p className="text-[9px] text-yellow-500 font-bold mb-1.5 uppercase tracking-widest">Nguồn VIP</p>
-                              <div className="flex flex-col gap-1">
-                                {premiumStreams.map((s, idx) => {
-                                  const isActive = activeStream?.providerLabel === s.providerLabel && activeStream?.url === s.url;
-                                  return (
-                                    <button key={`vip-${idx}`} onClick={() => onStreamSelect?.(s)}
-                                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer text-left ${isActive ? 'bg-yellow-500/10 border border-yellow-500/30 text-white font-medium' : 'bg-white/[0.02] border border-white/[0.04] text-white/60 hover:bg-white/[0.06]'}`}>
-                                      <div className="w-3.5 flex justify-center shrink-0">
-                                        {isActive && <Check size={11} className="text-yellow-500 shrink-0" />}
-                                      </div>
-                                      <span className="truncate flex-1">{s.providerLabel || 'Nguồn VIP'}</span>
-                                      {s.quality && <span className="text-[9px] bg-white/10 px-1 py-0.2 rounded text-white/50">{s.quality}</span>}
-                                      {s.score !== undefined && <span className="text-[9px] text-yellow-500/80 ml-1 font-bold">★ {s.score}</span>}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })()}
+                          // Check active tab validity
+                          let currentTab = activeSourceTab;
+                          if (currentTab === 'vi' && viStreams.length === 0) {
+                            if (premiumStreams.length > 0) currentTab = 'vip';
+                            else if (commStreams.length > 0) currentTab = 'comm';
+                          } else if (currentTab === 'vip' && premiumStreams.length === 0) {
+                            if (viStreams.length > 0) currentTab = 'vi';
+                            else if (commStreams.length > 0) currentTab = 'comm';
+                          } else if (currentTab === 'comm' && commStreams.length === 0) {
+                            if (viStreams.length > 0) currentTab = 'vi';
+                            else if (premiumStreams.length > 0) currentTab = 'vip';
+                          }
 
-                        {/* 3. Nguồn Community */}
-                        {(() => {
-                          const commStreams = streams
-                            ?.filter(s => (s.category === 'standard' || s.category === 'free' || !s.category) && s.lang !== 'vi')
-                            .sort((a, b) => (b.score || 0) - (a.score || 0)) || [];
-                          if (commStreams.length === 0) return null;
+                          const activeList = currentTab === 'vi' ? viStreams : currentTab === 'vip' ? premiumStreams : commStreams;
+
                           return (
-                            <div className="mb-3">
-                              <p className="text-[9px] text-white/40 font-bold mb-1.5 uppercase tracking-widest">Nguồn Community</p>
-                              <div className="flex flex-col gap-1">
-                                {commStreams.map((s, idx) => {
+                            <>
+                              <div className="flex gap-2 mb-4 border-b border-white/10 pb-2">
+                                {viStreams.length > 0 && (
+                                  <button onClick={() => setActiveSourceTab('vi')}
+                                    className={`tab-btn text-xs font-medium pb-2 px-2.5 transition-all cursor-pointer ${currentTab === 'vi' ? 'text-white font-bold border-b-2 border-[#E50914]' : 'text-gray-400 hover:text-white'}`}>
+                                    Việt Nam ({viStreams.length})
+                                  </button>
+                                )}
+                                {premiumStreams.length > 0 && (
+                                  <button onClick={() => setActiveSourceTab('vip')}
+                                    className={`tab-btn text-xs font-medium pb-2 px-2.5 transition-all cursor-pointer ${currentTab === 'vip' ? 'text-yellow-400 font-bold border-b-2 border-yellow-500' : 'text-gray-400 hover:text-white'}`}>
+                                    VIP ({premiumStreams.length})
+                                  </button>
+                                )}
+                                {commStreams.length > 0 && (
+                                  <button onClick={() => setActiveSourceTab('comm')}
+                                    className={`tab-btn text-xs font-medium pb-2 px-2.5 transition-all cursor-pointer ${currentTab === 'comm' ? 'text-white font-bold border-b-2 border-white' : 'text-gray-400 hover:text-white'}`}>
+                                    Cộng Đồng ({commStreams.length})
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Source List */}
+                              <div className="source-list overflow-y-auto space-y-2 pr-1 custom-scrollbar max-h-[340px]">
+                                {activeList.map((s, idx) => {
                                   const isActive = activeStream?.providerLabel === s.providerLabel && activeStream?.url === s.url;
                                   return (
-                                    <button key={`comm-${idx}`} onClick={() => onStreamSelect?.(s)}
-                                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer text-left ${isActive ? 'bg-white/10 border border-white/20 text-white font-medium' : 'bg-white/[0.02] border border-white/[0.04] text-white/60 hover:bg-white/[0.06]'}`}>
-                                      <div className="w-3.5 flex justify-center shrink-0">
-                                        {isActive && <Check size={11} className="text-white shrink-0" />}
+                                    <div key={`source-${currentTab}-${idx}`} onClick={() => onStreamSelect?.(s)}
+                                      className={`flex items-center justify-between p-3 rounded-lg border transition-all cursor-pointer ${isActive ? 'bg-white/10 border-[#E50914] shadow-[0_0_12px_rgba(229,9,20,0.25)]' : 'bg-white/5 border-transparent hover:border-white/20 hover:bg-white/10'}`}>
+                                      <div className="flex flex-col min-w-0 pr-2">
+                                        <div className="flex items-center gap-2">
+                                          {isActive && <Check size={13} className="text-[#E50914] shrink-0" />}
+                                          <span className={`text-xs font-semibold truncate ${isActive ? 'text-white font-bold' : 'text-white/90'}`}>{s.providerLabel || 'Nguồn phát'}</span>
+                                        </div>
+                                        <span className="text-[10px] text-gray-400 mt-0.5">{currentTab === 'vi' ? 'Nguồn Tiếng Việt' : currentTab === 'vip' ? 'Nguồn VIP Chất Lượng' : 'Nguồn Cộng Đồng'}</span>
                                       </div>
-                                      <span className="truncate flex-1">{s.providerLabel || 'Nguồn Community'}</span>
-                                      {s.quality && <span className="text-[9px] bg-white/10 px-1 py-0.2 rounded text-white/50">{s.quality}</span>}
-                                      {s.score !== undefined && <span className="text-[9px] text-white/40 ml-1 font-bold">★ {s.score}</span>}
-                                    </button>
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        {s.quality && <span className="bg-white/10 text-white/70 text-[10px] px-2 py-0.5 rounded font-mono">{s.quality}</span>}
+                                        {s.score !== undefined && <span className="text-amber-500 text-xs font-bold">★ {s.score}</span>}
+                                      </div>
+                                    </div>
                                   );
                                 })}
+
+                                {activeList.length === 0 && (
+                                  <p className="text-xs text-gray-500 py-4 text-center">Không có nguồn phát nào ở mục này.</p>
+                                )}
                               </div>
-                            </div>
+                            </>
                           );
                         })()}
                       </div>
@@ -1082,61 +1463,38 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                     <span className={`text-sm ${playbackRate === r ? 'text-white font-medium' : 'text-white/60'}`}>{r === 1 ? 'Chuẩn' : `${r}x`}</span>
                   </button>
                 ))}
-
-                {panelOpen === 'sub' && combinedSubs.map(s => (
-                  <button key={String(s.id)} onClick={() => { handleSubChange(s.id); setPanelOpen('settings'); }}
-                    className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-white/[0.04] transition-colors cursor-pointer">
-                    <div className="w-4 flex justify-center">{selectedSub === s.id && <Check size={14} className="text-white" />}</div>
-                    <span className={`text-sm ${selectedSub === s.id ? 'text-white font-medium' : 'text-white/60'}`}>{s.name}</span>
-                  </button>
-                ))}
               </div>
             </motion.div>
           </>
         )}
       </AnimatePresence>
 
-      {/* Episode drawer / Bottom Sheet */}
+      {/* Episode Drawer: Mobile Fullscreen Horizontal Cards Overlay (Screenshot 2) vs Desktop Popover */}
       <AnimatePresence>
         {panelOpen === 'episodes' && (
-          <>
-            <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
-              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs" onClick={closePanel} />
-            <motion.div
-              initial={isMobile ? { y: '100%', opacity: 0 } : { x: '100%', opacity: 0 }}
-              animate={{ x: 0, y: 0, opacity: 1 }}
-              exit={isMobile ? { y: '100%', opacity: 0 } : { x: '100%', opacity: 0 }}
-              transition={{ type: 'tween', ease: [0.16, 1, 0.3, 1], duration: 0.25 }}
-              className={cn(
-                "z-50 bg-[#0a0a0c]/98 backdrop-blur-xl border-white/[0.08] flex flex-col shadow-2xl overflow-hidden",
-                isMobile
-                  ? "fixed inset-x-0 bottom-0 top-auto max-h-[85vh] rounded-t-2xl border-t shadow-[0_-10px_30px_rgba(0,0,0,0.95)]"
-                  : "absolute right-0 top-0 bottom-0 w-80 sm:w-96 border-l"
-              )}
+          isMobile ? (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}
+              className="fixed inset-0 z-[100] bg-black/95 p-6 sm:p-8 flex flex-col justify-between overflow-hidden"
               onClick={e => e.stopPropagation()}>
-
-              {isMobile && (
-                <div className="w-10 h-1 bg-white/20 rounded-full mx-auto my-2.5 shrink-0" />
-              )}
-
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.06] shrink-0 sticky top-0 z-20 bg-[#0a0a0c]/98 backdrop-blur-md">
-                <h3 className="text-sm font-bold text-white/90 uppercase tracking-wider">Danh sách tập</h3>
-                <button onClick={closePanel} className="p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer">
-                  <X size={16} className="text-white/60" />
+              
+              {/* Top Header Bar */}
+              <div className="flex items-center justify-between gap-4 pb-2 border-b border-white/10 shrink-0">
+                <button onClick={closePanel} className="p-2 rounded-full hover:bg-white/10 text-white cursor-pointer transition-all active:scale-95">
+                  <ArrowLeft size={24} />
                 </button>
+                <h2 className="text-base sm:text-lg font-bold text-white truncate text-right">{movieName || title}</h2>
               </div>
 
-              {/* Horizontal Season Tabs */}
+              {/* Season Tabs if multiple seasons */}
               {seasons && seasons.length > 0 && (
-                <div className="flex gap-2 px-5 py-3 border-b border-white/[0.04] overflow-x-auto scrollbar-hide shrink-0">
+                <div className="flex gap-2 py-2 overflow-x-auto scrollbar-hide shrink-0">
                   {seasons.map((s) => (
                     <button key={s.season_number} onClick={() => onSeasonChange?.(s.season_number)}
                       className={cn(
-                        "shrink-0 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer border",
+                        "shrink-0 px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer border",
                         s.season_number === activeEpSeason
-                          ? "bg-[#E50914] border-[#E50914] text-white shadow-[0_4px_12px_rgba(229,9,20,0.35)] scale-[1.02]"
-                          : "bg-white/[0.04] border-white/[0.06] text-white/60 hover:bg-white/[0.08] hover:text-white"
+                          ? "bg-[#E50914] border-[#E50914] text-white"
+                          : "bg-white/5 border-white/10 text-white/60 hover:text-white"
                       )}>
                       {s.name || `Mùa ${s.season_number}`}
                     </button>
@@ -1144,45 +1502,173 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                 </div>
               )}
 
-              {/* Episodes Grid */}
-              <div className="flex-1 overflow-y-auto p-4">
-                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-2.5">
+              {/* Horizontal Scrollable Episode Cards Container */}
+              <div className="flex-1 flex items-start gap-5 overflow-x-auto py-3 scrollbar-hide w-full align-top">
+                {episodes.map((ep, i) => {
+                  const isActive = isSameEp(ep.name, episodeName);
+                  const epKey = `${slug}_ep_${ep.name}`;
+                  const epProg = episodeProgressMap[epKey];
+                  const pct = epProg && epProg.duration > 0 ? Math.min(100, (epProg.currentTime / epProg.duration) * 100) : 0;
+                  const tmdbEp = tmdbEpisodes?.find((t: any) => t.episode_number === (i + 1) || isSameEp(t.episode_number, ep.name));
+                  const epTitle = tmdbEp?.name || (ep.title && ep.title !== ep.name ? ep.title : (ep.name ? `Tập ${ep.name}` : `Tập ${i + 1}`));
+                  const stillPath = tmdbEp?.still_path || ep.still_path;
+                  const stillImg = stillPath ? `https://image.tmdb.org/t/p/w500${stillPath}` : (thumbUrl || posterUrl);
+                  const durationText = tmdbEp?.runtime ? `${tmdbEp.runtime} phút` : '23 phút';
+                  const overview = tmdbEp?.overview || ep.overview || '';
+
+                  return (
+                    <div key={ep.slug || i} onClick={() => { onEpisodeSelect?.(ep); closePanel(); }}
+                      className="flex flex-col w-64 sm:w-72 shrink-0 gap-2 cursor-pointer group/ep">
+                      {/* 16:9 Thumbnail */}
+                      <div className="relative w-full aspect-video rounded-md overflow-hidden bg-black/60 border border-white/10 shrink-0">
+                        {stillImg ? (
+                          <img src={stillImg} alt={epTitle} className="w-full h-full object-cover group-hover/ep:scale-105 transition-transform duration-300" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-white/40 text-xs font-bold">Tập {i + 1}</div>
+                        )}
+                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                          <div className={cn("w-10 h-10 rounded-full flex items-center justify-center border border-white/30", isActive ? "bg-[#E50914] text-white border-[#E50914]" : "bg-black/60 text-white")}>
+                            <Play size={20} fill="white" className="ml-0.5" />
+                          </div>
+                        </div>
+                        {pct > 0 && (
+                          <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/80">
+                            <div className="h-full bg-[#E50914]" style={{ width: `${pct}%` }} />
+                          </div>
+                        )}
+                      </div>
+                      {/* Title & Info */}
+                      <div className="flex items-center justify-between gap-2 mt-1">
+                        <h4 className={cn("text-xs sm:text-sm font-bold truncate", isActive ? "text-[#E50914]" : "text-white")}>
+                          {i + 1}. {epTitle}
+                        </h4>
+                      </div>
+                      <span className="text-[11px] text-gray-400 font-medium">{durationText}</span>
+                      {overview && <p className="text-[11px] text-gray-400 line-clamp-3 leading-relaxed">{overview}</p>}
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.div>
+          ) : (
+            <>
+              <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration: 0.12 }}
+                className="fixed inset-0 z-50 bg-black/50" onClick={closePanel} />
+              <motion.div
+                initial={{ scale: 0.96, opacity: 0, y: 6 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.96, opacity: 0, y: 6 }}
+                transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
+                className="z-50 bg-[#0a0a0d]/95 backdrop-blur-2xl border border-white/15 flex flex-col shadow-[0_20px_60px_rgba(0,0,0,0.85)] overflow-hidden absolute bottom-16 right-16 sm:right-32 w-[380px] sm:w-[460px] max-h-[55vh] rounded-2xl"
+                onClick={e => e.stopPropagation()}>
+
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.06] shrink-0 sticky top-0 z-20 bg-[#0d0e12]">
+                  <h3 className="text-sm font-bold text-white/90 uppercase tracking-wider">Danh sách tập</h3>
+                  <button onClick={closePanel} className="p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer">
+                    <X size={16} className="text-white/60" />
+                  </button>
+                </div>
+
+                {/* Horizontal Season Tabs */}
+                {seasons && seasons.length > 0 && (
+                  <div className="flex gap-2 px-5 py-3 border-b border-white/[0.04] overflow-x-auto scrollbar-hide shrink-0 bg-[#0d0e12]">
+                    {seasons.map((s) => (
+                      <button key={s.season_number} onClick={() => onSeasonChange?.(s.season_number)}
+                        className={cn(
+                          "shrink-0 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer border",
+                          s.season_number === activeEpSeason
+                            ? "bg-[#E50914] border-[#E50914] text-white shadow-[0_4px_12px_rgba(229,9,20,0.35)] scale-[1.02]"
+                            : "bg-white/[0.04] border-white/[0.06] text-white/60 hover:bg-white/[0.08] hover:text-white"
+                        )}>
+                        {s.name || `Mùa ${s.season_number}`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Episodes List (Netflix Cards) */}
+                <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5 custom-scrollbar overscroll-contain touch-pan-y">
                   {episodes.map((ep, i) => {
                     const isActive = isSameEp(ep.name, episodeName);
                     const prog = progressMap[slug || ''];
-                    const pct = prog && isSameEp(prog.episodeName, ep.name) && prog.duration > 0
-                      ? Math.min(100, (prog.currentTime / prog.duration) * 100) : 0;
+                    const epKey = `${slug}_ep_${ep.name}`;
+                    const epProg = episodeProgressMap[epKey] || (prog && isSameEp(prog.episodeName, ep.name) ? prog : null);
+                    const pct = epProg && epProg.duration > 0
+                      ? Math.min(100, (epProg.currentTime / epProg.duration) * 100) : 0;
                     
-                    const displayNum = ep.name || String(i + 1);
+                    const tmdbEp = tmdbEpisodes?.find((t: any) => t.episode_number === (i + 1) || isSameEp(t.episode_number, ep.name));
+                    const epTitle = tmdbEp?.name || (ep.title && ep.title !== ep.name ? ep.title : (ep.name ? `Tập ${ep.name}` : `Tập ${i + 1}`));
+                    const stillPath = tmdbEp?.still_path || ep.still_path;
+                    const stillImg = stillPath 
+                      ? `https://image.tmdb.org/t/p/w500${stillPath}` 
+                      : (thumbUrl || posterUrl);
+                    const durationText = tmdbEp?.runtime ? `${tmdbEp.runtime} phút` : '';
+                    const overview = tmdbEp?.overview || ep.overview || '';
 
                     return (
-                      <button 
+                      <div 
                         key={ep.slug || i} 
                         onClick={() => { onEpisodeSelect?.(ep); closePanel(); }}
                         className={cn(
-                          "relative aspect-square flex flex-col items-center justify-center rounded-xl p-2 font-bold transition-all cursor-pointer border overflow-hidden group",
+                          "flex flex-col sm:flex-row gap-3.5 sm:gap-4 p-3 rounded-xl border transition-all cursor-pointer group/ep",
                           isActive
-                            ? "bg-[#E50914] border-[#E50914] text-white shadow-[0_0_16px_rgba(229,9,20,0.45)] ring-2 ring-white/20 scale-[1.03]"
-                            : "bg-white/[0.03] border-white/[0.06] text-white/80 hover:bg-white/[0.08] hover:border-white/20 hover:text-white"
+                            ? "bg-white/10 border-[#E50914] shadow-[0_0_20px_rgba(229,9,20,0.3)] ring-1 ring-[#E50914]/50"
+                            : "bg-white/5 border-transparent hover:bg-white/10 hover:border-white/20"
                         )}
                       >
-                        <span className="text-base sm:text-lg font-black truncate max-w-full">
-                          {displayNum}
-                        </span>
-                        
-                        {/* Progress Bar at bottom of tile */}
-                        {pct > 0 && (
-                          <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40">
-                            <div className={cn("h-full transition-all", isActive ? "bg-white" : "bg-[#E50914]")} style={{ width: `${pct}%` }} />
+                        {/* 16:9 Thumbnail Card */}
+                        <div className="relative w-full sm:w-[170px] md:w-[190px] aspect-video rounded-lg overflow-hidden shrink-0 bg-black/60 border border-white/10">
+                          {stillImg ? (
+                            <img src={stillImg} alt={epTitle} className="w-full h-full object-cover group-hover/ep:scale-105 transition-transform duration-300" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-white/40 text-xs font-bold">
+                              Tập {i + 1}
+                            </div>
+                          )}
+                          
+                          {/* Hover / Active Play icon overlay */}
+                          <div className="absolute inset-0 bg-black/30 group-hover/ep:bg-black/10 flex items-center justify-center transition-all">
+                            <div className={cn(
+                              "w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all transform group-hover/ep:scale-110",
+                              isActive ? "bg-[#E50914] text-white shadow-lg" : "bg-black/60 text-white border border-white/20"
+                            )}>
+                              <Play size={18} fill="white" className="ml-0.5" />
+                            </div>
                           </div>
-                        )}
-                      </button>
+
+                          {/* Bottom watch progress bar (Netflix Red) */}
+                          {pct > 0 && (
+                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/80">
+                              <div className="h-full bg-[#E50914] transition-all rounded-r-full" style={{ width: `${pct}%` }} />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Details Section */}
+                        <div className="flex flex-col justify-center flex-1 min-w-0 pr-1">
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <h4 className={cn("text-xs sm:text-sm font-bold truncate", isActive ? "text-[#E50914]" : "text-white group-hover/ep:text-white")}>
+                              {i + 1}. {epTitle}
+                            </h4>
+                            {durationText && <span className="text-[11px] text-gray-400 shrink-0 font-medium">{durationText}</span>}
+                          </div>
+                          
+                          {overview ? (
+                            <p className="text-[11px] sm:text-xs text-gray-400 line-clamp-2 leading-relaxed font-normal">
+                              {overview}
+                            </p>
+                          ) : (
+                            <p className="text-[11px] text-gray-500 italic">Nhấn để xem tập này</p>
+                          )}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
-              </div>
-            </motion.div>
-          </>
+              </motion.div>
+            </>
+          )
         )}
       </AnimatePresence>
 

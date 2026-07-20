@@ -109,14 +109,24 @@ export const useWatchProgress = () => {
   const saveProgress = useCallback((slug: string, data: ProgressStore[string]) => {
     setProgressStore(prev => {
       const next = { ...prev };
-      if (data.currentTime / data.duration > 0.95) {
-        delete next[slug];
-      } else {
-        next[slug] = data;
-      }
+      next[slug] = data;
       localStorage.setItem('cinemax_progress', JSON.stringify(next));
       return next;
     });
+
+    // Save detailed per-episode progress if episodeName exists
+    if (data.episodeName) {
+      try {
+        const epStored = localStorage.getItem('cinemax_episodes_progress');
+        const epParsed = epStored ? JSON.parse(epStored) : {};
+        epParsed[`${slug}_ep_${data.episodeName}`] = {
+          currentTime: data.currentTime,
+          duration: data.duration,
+          savedAt: data.savedAt,
+        };
+        localStorage.setItem('cinemax_episodes_progress', JSON.stringify(epParsed));
+      } catch (e) {}
+    }
   }, []);
 
   return { progressStore, saveProgress };

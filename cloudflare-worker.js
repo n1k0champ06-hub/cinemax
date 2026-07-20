@@ -16,7 +16,7 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, Api-Key",
 };
-
+export default {
   // Cron trigger: ping Render bridge + sync AI Movie Mappings
   async scheduled(event, env, ctx) {
     const bridgeUrl = (env.HOLLYSHEESH_API_URL || '').trim();

@@ -14,6 +14,13 @@ scratch/
 .claude/
 test-keys*.ts
 
+# Build artifacts & specs
+*.exe
+*.spec
+build-exe/
+hollysheesh-bridge/logs/
+cinepro-core/
+
 # Python scraper
 scraper/logs/
 scraper/__pycache__/

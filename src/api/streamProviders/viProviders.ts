@@ -27,10 +27,20 @@ const fetchWithTimeout = async (url: string, timeout = 8000) => {
 };
 
 
+function normalizeViText(str: string): string {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'd');
+}
+
 function cleanSearchQuery(str: string): string {
   if (!str) return '';
   return str
-    .replace(/\s*[\(\[].*?[\)\]]/g, '')
+    .replace(/[\(\)\[\]]/g, ' ')
     .replace(/\b(vietsub|thuyet minh|long tieng|longtieng|thuyetminh|subviet|sub|raw|hd|full|fhd)\b/gi, '')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
@@ -59,7 +69,9 @@ function getBestSlugMatch(
   queryTmdbId?: string | number,
   queryImdbId?: string,
   queryCasts?: string[],
-  querySeason?: number | null
+  querySeason?: number | null,
+  queryDirectors?: string[],
+  queryCountries?: string[]
 ): string | null {
   if (!items || items.length === 0) return null;
 
@@ -70,17 +82,23 @@ function getBestSlugMatch(
 
     for (const item of items) {
       if (qTmdb && item.tmdb && item.tmdb.id && String(item.tmdb.id) === qTmdb) {
+        if (querySeason && querySeason > 1 && item.tmdb.season && Number(item.tmdb.season) !== querySeason) {
+          continue; // Season mismatch, skip this item
+        }
         return item.slug;
       }
       if (qImdb && item.imdb && item.imdb.id && String(item.imdb.id) === qImdb) {
+        if (querySeason && querySeason > 1 && item.imdb.season && Number(item.imdb.season) !== querySeason) {
+          continue; // Season mismatch, skip this item
+        }
         return item.slug;
       }
     }
   }
 
   // 2. Fallback to string matching
-  const qTitle = cleanSearchQuery(queryTitle).toLowerCase();
-  const qTitleVi = cleanSearchQuery(queryTitleVi).toLowerCase();
+  const qTitleNorm = normalizeViText(cleanSearchQuery(queryTitle));
+  const qTitleViNorm = normalizeViText(cleanSearchQuery(queryTitleVi));
   const qSlug = querySlug ? querySlug.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
 
   const parsedQueryYear = queryYear ? (typeof queryYear === 'string' ? parseInt(queryYear) : queryYear) : 0;
@@ -88,24 +106,30 @@ function getBestSlugMatch(
   const scored = items.map((item: any) => {
     const rawName = item.name || '';
     const rawOrigin = item.origin_name || item.original_name || '';
-    const title = cleanSearchQuery(rawName).toLowerCase();
-    const origin = cleanSearchQuery(rawOrigin).toLowerCase();
+    const titleNorm = normalizeViText(cleanSearchQuery(rawName));
+    const originNorm = normalizeViText(cleanSearchQuery(rawOrigin));
     const year = parseInt(item.year) || 0;
     const itemSlug = item.slug ? item.slug.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
 
     let score = 0;
     
     // Title match
-    if (title === qTitleVi || origin === qTitle || title === qTitle) {
+    if (
+      (qTitleViNorm && (titleNorm === qTitleViNorm || originNorm === qTitleViNorm)) ||
+      (qTitleNorm && (titleNorm === qTitleNorm || originNorm === qTitleNorm))
+    ) {
       score += 80;
-    } else if (title.includes(qTitleVi) || origin.includes(qTitle) || title.includes(qTitle)) {
+    } else if (
+      (qTitleViNorm && (titleNorm.includes(qTitleViNorm) || originNorm.includes(qTitleViNorm) || qTitleViNorm.includes(titleNorm))) ||
+      (qTitleNorm && (titleNorm.includes(qTitleNorm) || originNorm.includes(qTitleNorm) || qTitleNorm.includes(titleNorm)))
+    ) {
       score += 50;
     }
 
     // Season match verification
     if (querySeason && querySeason > 0) {
-      const fullItemText = `${rawName} ${rawOrigin} ${item.slug || ''}`.toLowerCase();
-      const seasonMatch = fullItemText.match(/(?:phan|season|part|ss|mua)\s*0*(\d+)/i);
+      const fullItemTextNorm = normalizeViText(`${rawName} ${rawOrigin} ${item.slug || ''}`);
+      const seasonMatch = fullItemTextNorm.match(/(?:phan|season|part|ss|mua)\s*0*(\d+)/i);
       if (seasonMatch) {
         const itemSeason = parseInt(seasonMatch[1], 10);
         if (itemSeason === querySeason) {
@@ -131,9 +155,37 @@ function getBestSlugMatch(
       }
     }
 
+    // Year match scoring
     if (parsedQueryYear && year) {
-      if (Math.abs(year - parsedQueryYear) <= 1) score += 20;
-      else score -= 30;
+      if (year === parsedQueryYear) {
+        score += 40;
+      } else if (Math.abs(year - parsedQueryYear) <= 1) {
+        score += 20;
+      } else {
+        score -= 50; // Penalty for year mismatch
+      }
+    }
+
+    // Country match scoring
+    if (queryCountries && queryCountries.length > 0) {
+      const itemCountries = typeof item.country === 'string' ? item.country.toLowerCase() : 
+                            (Array.isArray(item.country) ? item.country.map((c: any) => (c.name || c.slug || c).toLowerCase()).join(',') : '');
+      if (itemCountries) {
+        let matched = false;
+        for (const qc of queryCountries) {
+          if (!qc) continue;
+          const qcNorm = normalizeViText(qc);
+          if (normalizeViText(itemCountries).includes(qcNorm)) {
+            matched = true;
+            break;
+          }
+        }
+        if (matched) {
+          score += 30;
+        } else {
+          score -= 15;
+        }
+      }
     }
 
     // Cast overlap match (highly accurate fallback)
@@ -151,8 +203,26 @@ function getBestSlugMatch(
           }
         }
         if (overlap > 0) {
-          // Boost significantly if we match actors
-          score += (overlap * 15);
+          score += (overlap * 20); // 20 points per cast match
+        }
+      }
+    }
+
+    // Director overlap match
+    if (queryDirectors && queryDirectors.length > 0) {
+      const itemDirectors = typeof item.director === 'string' ? item.director.toLowerCase() : 
+                            (Array.isArray(item.director) ? item.director.join(',').toLowerCase() : 
+                            (typeof item.directors === 'string' ? item.directors.toLowerCase() : 
+                            (Array.isArray(item.directors) ? item.directors.join(',').toLowerCase() : '')));
+      if (itemDirectors) {
+        let overlap = 0;
+        for (const qd of queryDirectors) {
+          if (qd && itemDirectors.includes(qd.toLowerCase())) {
+            overlap++;
+          }
+        }
+        if (overlap > 0) {
+          score += (overlap * 30); // 30 points per director match
         }
       }
     }
@@ -179,6 +249,52 @@ async function fetchFromVietnameseApi(
     let slug = query.viSlug;
     let detailData: any = null;
     let detailFetched = false;
+
+    // 0. Try direct TMDB/IMDb endpoint lookup first if supported (KKPhim & OPhim)
+    if (!detailFetched && (providerId === 'kkphim' || providerId === 'ophim')) {
+      const baseDomain = providerId === 'kkphim' ? 'https://phimapi.com' : 'https://ophim1.com';
+      if (query.tmdbId) {
+        const type = query.type === 'tv' ? 'tv' : 'movie';
+        const tmdbUrl = `${baseDomain}/tmdb/${type}/${query.tmdbId}`;
+        try {
+          const res = await fetchWithTimeout(tmdbUrl, 3500);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && (data.status === true || data.status === 'success' || data.movie || data.film || data.data)) {
+              const movieInfo = data.movie || data.film || data.data || data;
+              if (movieInfo && movieInfo.slug) {
+                detailData = data;
+                detailFetched = true;
+                slug = movieInfo.slug;
+                console.log(`[${providerLabel}] Direct TMDB ID lookup hit! Slug: ${slug}`);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`[${providerLabel}] Direct TMDB ID lookup failed for URL ${tmdbUrl}:`, e);
+        }
+      }
+      if (!detailFetched && query.imdbId) {
+        const imdbUrl = `${baseDomain}/imdb/${query.imdbId}`;
+        try {
+          const res = await fetchWithTimeout(imdbUrl, 3500);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && (data.status === true || data.status === 'success' || data.movie || data.film || data.data)) {
+              const movieInfo = data.movie || data.film || data.data || data;
+              if (movieInfo && movieInfo.slug) {
+                detailData = data;
+                detailFetched = true;
+                slug = movieInfo.slug;
+                console.log(`[${providerLabel}] Direct IMDb ID lookup hit! Slug: ${slug}`);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`[${providerLabel}] Direct IMDb ID lookup failed for URL ${imdbUrl}:`, e);
+        }
+      }
+    }
 
     // 1. Try direct slug fetch first if it exists and is not tmdb-
     // If season > 1, do NOT use direct slug unless the slug explicitly specifies the season (e.g. diem-lanh-phan-2)
@@ -258,7 +374,15 @@ async function fetchFromVietnameseApi(
     if (!detailFetched) {
       const searchKeywords: string[] = [];
 
-      // Extract high-probability search keywords from the viSlug if available
+      // Priority 1: Search directly by TMDB & IMDb ID (Fastest & most accurate if provider search engine indexed it)
+      if (query.tmdbId) {
+        searchKeywords.push(String(query.tmdbId));
+      }
+      if (query.imdbId) {
+        searchKeywords.push(String(query.imdbId));
+      }
+
+      // Priority 2: Extract high-probability search keywords from viSlug if available
       if (slug && !slug.startsWith('tmdb-')) {
         const slugCleaned = slug.replace(/-/g, ' ').trim();
         const slugWords = slugCleaned.split(' ').filter(w => w.length > 1);
@@ -275,19 +399,27 @@ async function fetchFromVietnameseApi(
 
       // Add Vietnamese title
       if (query.titleVi) {
+        searchKeywords.push(query.titleVi);
+        const cleanVi = query.titleVi.replace(/\s*[\(\[].*?[\)\]]/g, '').trim();
+        if (cleanVi && cleanVi !== query.titleVi) {
+          searchKeywords.push(cleanVi);
+        }
         if (isTv && query.season && query.season > 1) {
+          searchKeywords.push(`${cleanVi} Phần ${query.season}`);
           searchKeywords.push(`${query.titleVi} Phần ${query.season}`);
-        } else {
-          searchKeywords.push(query.titleVi);
         }
       }
 
       // Add English title if different
       if (query.title && query.title !== query.titleVi) {
+        searchKeywords.push(query.title);
+        const cleanEn = query.title.replace(/\s*[\(\[].*?[\)\]]/g, '').trim();
+        if (cleanEn && cleanEn !== query.title) {
+          searchKeywords.push(cleanEn);
+        }
         if (isTv && query.season && query.season > 1) {
+          searchKeywords.push(`${cleanEn} Season ${query.season}`);
           searchKeywords.push(`${query.title} Season ${query.season}`);
-        } else {
-          searchKeywords.push(query.title);
         }
       }
 
@@ -335,37 +467,96 @@ async function fetchFromVietnameseApi(
         return true;
       });
 
-      const matchedSlug = getBestSlugMatch(
-        uniqueItems,
-        query.title,
-        query.titleVi || '',
-        query.year,
-        slug,
-        query.tmdbId,
-        query.imdbId,
-        query.casts,
-        query.season
-      );
+      // 2a. 100% Exact TMDB/IMDb ID Verification on Top Candidates
+      // Search list endpoint (/v1/api/tim-kiem) doesn't include tmdb/imdb IDs in items array.
+      // We check detail endpoint (/phim/{slug}) for top candidates to match TMDB/IMDb IDs with 100% precision.
+      if (query.tmdbId || query.imdbId) {
+        const topCandidates = uniqueItems.slice(0, 5);
+        const idMatches = await Promise.allSettled(
+          topCandidates.map(async (item) => {
+            let candidateUrl = '';
+            if (providerId === 'ophim') {
+              candidateUrl = `https://ophim1.com/phim/${item.slug}`;
+            } else if (providerId === 'nguonc') {
+              candidateUrl = `https://phim.nguonc.com/api/film/${item.slug}`;
+            } else {
+              candidateUrl = `https://phimapi.com/phim/${item.slug}`;
+            }
+            try {
+              const res = await fetchWithTimeout(candidateUrl, 3500);
+              if (res.ok) {
+                const data = await res.json();
+                const movie = data?.movie || data?.film || data?.data;
+                const mTmdb = movie?.tmdb?.id || movie?.tmdb_id || movie?.tmdbId;
+                const mImdb = movie?.imdb?.id || movie?.imdb_id || movie?.imdbId;
+                
+                const targetTmdb = query.tmdbId ? String(query.tmdbId) : null;
+                const targetImdb = query.imdbId ? String(query.imdbId) : null;
 
-      if (matchedSlug) {
-        slug = matchedSlug;
-        let detailUrl = '';
-        if (providerId === 'ophim') {
-          detailUrl = `https://ophim1.com/phim/${slug}`;
-        } else if (providerId === 'nguonc') {
-          detailUrl = `https://phim.nguonc.com/api/film/${slug}`;
-        } else {
-          detailUrl = `https://phimapi.com/phim/${slug}`;
-        }
-        
-        try {
-          const res = await fetchWithTimeout(detailUrl, 6000);
-          if (res.ok) {
-            detailData = await res.json();
+                const tmdbMatched = targetTmdb && mTmdb && String(mTmdb) === targetTmdb;
+                const imdbMatched = targetImdb && mImdb && String(mImdb) === targetImdb;
+
+                if (tmdbMatched || imdbMatched) {
+                  if (isTv && query.season && movie?.tmdb?.season) {
+                    if (Number(movie.tmdb.season) === query.season) {
+                      return { slug: item.slug, data };
+                    }
+                  } else {
+                    return { slug: item.slug, data };
+                  }
+                }
+              }
+            } catch (_) {}
+            return null;
+          })
+        );
+
+        for (const res of idMatches) {
+          if (res.status === 'fulfilled' && res.value) {
+            slug = res.value.slug;
+            detailData = res.value.data;
             detailFetched = true;
+            console.log(`[${providerLabel}] 100% TMDB/IMDb ID Match confirmed for slug: ${slug}`);
+            break;
           }
-        } catch (e) {
-          console.error(`[${providerLabel}] Failed to fetch details for resolved fallback slug ${slug}:`, e);
+        }
+      }
+
+      if (!detailFetched) {
+        const matchedSlug = getBestSlugMatch(
+          uniqueItems,
+          query.title,
+          query.titleVi || '',
+          query.year,
+          slug,
+          query.tmdbId,
+          query.imdbId,
+          query.casts,
+          query.season,
+          query.directors,
+          query.countries
+        );
+
+        if (matchedSlug) {
+          slug = matchedSlug;
+          let detailUrl = '';
+          if (providerId === 'ophim') {
+            detailUrl = `https://ophim1.com/phim/${slug}`;
+          } else if (providerId === 'nguonc') {
+            detailUrl = `https://phim.nguonc.com/api/film/${slug}`;
+          } else {
+            detailUrl = `https://phimapi.com/phim/${slug}`;
+          }
+          
+          try {
+            const res = await fetchWithTimeout(detailUrl, 6000);
+            if (res.ok) {
+              detailData = await res.json();
+              detailFetched = true;
+            }
+          } catch (e) {
+            console.error(`[${providerLabel}] Failed to fetch details for resolved fallback slug ${slug}:`, e);
+          }
         }
       }
     }
@@ -525,7 +716,9 @@ async function fetchFromXem20Api(query: StreamQuery): Promise<StreamItem[]> {
       query.tmdbId, 
       query.imdbId,
       query.casts,
-      query.season
+      query.season,
+      query.directors,
+      query.countries
     );
     if (!bestSlug) return [];
 

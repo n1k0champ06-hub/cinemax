@@ -24,6 +24,10 @@ export interface StreamQuery {
   viSlug?: string | null;
   /** Danh sách diễn viên từ TMDB/IMDb để fallback string matching chính xác hơn */
   casts?: string[];
+  /** Danh sách đạo diễn từ TMDB/IMDb */
+  directors?: string[];
+  /** Danh sách quốc gia sản xuất (ví dụ: ["Mỹ", "Hàn Quốc", "US", "KR"]) */
+  countries?: string[];
   /** Release year */
   year?: number | string | null;
   /** Whether the query is for an Anime */
@@ -148,7 +152,7 @@ export function computeScore(item: Omit<StreamItem, 'score'>): number {
   let score = 0;
 
   // Base by provider
-  if (item.provider === 'animapper') score = 97; // AniMapper (Vietnamese anime streaming provider)
+  if (item.provider === 'animapper') score = 998; // AniMapper / Niniyo (Top priority for Anime VI streams)
   else if (item.provider === 'hianime') score = 94; // HiAnime MegaCloud Decryptor
   else if (item.provider === 'cinepro') score = SCORE.HLS_CINEPRO;
   else if (item.provider === 'allmanga') score = 92; // Dedicated anime stream provider
@@ -173,5 +177,6 @@ export function computeScore(item: Omit<StreamItem, 'score'>): number {
   // Type bonus
   if (item.type === 'hls') score += SCORE.TYPE_HLS;
 
+  if (item.provider === 'animapper') return score;
   return Math.min(score, 130);
 }

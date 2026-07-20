@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Smartphone, X, Wifi, Battery, Signal, RefreshCw, ExternalLink } from "lucide-react";
-
+import { Smartphone, X, Wifi, Battery, Signal, RefreshCw, ExternalLink, RotateCw } from "lucide-react";
+import { cn } from "../../lib/utils";
 export const MobileSimulator = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isLandscape, setIsLandscape] = useState(false);
   const [time, setTime] = useState("");
   const [iframeKey, setIframeKey] = useState(0);
 
@@ -102,38 +103,50 @@ export const MobileSimulator = () => {
               className="relative flex flex-col md:flex-row items-center gap-6 z-10 max-h-[90vh]"
             >
               {/* Phone Device Shell */}
-              <div className="relative w-[375px] h-[780px] bg-black border-[10px] border-neutral-800 rounded-[48px] shadow-[0_30px_100px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col ring-1 ring-white/10">
+              <div className={cn(
+                "relative bg-black border-[10px] border-neutral-800 rounded-[44px] shadow-[0_30px_100px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col ring-1 ring-white/10 transition-all duration-300",
+                isLandscape ? "w-[750px] h-[385px]" : "w-[375px] h-[750px]"
+              )}>
                 
                 {/* Custom Notch / Dynamic Island */}
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-black rounded-b-2xl z-50 flex items-center justify-around px-3 pointer-events-none">
+                <div className={cn(
+                  "absolute bg-black z-50 flex items-center justify-around px-3 pointer-events-none transition-all duration-300",
+                  isLandscape 
+                    ? "top-1/2 left-0 -translate-y-1/2 w-6 h-28 rounded-r-2xl flex-col py-3"
+                    : "top-0 left-1/2 -translate-x-1/2 w-32 h-6 rounded-b-2xl px-3"
+                )}>
                   <div className="w-3.5 h-3.5 bg-neutral-900 rounded-full border border-neutral-800/40" />
-                  <div className="w-8 h-2 bg-neutral-900 rounded-full" />
+                  <div className={isLandscape ? "w-2 h-8 bg-neutral-900 rounded-full" : "w-8 h-2 bg-neutral-900 rounded-full"} />
                 </div>
 
                 {/* Status Bar */}
-                <div className="h-10 bg-[#050505] text-white flex items-center justify-between px-6 pt-1 text-[10px] font-bold select-none pointer-events-none shrink-0 z-40">
-                  <span>{time || "12:00"}</span>
-                  <div className="flex items-center gap-1.5 opacity-90">
-                    <Signal className="w-3 h-3 text-white" />
-                    <Wifi className="w-3 h-3 text-white" />
-                    <Battery className="w-3.5 h-3.5 text-white" />
+                {!isLandscape && (
+                  <div className="h-10 bg-[#050505] text-white flex items-center justify-between px-6 pt-1 text-[10px] font-bold select-none pointer-events-none shrink-0 z-40">
+                    <span>{time || "12:00"}</span>
+                    <div className="flex items-center gap-1.5 opacity-90">
+                      <Signal className="w-3 h-3 text-white" />
+                      <Wifi className="w-3 h-3 text-white" />
+                      <Battery className="w-3.5 h-3.5 text-white" />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Screen Iframe Area */}
-                <div className="flex-1 w-full bg-[#050505] relative">
+                <div className="flex-1 w-full bg-[#050505] relative overflow-hidden">
                   <iframe
-                    key={iframeKey}
-                    src={window.location.origin + "/?tab=swipe"}
+                    key={`${iframeKey}-${isLandscape ? 'land' : 'port'}`}
+                    src={window.location.href}
                     className="w-full h-full border-0"
                     title="Mobile View Simulator"
                   />
                 </div>
 
                 {/* Bottom Home Indicator Bar */}
-                <div className="h-6 bg-[#050505] flex items-center justify-center shrink-0 pointer-events-none z-40">
-                  <div className="w-28 h-1 bg-white/30 rounded-full" />
-                </div>
+                {!isLandscape && (
+                  <div className="h-5 bg-[#050505] flex items-center justify-center shrink-0 pointer-events-none z-40">
+                    <div className="w-28 h-1 bg-white/30 rounded-full" />
+                  </div>
+                )}
               </div>
 
               {/* Side Controller Panel */}
@@ -152,10 +165,18 @@ export const MobileSimulator = () => {
                 </div>
 
                 <p className="text-[11px] text-neutral-400 leading-relaxed">
-                  Thiết bị ảo giúp bạn kiểm thử nhanh giao diện quẹt phim di động hoặc các tính năng khác trực tiếp từ màn hình PC mà không cần phím F12.
+                  Thiết bị ảo giúp bạn kiểm thử nhanh giao diện quẹt phim di động hoặc trình phát phim ở cả 2 chế độ xoay dọc và xoay ngang.
                 </p>
 
                 <div className="flex flex-col gap-2 mt-2">
+                  <button
+                    onClick={() => setIsLandscape(prev => !prev)}
+                    className="w-full py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-white font-bold rounded-xl transition-all text-xs flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-red-950/20"
+                  >
+                    <RotateCw className="w-3.5 h-3.5 text-red-400" />
+                    <span>{isLandscape ? "Xoay dọc (Portrait)" : "Xoay ngang (Landscape)"}</span>
+                  </button>
+
                   <button
                     onClick={handleRefresh}
                     className="w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold rounded-xl transition-all text-xs flex items-center justify-center gap-2 cursor-pointer"
@@ -165,7 +186,7 @@ export const MobileSimulator = () => {
                   </button>
                   <button
                     onClick={handleOpenPopup}
-                    className="w-full py-2 bg-red-600/10 border border-red-500/20 hover:bg-red-600/20 text-red-400 font-bold rounded-xl transition-all text-xs flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-2 bg-white/5 border border-white/10 hover:bg-white/10 text-white font-bold rounded-xl transition-all text-xs flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     <span>Mở cửa sổ di động riêng</span>
@@ -173,7 +194,7 @@ export const MobileSimulator = () => {
                 </div>
 
                 <div className="text-[10px] text-neutral-500 mt-2 border-t border-white/5 pt-3">
-                  💡 *Mẹo: Kéo thả các card phim trực tiếp trên màn hình điện thoại ảo để kiểm tra tính năng quẹt phim!*
+                  💡 *Mẹo: Bấm phím bí mật "mobi" hoặc "test" trên bàn phím để bật/tắt nhanh Bộ giả lập này bất kỳ lúc nào!*
                 </div>
               </div>
             </motion.div>

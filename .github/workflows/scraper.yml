@@ -52,7 +52,7 @@ jobs:
             ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }} \
             --verbose
         env:
-          MONGODB_URI: ${{ secrets.MONGOOS_URI }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
           PROXY_URL: ${{ secrets.PROXY_URL }}
 
       - name: 📊 Upload scraper logs

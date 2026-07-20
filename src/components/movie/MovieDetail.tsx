@@ -694,6 +694,8 @@ export const MovieDetail: React.FC<{
       episode: isTv ? (getEpisodeNumber(activeEp?.name) || 1) : undefined,
       viSlug: data?.movie?.slug || slug,
       casts: finalTmdbData?.credits?.cast?.slice(0, 8).map((c: any) => c.name || c.original_name) || [],
+      directors: finalTmdbData?.credits?.crew?.filter((c: any) => c.job === 'Director').map((c: any) => c.name || c.original_name) || [],
+      countries: finalTmdbData?.production_countries?.map((c: any) => c.name || c.iso_3166_1).concat(finalTmdbData?.origin_country || []) || [],
       isAnime,
       hianimeEpisodeId: activeEp?.hianime_episode_id,
     };
@@ -876,13 +878,13 @@ export const MovieDetail: React.FC<{
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlaying, currentServers, selectedServerId, streams, selectStream]);
 
-  // Sync selectedServerId when selectedStream changes (e.g. user selects a source inside the player)
+  // Sync selectedServerId when activeStream changes (e.g. user selects a source inside the player)
   useEffect(() => {
-    if (!selectedStream || !currentServers || currentServers.length === 0) return;
+    if (!activeStream || !currentServers || currentServers.length === 0) return;
 
-    const provider = selectedStream.provider?.toLowerCase() || '';
-    const label = selectedStream.providerLabel?.toLowerCase() || '';
-    const url = selectedStream.url?.toLowerCase() || '';
+    const provider = activeStream.provider?.toLowerCase() || '';
+    const label = activeStream.providerLabel?.toLowerCase() || '';
+    const url = activeStream.url?.toLowerCase() || '';
 
     let targetIdx = -1;
 
@@ -902,10 +904,10 @@ export const MovieDetail: React.FC<{
     // Community sources (vidsrc, 2embed, etc.) do not have a dedicated virtual server — skip backward sync
 
     if (targetIdx !== -1 && targetIdx !== selectedServerId) {
-      console.log("[MovieDetail] Syncing selectedServerId to match selectedStream:", currentServers[targetIdx].server_name);
+      console.log("[MovieDetail] Syncing selectedServerId to match activeStream:", currentServers[targetIdx].server_name);
       setSelectedServerId(targetIdx);
     }
-  }, [selectedStream, currentServers, selectedServerId]);
+  }, [activeStream, currentServers, selectedServerId]);
 
   // Auto-select server & episode when season data loads
   // Server selection always runs (so the drawer shows correct episodes).

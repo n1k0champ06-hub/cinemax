@@ -13,6 +13,7 @@ interface SubtitleOverlayProps {
   videoRef?: React.RefObject<HTMLVideoElement | null>;
   offsetMs?: number;
   enabled?: boolean;
+  isControlVisible?: boolean;
   onError?: (url: string) => void;
 }
 
@@ -37,6 +38,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
   videoRef,
   offsetMs = 0,
   enabled = true,
+  isControlVisible = false,
   onError,
 }) => {
   const [internalCues, setInternalCues] = useState<VttCue[]>([]);
@@ -137,18 +139,18 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
     <div
       style={{
         position: 'absolute',
-        bottom: '12%',
+        bottom: isControlVisible ? '44px' : '16px',
         left: '50%',
         transform: 'translateX(-50%)',
         textAlign: 'center',
         pointerEvents: 'none',
-        zIndex: 100,
+        zIndex: 50,
         maxWidth: '85%',
         width: 'max-content',
-        padding: '6px 12px',
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        borderRadius: '8px',
-        backdropFilter: 'blur(2px)',
+        padding: '5px 12px',
+        backgroundColor: 'rgba(0, 0, 0, 0.75)',
+        borderRadius: '6px',
+        transition: 'bottom 0.2s ease-in-out',
       }}
     >
       {uniqueActiveCues.map((cue, i) => (

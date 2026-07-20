@@ -6,51 +6,75 @@
 
 ## 🗺️ System Architecture
 
+```mermaid
+graph TD
+    %% Define Styles
+    classDef client fill:#3b82f6,stroke:#1d4ed8,stroke-width:2px,color:#fff,rx:8px,ry:8px;
+    classDef cf fill:#f59e0b,stroke:#b45309,stroke-width:2px,color:#fff,rx:8px,ry:8px;
+    classDef render fill:#10b981,stroke:#047857,stroke-width:2px,color:#fff,rx:8px,ry:8px;
+    classDef db fill:#8b5cf6,stroke:#5b21b6,stroke-width:2px,color:#fff,rx:8px,ry:8px;
+    classDef ai fill:#ec4899,stroke:#be185d,stroke-width:2px,color:#fff,rx:8px,ry:8px;
+
+    %% Nodes
+    User("👤 User Browser<br/>(focusflow.id.vn)"):::client
+    CF_Pages("⚡ Cloudflare Pages<br/>(React SPA)"):::cf
+    CF_Worker("🌩️ Cloudflare Worker<br/>(cinemax-backend-proxy)"):::cf
+    CF_KV("💾 Cloudflare KV<br/>(MOVIE_CACHE)"):::cf
+    Render("☁️ Render Bridge<br/>(hollysheesh-bridge)"):::render
+    CinePro("🍿 CinePro Core<br/>(Worker)"):::cf
+    Mongo("🍃 MongoDB Atlas<br/>(cluster0.axhiwhx)"):::db
+    Gemini("🧠 Gemini API<br/>(AI Mapping Engine)"):::ai
+
+    %% Connections
+    User <-->|Static Files| CF_Pages
+    User <-->|API Calls (/api, /tmdb, /img)| CF_Worker
+    
+    CF_Worker <-->|HLS/Embed Proxy| CinePro
+    CF_Worker <-->|Read/Write Mappings| CF_KV
+    CF_Worker <-->|Cron Job (AI Sync)| Gemini
+    CF_Worker <-->|VI CDN Proxy (/proxy/m3u8)| Render
+    
+    Render <-->|Read/Write Streams| Mongo
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         USER BROWSER                                │
-│   focusflow.id.vn  (Cloudflare Pages — React SPA)                  │
-└───────────────┬─────────────────────────────────────────────────────┘
-                │ API calls /api/* /tmdb/* /img/*
-                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│           CLOUDFLARE WORKER  (cinemax-backend-proxy)                │
-│   focusflow.id.vn/api/*  |  focusflow.id.vn/tmdb/*                 │
-│                                                                     │
-│  Routes:                                                            │
-│  ├─ /tmdb/*           → TMDB API proxy (bypass ISP block)          │
-│  ├─ /img/*            → Poster image proxy                         │
-│  ├─ /api/imdb-proxy   → IMDb rating + Metacritic scraper           │
-│  ├─ /api/m3u8-proxy   → HLS proxy (NON-VI CDN only)               │
-│  ├─ /api/cinepro-proxy → CinePro Core worker                       │
-│  ├─ /api/sub-proxy    → Subtitle proxy (Subdl / Stremio)           │
-│  └─ /api/admin/scraper/streams → HOLLYSHEESH bridge proxy          │
-│                                                                     │
-│  Cron: */10 * * * *   → ping Render bridge (keep-alive)           │
-└──────────┬──────────────────────────────┬───────────────────────────┘
-           │                              │
-           ▼                              ▼
-┌──────────────────────┐      ┌───────────────────────────────────────┐
-│  CINEPRO CORE WORKER │      │  HOLLYSHEESH BRIDGE  (Render.com)     │
-│  cinepro-core.cykab… │      │  hollysheesh-bridge.onrender.com      │
-│                      │      │                                       │
-│  - International HLS │      │  Routes:                              │
-│  - MegaCloud decrypt │      │  ├─ /health           health check    │
-│  - Embed sources     │      │  ├─ /api/admin/scraper/streams  ←DB   │
-└──────────────────────┘      │  ├─ /api/admin/scraper/stats    ←DB   │
-                              │  └─ /proxy/m3u8   HLS proxy for VI    │
-                              │                   CDN (bypass CF IPs) │
-                              └──────────────┬────────────────────────┘
-                                             │
-                                             ▼
-                              ┌──────────────────────────┐
-                              │   MONGODB ATLAS           │
-                              │   cluster0.axhiwhx        │
-                              │   DB: cinemax             │
-                              │   ├─ movies collection    │
-                              │   └─ streams collection   │
-                              └──────────────────────────┘
+
+### 📂 File Structure & Directory Map
+Để Agent không cần phải `list_dir` nhiều lần, đây là sơ đồ kiến trúc thư mục cốt lõi:
 ```
+cinemax/
+├── cloudflare-worker.js         # Toàn bộ logic Backend (Cloudflare Worker): Proxy TMDB, Proxy M3U8, HLS, Subtitles, AI Mapping Engine
+├── wrangler.json                # Cấu hình deploy Worker, Cron Trigger, KV Namespace binding
+├── hollysheesh-bridge/          # (Render Backend Node.js)
+│   ├── server.cjs               # API Server & M3U8 Proxy bypass Cloudflare IP block
+│   └── seed.cjs                 # Script cào phim từ KKPhim đổ vào MongoDB
+├── scripts/
+│   └── dev-api.cjs              # API Emulator dùng để chạy localhost
+└── src/
+    ├── api/                     # 🔌 Data Fetching Layer (Không chứa UI)
+    │   ├── cineproApi.ts        # Gọi CinePro Core, `buildProxiedM3u8Url()`
+    │   ├── streamProviders/     # 🎬 Quản lý nguồn phát (Ophim, KKPhim, NguonC)
+    │   │   ├── types.ts         # Types & `computeScore()` algorithm
+    │   │   └── viProviders.ts   # Logic search nguồn Việt, chấm điểm & lấy tập phim
+    │   ├── aiMappingApi.ts      # Fetch Cloudflare KV AI mappings
+    │   ├── phimApi.ts           # Fetch TMDB (phim mới, trending, related)
+    │   ├── anilistApi.ts        # Fetch Anime (AniMapper)
+    │   └── subtitleApi.ts       # Quản lý Subdl/Stremio
+    ├── components/
+    │   ├── movie/               # Component hiển thị phim (MovieCard, MovieDetail, MovieRows)
+    │   ├── player/              # Logic Trình phát Video (NetflixPlayer, SubtitleOverlay, Settings)
+    │   ├── layout/              # NavBar, Footer
+    │   └── pages/               # Các trang chính (Home, Discover, Search, Swipe, Profile)
+    └── hooks/                   # 🪝 React Hooks chứa Business Logic
+        ├── useMovieDetail.ts    # Tính toán & Merge thông tin TMDB + IMDb
+        └── useStreamAggregator.ts # Kéo luồng (streams) song song từ mọi nguồn
+```
+
+### 🤖 Antigravity MCP Integration Guide
+Dự án được tối ưu để agent thao tác nhanh qua MCP:
+1. **codebase-memory-mcp**:
+   - Sử dụng tool `search_graph(name_pattern=".*computeScore.*")` thay vì `grep_search` để hiểu flow chấm điểm phim.
+   - Sử dụng `trace_path(function_name="fetchFromVietnameseApi")` để xem nó gọi đến `fetchAiMapping` và fallback như thế nào.
+2. **scrapling**:
+   - Khi cần trích xuất DOM hoặc class HTML từ Ophim, PhimAPI để sửa lỗi crawler, dùng tool `get` hoặc `stealthy_fetch` của scrapling thay vì viết script local Node.js.
 
 ### Stream Flow (VI Sources)
 
