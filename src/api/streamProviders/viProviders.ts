@@ -57,7 +57,8 @@ function getBestSlugMatch(
   querySlug?: string | null,
   queryTmdbId?: string | number,
   queryImdbId?: string,
-  queryCasts?: string[]
+  queryCasts?: string[],
+  querySeason?: number | null
 ): string | null {
   if (!items || items.length === 0) return null;
 
@@ -84,8 +85,10 @@ function getBestSlugMatch(
   const parsedQueryYear = queryYear ? (typeof queryYear === 'string' ? parseInt(queryYear) : queryYear) : 0;
 
   const scored = items.map((item: any) => {
-    const title = cleanSearchQuery(item.name || '').toLowerCase();
-    const origin = cleanSearchQuery(item.origin_name || item.original_name || '').toLowerCase();
+    const rawName = item.name || '';
+    const rawOrigin = item.origin_name || item.original_name || '';
+    const title = cleanSearchQuery(rawName).toLowerCase();
+    const origin = cleanSearchQuery(rawOrigin).toLowerCase();
     const year = parseInt(item.year) || 0;
     const itemSlug = item.slug ? item.slug.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
 
@@ -96,6 +99,26 @@ function getBestSlugMatch(
       score += 80;
     } else if (title.includes(qTitleVi) || origin.includes(qTitle) || title.includes(qTitle)) {
       score += 50;
+    }
+
+    // Season match verification
+    if (querySeason && querySeason > 0) {
+      const fullItemText = `${rawName} ${rawOrigin} ${item.slug || ''}`.toLowerCase();
+      const seasonMatch = fullItemText.match(/(?:phan|season|part|ss|mua)\s*0*(\d+)/i);
+      if (seasonMatch) {
+        const itemSeason = parseInt(seasonMatch[1], 10);
+        if (itemSeason === querySeason) {
+          score += 150; // Big bonus for matching exact season
+        } else {
+          score -= 200; // Big penalty for wrong season
+        }
+      } else {
+        if (querySeason === 1) {
+          score += 30; // Base title matching season 1
+        } else {
+          score -= 50; // Base title without season tag when searching Season 2+
+        }
+      }
     }
 
     // Slug substring match
@@ -288,7 +311,8 @@ async function fetchFromVietnameseApi(
         slug,
         query.tmdbId,
         query.imdbId,
-        query.casts
+        query.casts,
+        query.season
       );
 
       if (matchedSlug) {
@@ -468,7 +492,8 @@ async function fetchFromXem20Api(query: StreamQuery): Promise<StreamItem[]> {
       null, 
       query.tmdbId, 
       query.imdbId,
-      query.casts
+      query.casts,
+      query.season
     );
     if (!bestSlug) return [];
 
