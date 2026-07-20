@@ -463,7 +463,11 @@ export const MovieDetail: React.FC<{
         let seasonSlug = null;
         let originalSlug = null;
         if (results.length > 0) {
-            const tmdbYear = finalTmdbData?.first_air_date ? parseInt(finalTmdbData.first_air_date.substring(0,4)) : 0;
+            const currentSeasonObj = finalTmdbData?.seasons ? finalTmdbData.seasons.find((s: any) => s.season_number === currentSeason) : null;
+            const tmdbYear = currentSeasonObj?.air_date 
+                ? parseInt(currentSeasonObj.air_date.substring(0,4))
+                : (finalTmdbData?.first_air_date ? parseInt(finalTmdbData.first_air_date.substring(0,4)) : 0);
+            
             const scoredMatches = results.map((item: any) => ({
                 ...item,
                 score: computeMatchScore(item, { title: matchedTitle, original_title: finalTmdbData?.name || "", year: tmdbYear, type: 'tv' }) 
@@ -670,14 +674,17 @@ export const MovieDetail: React.FC<{
     const enData = translations.find((t: any) => t.iso_639_1 === 'en')?.data;
     const enTitle = enData?.name || enData?.title || '';
 
+    const currentSeasonObj = finalTmdbData?.seasons?.find((s: any) => s.season_number === currentSeason);
+    const seasonYear = currentSeasonObj?.air_date ? currentSeasonObj.air_date.split('-')[0] : null;
+
     return {
       tmdbId: finalTmdbData?.id,
       imdbId: resolvedImdbId,
-      year: finalTmdbData?.release_date 
-        ? finalTmdbData.release_date.split('-')[0] 
-        : (finalTmdbData?.first_air_date 
-           ? finalTmdbData.first_air_date.split('-')[0] 
-           : (data?.movie?.year || null)),
+      year: seasonYear 
+        || (finalTmdbData?.release_date ? finalTmdbData.release_date.split('-')[0] : null)
+        || (finalTmdbData?.first_air_date ? finalTmdbData.first_air_date.split('-')[0] : null)
+        || data?.movie?.year 
+        || null,
       title: isAnime 
         ? (enTitle || finalTmdbData?.name || finalTmdbData?.title || finalTmdbData?.original_name || finalTmdbData?.original_title || data?.movie?.origin_name || '')
         : (data?.movie?.origin_name || finalTmdbData?.original_title || finalTmdbData?.original_name || ''),

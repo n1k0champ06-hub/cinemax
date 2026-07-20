@@ -223,7 +223,14 @@ export const fetchSearch = async (keyword: string) => {
     const tmdbId = (rawTmdbId && rawTmdbId !== 0 && rawTmdbId !== '0' && rawTmdbId !== 'undefined' && rawTmdbId !== 'null') ? String(rawTmdbId).trim() : '';
 
     if (tmdbId) {
-      const isTv = item.type === 'series' || item.type === 'hoathinh' || item.type === 'tvshows' || item.tmdb?.type === 'tv' || item.tmdb?.media_type === 'tv';
+      let isTv = item.type === 'series' || item.type === 'tvshows';
+      if (item.tmdb?.type === 'movie' || item.tmdb?.media_type === 'movie') {
+        isTv = false;
+      } else if (item.tmdb?.type === 'tv' || item.tmdb?.media_type === 'tv') {
+        isTv = true;
+      } else if (item.type === 'hoathinh') {
+        isTv = true;
+      }
       const key = `tmdb_${tmdbId}`;
       item.originalSlug = item.slug;
       item.slug = `tmdb-${tmdbId}-${isTv ? 'tv' : 'movie'}`;
