@@ -2,9 +2,7 @@
 
 // Có thể dùng Cloudflare Proxy để giấu API
 const USE_PROXY = true;
-export const TMDB_BASE_URL = typeof window !== 'undefined' 
-  ? (import.meta.env && import.meta.env.DEV ? 'https://focusflow.id.vn/tmdb' : '/tmdb') 
-  : 'http://localhost:3001/tmdb';
+export const TMDB_BASE_URL = 'https://focusflow.id.vn/tmdb';
 
 // Nếu dùng PROXY thì client sẽ KHÔNG truyền token nữa (để ẩn token)
 // Hãy cấu hình biến môi trường VITE_TMDB_ACCESS_TOKEN (hoặc TMDB_ACCESS_TOKEN) trên Cloudflare Dashboard hoặc wrangler.json

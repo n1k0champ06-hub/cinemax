@@ -77,17 +77,27 @@ export const Hero = ({
       setProgress(100);
       const timeout = setTimeout(() => {
         setShouldShowLoader(false);
-      }, 400);
+      }, 300);
       return () => clearTimeout(timeout);
     } else {
       const interval = setInterval(() => {
         setProgress((prev) => {
           if (prev >= 98) return prev;
-          const inc = Math.floor(Math.random() * 8) + 4;
+          const inc = Math.floor(Math.random() * 10) + 5;
           return Math.min(prev + inc, 98);
         });
-      }, 100);
-      return () => clearInterval(interval);
+      }, 80);
+
+      // Safety fallback: Never stick at loader for more than 3 seconds
+      const maxTimeout = setTimeout(() => {
+        setProgress(100);
+        setShouldShowLoader(false);
+      }, 3000);
+
+      return () => {
+        clearInterval(interval);
+        clearTimeout(maxTimeout);
+      };
     }
   }, [isLoaded]);
 
