@@ -553,18 +553,49 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [togglePlay, skip, resetControls]);
 
-  const lastTapRef = useRef(0);
-  const handleVideoClick = (e) => {
+  const lastTapRef = useRef<number>(0);
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+    };
+  }, []);
+
+  const handleVideoClick = (e: React.MouseEvent<HTMLVideoElement>) => {
+    e.stopPropagation();
     const now = Date.now();
     const diff = now - lastTapRef.current;
-    if (diff < 300 && diff > 0) {
-      const x = e.clientX;
-      const w = window.innerWidth;
-      skip(x < w * 0.5 ? -10 : 10);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const width = rect.width;
+
+    if (diff > 0 && diff < 300) {
+      // Double tap/click detected: cancel pending single-click togglePlay
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
+      
+      // Seek -10s on left 45%, +10s on right 55%
+      if (clickX < width * 0.45) {
+        skip(-10);
+      } else {
+        skip(10);
+      }
+      lastTapRef.current = now;
     } else {
-      togglePlay(e);
+      // Single tap/click: delay togglePlay by 250ms to check for double tap
+      lastTapRef.current = now;
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+      }
+      const clickEvent = { ...e };
+      clickTimerRef.current = setTimeout(() => {
+        togglePlay(clickEvent);
+        clickTimerRef.current = null;
+      }, 250);
     }
-    lastTapRef.current = now;
     resetControls();
   };
 
