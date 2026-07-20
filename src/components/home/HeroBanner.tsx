@@ -103,7 +103,7 @@ export const HeroBanner = ({ onSelect }: { onSelect: (slug: string) => void }) =
   const starCount = Math.round(ratingVal / 2);
 
   return (
-    <div className="relative h-[65dvh] min-h-[460px] lg:h-[80vh] lg:min-h-0 w-full overflow-hidden bg-[#050505] group">
+    <div className="relative h-[65svh] min-h-[460px] lg:h-[80vh] lg:min-h-0 w-full overflow-hidden bg-[#050505] group">
       <AnimatePresence mode="popLayout">
         <motion.div 
           key={`img-${currentIndex}`}

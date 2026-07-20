@@ -129,7 +129,7 @@ export const Hero = ({
 
   if (shouldShowLoader || !activeMovie) {
     return (
-      <div className="relative h-[65dvh] min-h-[460px] lg:h-screen lg:h-[100dvh] lg:min-h-[550px] w-full overflow-hidden bg-[#050505] flex flex-col items-center justify-center gap-4">
+      <div className="relative h-[65svh] min-h-[460px] lg:h-screen lg:h-[100svh] lg:min-h-[550px] w-full overflow-hidden bg-[#050505] flex flex-col items-center justify-center gap-4">
         {/* Top Slim Crimson Loading Progress Bar */}
         <div 
           className="absolute top-0 left-0 h-[2.5px] bg-[#E50914] shadow-[0_0_8px_#E50914] transition-all duration-300 ease-out" 
@@ -187,7 +187,7 @@ export const Hero = ({
   const activeSlug = `tmdb-${activeMovie.id}-${activeMovie.media_type || 'movie'}`;
 
   return (
-    <div className="relative h-[65dvh] min-h-[460px] lg:h-screen lg:h-[100dvh] lg:min-h-[550px] w-full overflow-hidden bg-[#050505]">
+    <div className="relative h-[65svh] min-h-[460px] lg:h-screen lg:h-[100svh] lg:min-h-[550px] w-full overflow-hidden bg-[#050505]">
       {/* 1. Backdrop Background Crossfade */}
       <AnimatePresence mode="popLayout">
         <motion.div 

@@ -126,7 +126,7 @@ export const GridShimmer = () => (
 );
 
 export const HeroShimmer = () => (
-  <div className="relative h-[65dvh] min-h-[460px] lg:h-[80vh] w-full bg-[#030303] overflow-hidden flex items-center justify-center">
+  <div className="relative h-[65svh] min-h-[460px] lg:h-[80vh] w-full bg-[#030303] overflow-hidden flex items-center justify-center">
     {/* Dynamic 2026 Fluid Glow */}
     <motion.div 
       className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60vw] h-[60vw] rounded-full bg-blue-500/10 blur-[120px] pointer-events-none"
