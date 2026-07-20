@@ -137,7 +137,7 @@ function getBestSlugMatch(
   });
 
   scored.sort((a, b) => b.score - a.score);
-  return scored[0]?.score >= 40 ? scored[0].slug : null;
+  return scored[0]?.score >= 75 ? scored[0].slug : null;
 }
 
 // ---------------------------------------------------------------------------

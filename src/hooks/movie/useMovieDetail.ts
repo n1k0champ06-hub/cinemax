@@ -186,8 +186,8 @@ export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
       let results: any[] = [];
       const baseKeyword = title || originalTitle;
 
-      if (mediaType === 'tv' && currentSeason > 1) {
-        // Search specific season titles (e.g. "Dr. STONE Season 3", "Dr. STONE Phần 3")
+      if (mediaType === 'tv') {
+        // Search specific season titles (e.g. "Dr. STONE Season 1", "Dr. STONE Phần 1")
         const seasonQueries = [
           `${baseKeyword} Phần ${currentSeason}`,
           `${baseKeyword} Season ${currentSeason}`,
@@ -229,18 +229,21 @@ export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
       const scored = localResults.map((item: any) => {
         let score = computeMatchScore(item, tmdbInfo);
         // Bonus for matching specific TV Season
-        if (mediaType === 'tv' && currentSeason > 1) {
+        if (mediaType === 'tv') {
           const itemText = (cleanString(item.name || '') + ' ' + cleanString(item.slug || '')).toLowerCase();
           const sPattern = new RegExp(`(phan|season|part|ss)\\s*0*${currentSeason}\\b`, 'i');
           if (sPattern.test(itemText)) {
             score += 150;
+          } else if (currentSeason === 1 && !/(phan|season|part|ss)\s*\d+/i.test(itemText)) {
+             // Base series match for season 1
+             score += 100;
           }
         }
         return { item, score };
       });
 
       scored.sort((a, b) => b.score - a.score);
-      if (scored[0] && scored[0].score >= 40) {
+      if (scored[0] && scored[0].score >= 75) {
         return scored[0].item;
       }
       return null;
