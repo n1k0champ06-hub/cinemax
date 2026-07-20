@@ -809,7 +809,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                 <div className="w-10 h-1 bg-white/20 rounded-full mx-auto my-2.5 shrink-0" />
               )}
 
-              <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06] shrink-0">
+              <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06] shrink-0 sticky top-0 z-20 bg-[#0a0a0c]/98 backdrop-blur-md">
                 {panelOpen !== 'settings' && (
                   <button onClick={() => setPanelOpen('settings')} className="p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer">
                     <ArrowLeft size={16} className="text-white/70" />
@@ -884,7 +884,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                     )}
 
                     {((servers && servers.length > 0) || (streams && streams.length > 0)) && (
-                      <div className="px-5 py-3.5 border-t border-white/[0.04] max-h-[300px] overflow-y-auto">
+                      <div className="px-5 py-3.5 border-t border-white/[0.04]">
                         <p className="text-xs text-white/40 mb-3 uppercase tracking-wider font-semibold">Nguồn phát</p>
                         
                         {/* 1. Nguồn Việt Nam */}
