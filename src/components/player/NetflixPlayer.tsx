@@ -402,13 +402,16 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       const isVi = activeStream?.category === 'vi';
       hls = new Hls({
         loader: AdFilteringHlsLoader as any,
-        maxBufferLength: isVi ? 40 : 10,
-        maxMaxBufferLength: isVi ? 60 : 20,
-        maxBufferSize: isVi ? 80*1024*1024 : 15*1000*1000,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        maxBufferSize: 60 * 1024 * 1024,
         enableWorker: true,
-        lowLatencyMode: !isVi,
+        lowLatencyMode: false,
         capLevelToPlayerSize: true,
-        backBufferLength: 10,
+        backBufferLength: 90,
+        startFragPrefetch: true,
+        nudgeMaxRetry: 5,
+        nudgeOffset: 0.1,
         xhrSetup: (xhr) => {
           if (headersObj) Object.entries(headersObj).forEach(([k,v]) => xhr.setRequestHeader(k, String(v)));
         },
@@ -441,9 +444,16 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       });
 
       hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
+          try {
+            if (video && !video.paused) {
+              video.currentTime += 0.1;
+            }
+          } catch (_) {}
+        }
         if (!data.fatal) return;
-        if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries < 3) { mediaRetries++; hls.recoverMediaError(); }
-        else if (data.type === Hls.ErrorTypes.NETWORK_ERROR && netRetries < 3) { netRetries++; hls.startLoad(); }
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries < 5) { mediaRetries++; hls.recoverMediaError(); }
+        else if (data.type === Hls.ErrorTypes.NETWORK_ERROR && netRetries < 5) { netRetries++; hls.startLoad(); }
       });
 
     } else if (video.canPlayType('application/vnd.apple.mpegurl') && resolvedUrl) {

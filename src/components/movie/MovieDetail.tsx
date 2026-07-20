@@ -504,7 +504,8 @@ export const MovieDetail: React.FC<{
           
           return {
              ...s,
-             server_name: newName || s.server_name
+             server_name: newName || s.server_name,
+             status: s.status || (s.server_data?.length > 0 ? 'ok' : 'empty')
           };
         });
       } else {
