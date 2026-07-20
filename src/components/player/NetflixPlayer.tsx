@@ -19,14 +19,47 @@ function extractHostname(url) {
   try { return new URL(url).hostname; } catch { return null; }
 }
 
-function clientFilterPlaylistAds(text, playlistUrl) {
+function clientFilterPlaylistAds(text: string, playlistUrl: string) {
   if (!text || !text.includes('#EXTM3U')) return text;
-  const isKKPhim = playlistUrl && (playlistUrl.includes('kkphim') || playlistUrl.includes('phimapi'));
-  const isOPhim  = playlistUrl && (playlistUrl.includes('ophim') || playlistUrl.includes('opstream'));
-  const isViCdn  = isKKPhim || isOPhim || playlistUrl.includes('nguonc') || playlistUrl.includes('xem20');
+
+  const AD_PATTERNS = [
+    /convertv\d*/i,
+    /convert\d*/i,
+    /9922/i,
+    /nhacai/i,
+    /cacuoc/i,
+    /kubet/i,
+    /shbet/i,
+    /okvip/i,
+    /789bet/i,
+    /new88/i,
+    /hi88/i,
+    /jun88/i,
+    /f8bet/i,
+    /bk8/i,
+    /w88/i,
+    /fun88/i,
+    /fb88/i,
+    /v9bet/i,
+    /ae888/i,
+    /mb66/i,
+    /rovideo/i,
+    /rostream/i,
+    /phimimg\.com\/ads/i,
+    /doubleclick/i,
+    /googleads/i,
+    /googlesyndication/i,
+    /adnxs/i,
+    /adsrvr/i,
+    /smartadserver/i,
+    /quangcao/i,
+    /banner/i,
+  ];
+
   const lines = text.split(/\r?\n/);
-  const blocks = [];
+  const blocks: { start: number; uriIndex: number; end: number; uri: string }[] = [];
   let blockStart = 0;
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (line && !line.startsWith('#')) {
@@ -34,43 +67,72 @@ function clientFilterPlaylistAds(text, playlistUrl) {
       blockStart = i + 1;
     }
   }
-  const removalRanges = [];
+
+  const removalRanges: { start: number; end: number }[] = [];
+
+  // Pass 1: Pattern-based ad segment detection
   for (const block of blocks) {
     const norm = block.uri.toLowerCase();
-    let isAd = false;
-    if (norm.includes('rovideo') || norm.includes('rostream') || norm.includes('phimimg.com/ads') || norm.includes('9922.com')) isAd = true;
-    if (isKKPhim && (norm.includes('convertv') || norm.includes('convert') || norm.includes('doubleclick') || norm.includes('googleads'))) isAd = true;
-    if (isViCdn && block.uri.startsWith('/') && (norm.includes('/v7/') || norm.includes('/v8/') || norm.includes('/v9/') || norm.includes('/v10/') || norm.includes('/segment'))) isAd = true;
+    const isAd = AD_PATTERNS.some((p) => p.test(norm));
     if (isAd) {
       let start = block.uriIndex;
       for (let i = block.uriIndex - 1; i >= block.start; i--) {
-        const l = lines[i].trim();
-        if (l.startsWith('#EXTINF') || l.startsWith('#EXT-X-DISCONTINUITY') || l.startsWith('#EXT-X-KEY') || l === '') { start = i; continue; }
+        const l = lines[i].trim().toUpperCase();
+        if (l.startsWith('#EXTINF') || l === '#EXT-X-DISCONTINUITY' || l.startsWith('#EXT-X-KEY') || l === '') {
+          start = i;
+          continue;
+        }
         break;
       }
       removalRanges.push({ start, end: block.end });
     }
   }
+
+  // Pass 2: Foreign CDN / Discontinuity-flanked ad block detection
   if (blocks.length > 1) {
-    const hostCounts = new Map();
-    for (const b of blocks) { const h = extractHostname(b.uri); if (h) hostCounts.set(h, (hostCounts.get(h) || 0) + 1); }
-    let mainHost = null; let maxCount = 0;
-    for (const [h, c] of hostCounts.entries()) { if (c > maxCount) { mainHost = h; maxCount = c; } }
+    const hostCounts = new Map<string, number>();
+    for (const b of blocks) {
+      const h = extractHostname(b.uri);
+      if (h) hostCounts.set(h, (hostCounts.get(h) || 0) + 1);
+    }
+    let mainHost: string | null = null;
+    let maxCount = 0;
+    for (const [h, c] of hostCounts.entries()) {
+      if (c > maxCount) { mainHost = h; maxCount = c; }
+    }
+
     if (mainHost) {
       for (let bi = 0; bi < blocks.length; bi++) {
         const block = blocks[bi];
         const segHost = extractHostname(block.uri);
-        if (removalRanges.some(r => block.uriIndex >= r.start && block.uriIndex <= r.end)) continue;
+        if (removalRanges.some((r) => block.uriIndex >= r.start && block.uriIndex <= r.end)) continue;
+
         if (segHost && segHost !== mainHost) {
           let hasDiscBefore = false;
-          for (let i = block.start; i < block.uriIndex; i++) { if (lines[i].trim().toUpperCase() === '#EXT-X-DISCONTINUITY') { hasDiscBefore = true; break; } }
-          const nb = blocks[bi + 1]; let hasDiscAfter = false;
-          if (nb) { for (let i = block.end + 1; i < nb.uriIndex; i++) { if (lines[i].trim().toUpperCase() === '#EXT-X-DISCONTINUITY') { hasDiscAfter = true; break; } } }
+          for (let i = block.start; i < block.uriIndex; i++) {
+            if (lines[i].trim().toUpperCase() === '#EXT-X-DISCONTINUITY') {
+              hasDiscBefore = true;
+              break;
+            }
+          }
+          const nb = blocks[bi + 1];
+          let hasDiscAfter = false;
+          if (nb) {
+            for (let i = block.end + 1; i < nb.uriIndex; i++) {
+              if (lines[i].trim().toUpperCase() === '#EXT-X-DISCONTINUITY') {
+                hasDiscAfter = true;
+                break;
+              }
+            }
+          }
           if (hasDiscBefore && hasDiscAfter) {
             let start = block.uriIndex;
             for (let i = block.uriIndex - 1; i >= block.start; i--) {
-              const l = lines[i].trim();
-              if (l.startsWith('#EXTINF') || l.startsWith('#EXT-X-DISCONTINUITY') || l.startsWith('#EXT-X-KEY') || l === '') { start = i; continue; }
+              const l = lines[i].trim().toUpperCase();
+              if (l.startsWith('#EXTINF') || l === '#EXT-X-DISCONTINUITY' || l.startsWith('#EXT-X-KEY') || l === '') {
+                start = i;
+                continue;
+              }
               break;
             }
             removalRanges.push({ start, end: block.end });
@@ -79,16 +141,25 @@ function clientFilterPlaylistAds(text, playlistUrl) {
       }
     }
   }
-  const kept = [];
+
+  // Filter out marked lines
+  const kept: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    if (!removalRanges.some(r => i >= r.start && i <= r.end)) kept.push(lines[i]);
+    if (!removalRanges.some((r) => i >= r.start && i <= r.end)) {
+      kept.push(lines[i]);
+    }
   }
-  const compacted = []; let prevWasDisc = false;
+
+  // Compact consecutive DISCONTINUITY tags
+  const compacted: string[] = [];
+  let prevWasDisc = false;
   for (const line of kept) {
     const isDisc = line.trim().toUpperCase() === '#EXT-X-DISCONTINUITY';
-    if (isDisc) { if (isViCdn) continue; if (prevWasDisc) continue; }
-    compacted.push(line); prevWasDisc = isDisc;
+    if (isDisc && prevWasDisc) continue;
+    compacted.push(line);
+    prevWasDisc = isDisc;
   }
+
   return compacted.join('\n');
 }
 

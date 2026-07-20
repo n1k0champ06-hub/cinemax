@@ -235,10 +235,16 @@ const VI_CDN_PATTERNS = [
 export function buildProxiedM3u8Url(streamUrl: string, referer?: string | null): string {
   if (!streamUrl) return '';
 
+  // VI CDN domains have CORS Allow-Origin:* — play directly from browser to avoid Cloudflare 403 blocks.
+  // Client-side AdFilteringHlsLoader in NetflixPlayer intercepts & filters 9922.com / convertv ads.
+  const isViCdn = VI_CDN_PATTERNS.some(p => streamUrl.includes(p) || (referer || '').includes(p));
+  if (isViCdn) {
+    return streamUrl;
+  }
+
   const params = new URLSearchParams({ url: streamUrl });
   if (referer) params.set('referer', referer);
 
-  // Always route through /api/m3u8-proxy so that the M3U8 ad-filter strips out gambling ads (9922.com, convertv, etc.)
   if (typeof window !== 'undefined') {
     return `/api/m3u8-proxy?${params.toString()}`;
   }
