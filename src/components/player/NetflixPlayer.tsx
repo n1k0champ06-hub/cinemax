@@ -761,13 +761,19 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       }
       lastTapRef.current = now;
     } else {
-      // Single tap/click: delay togglePlay by 250ms to check for double tap
+      // Single tap/click: delay by 250ms to check for double tap
       lastTapRef.current = now;
       if (clickTimerRef.current) {
         clearTimeout(clickTimerRef.current);
       }
       clickTimerRef.current = setTimeout(() => {
-        togglePlay();
+        if (isMobile) {
+          // On Mobile, single-tap ONLY toggles UI controls visibility, NEVER pauses/plays video!
+          setShowControls(prev => !prev);
+        } else {
+          // On Desktop PC, single-click toggles play/pause
+          togglePlay();
+        }
         clickTimerRef.current = null;
       }, 250);
     }
