@@ -267,10 +267,8 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     if (lastSubKeyRef.current === key) return;
     lastSubKeyRef.current = key;
     setFailedSubs(new Set());
-    const isVi = activeStream?.category === 'vi';
-    const storageKey = isVi ? 'cinemax_sub_enabled_vi' : 'cinemax_sub_enabled_foreign';
-    const saved = localStorage.getItem(storageKey);
-    const shouldOn = saved !== null ? saved === 'true' : !isVi;
+    const saved = localStorage.getItem('cinemax_sub_enabled');
+    const shouldOn = saved === 'true';
     if (shouldOn && subtitleUrl) { setSelectedSub('v3'); setSubEnabled(true); }
     else if (shouldOn && externalSubtitles?.length) {
       setSelectedSub(`ext-${externalSubtitles[0].id||0}`); setSubEnabled(true);
@@ -590,9 +588,8 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       if (clickTimerRef.current) {
         clearTimeout(clickTimerRef.current);
       }
-      const clickEvent = { ...e };
       clickTimerRef.current = setTimeout(() => {
-        togglePlay(clickEvent);
+        togglePlay();
         clickTimerRef.current = null;
       }, 250);
     }
@@ -1029,56 +1026,90 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Episode drawer */}
+      {/* Episode drawer / Bottom Sheet */}
       <AnimatePresence>
         {panelOpen === 'episodes' && (
           <>
             <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
-              className="absolute inset-0 z-50" onClick={closePanel} />
+              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs" onClick={closePanel} />
             <motion.div
-              initial={{ x:'100%', opacity:0 }} animate={{ x:0, opacity:1 }} exit={{ x:'100%', opacity:0 }}
-              transition={{ type:'tween', ease:[0.16,1,0.3,1], duration:0.22 }}
-              className="absolute right-0 top-0 bottom-0 z-50 w-72 bg-[#0a0a0c]/95 backdrop-blur-md border-l border-white/[0.07] flex flex-col shadow-2xl"
+              initial={isMobile ? { y: '100%', opacity: 0 } : { x: '100%', opacity: 0 }}
+              animate={{ x: 0, y: 0, opacity: 1 }}
+              exit={isMobile ? { y: '100%', opacity: 0 } : { x: '100%', opacity: 0 }}
+              transition={{ type: 'tween', ease: [0.16, 1, 0.3, 1], duration: 0.25 }}
+              className={cn(
+                "z-50 bg-[#0a0a0c]/98 backdrop-blur-xl border-white/[0.08] flex flex-col shadow-2xl overflow-hidden",
+                isMobile
+                  ? "fixed inset-x-0 bottom-0 top-auto max-h-[85vh] rounded-t-2xl border-t shadow-[0_-10px_30px_rgba(0,0,0,0.95)]"
+                  : "absolute right-0 top-0 bottom-0 w-80 sm:w-96 border-l"
+              )}
               onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06]">
+
+              {isMobile && (
+                <div className="w-10 h-1 bg-white/20 rounded-full mx-auto my-2.5 shrink-0" />
+              )}
+
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.06] shrink-0 sticky top-0 z-20 bg-[#0a0a0c]/98 backdrop-blur-md">
                 <h3 className="text-sm font-bold text-white/90 uppercase tracking-wider">Danh sách tập</h3>
                 <button onClick={closePanel} className="p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer">
                   <X size={16} className="text-white/60" />
                 </button>
               </div>
 
-              {seasons.length > 1 && (
-                <div className="flex gap-2 px-4 py-3 border-b border-white/[0.04] overflow-x-auto scrollbar-hide">
+              {/* Horizontal Season Tabs */}
+              {seasons && seasons.length > 0 && (
+                <div className="flex gap-2 px-5 py-3 border-b border-white/[0.04] overflow-x-auto scrollbar-hide shrink-0">
                   {seasons.map((s) => (
                     <button key={s.season_number} onClick={() => onSeasonChange?.(s.season_number)}
-                      className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${s.season_number === activeEpSeason ? 'bg-[#E50914] text-white' : 'bg-white/[0.05] text-white/50 hover:bg-white/[0.1]'}`}>
-                      {s.name || `Phần ${s.season_number}`}
+                      className={cn(
+                        "shrink-0 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer border",
+                        s.season_number === activeEpSeason
+                          ? "bg-[#E50914] border-[#E50914] text-white shadow-[0_4px_12px_rgba(229,9,20,0.35)] scale-[1.02]"
+                          : "bg-white/[0.04] border-white/[0.06] text-white/60 hover:bg-white/[0.08] hover:text-white"
+                      )}>
+                      {s.name || `Mùa ${s.season_number}`}
                     </button>
                   ))}
                 </div>
               )}
 
-              <div className="flex-1 overflow-y-auto py-2">
-                {episodes.map((ep, i) => {
-                  const isActive = isSameEp(ep.name, episodeName);
-                  const prog = progressMap[slug||''];
-                  const pct = prog && isSameEp(prog.episodeName, ep.name) && prog.duration > 0
-                    ? Math.min(100, (prog.currentTime / prog.duration) * 100) : 0;
-                  return (
-                    <button key={ep.slug || i} onClick={() => { onEpisodeSelect?.(ep); closePanel(); }}
-                      className={`w-full flex flex-col px-5 py-3 text-left transition-colors cursor-pointer ${isActive ? 'bg-white/[0.06]' : 'hover:bg-white/[0.03]'}`}>
-                      <div className="flex items-center gap-3">
-                        {isActive && <div className="w-1.5 h-1.5 rounded-full bg-[#E50914] shrink-0" />}
-                        <span className={`text-sm font-medium truncate ${isActive ? 'text-white' : 'text-white/60'}`}>{ep.name}</span>
-                      </div>
-                      {pct > 0 && (
-                        <div className="mt-1.5 h-0.5 bg-white/10 rounded-full overflow-hidden">
-                          <div className="h-full bg-[#E50914] rounded-full" style={{ width:`${pct}%` }} />
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
+              {/* Episodes Grid */}
+              <div className="flex-1 overflow-y-auto p-4">
+                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-2.5">
+                  {episodes.map((ep, i) => {
+                    const isActive = isSameEp(ep.name, episodeName);
+                    const prog = progressMap[slug || ''];
+                    const pct = prog && isSameEp(prog.episodeName, ep.name) && prog.duration > 0
+                      ? Math.min(100, (prog.currentTime / prog.duration) * 100) : 0;
+                    
+                    const displayNum = ep.name || String(i + 1);
+
+                    return (
+                      <button 
+                        key={ep.slug || i} 
+                        onClick={() => { onEpisodeSelect?.(ep); closePanel(); }}
+                        className={cn(
+                          "relative aspect-square flex flex-col items-center justify-center rounded-xl p-2 font-bold transition-all cursor-pointer border overflow-hidden group",
+                          isActive
+                            ? "bg-[#E50914] border-[#E50914] text-white shadow-[0_0_16px_rgba(229,9,20,0.45)] ring-2 ring-white/20 scale-[1.03]"
+                            : "bg-white/[0.03] border-white/[0.06] text-white/80 hover:bg-white/[0.08] hover:border-white/20 hover:text-white"
+                        )}
+                      >
+                        <span className="text-base sm:text-lg font-black truncate max-w-full">
+                          {displayNum}
+                        </span>
+                        
+                        {/* Progress Bar at bottom of tile */}
+                        {pct > 0 && (
+                          <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40">
+                            <div className={cn("h-full transition-all", isActive ? "bg-white" : "bg-[#E50914]")} style={{ width: `${pct}%` }} />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </motion.div>
           </>

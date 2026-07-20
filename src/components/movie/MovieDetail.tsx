@@ -732,7 +732,7 @@ export const MovieDetail: React.FC<{
         return { tracks: [], source: 'none' };
       }
     },
-    enabled: !!finalTmdbData?.id && isPlaying && !!activeEp && !isExternalIdsLoading,
+    enabled: !!finalTmdbData?.id && isPlaying && !!activeEp && !isExternalIdsLoading && activeStream?.type === 'embed',
     staleTime: 1000 * 60 * 60 * 24 // 24h
   });
 
