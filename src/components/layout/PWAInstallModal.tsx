@@ -182,13 +182,26 @@ export const PWAInstallModal: React.FC = () => {
 
                 {/* iOS Special Installation Guide */}
                 {isIOS && !deferredPrompt && (
-                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 mb-4 text-amber-200">
-                    <p className="text-[10px] font-bold flex items-center gap-1.5 mb-1 text-amber-400">
-                      <Share size={12} /> Hướng dẫn cài đặt Safari iOS:
+                  <div className="bg-[#E50914]/10 border border-[#E50914]/20 rounded-xl p-3 mb-4 text-[#ff4c54]">
+                    <p className="text-[10px] font-bold flex items-center gap-1.5 mb-1.5 text-white">
+                      <Share size={12} className="text-[#E50914]" /> Hướng dẫn cài đặt Safari iOS:
                     </p>
-                    <ol className="text-[9px] sm:text-[10px] space-y-0.5 text-amber-200/90 list-decimal list-inside pl-0.5">
-                      <li>Nhấn nút <strong>Chia sẻ</strong> (biểu tượng hình vuông mũi tên lên).</li>
-                      <li>Chọn <strong>"Thêm vào Màn hình chính"</strong> (Add to Home Screen).</li>
+                    <ol className="text-[10px] space-y-1 text-gray-300 list-decimal list-inside pl-0.5 leading-normal">
+                      <li>Nhấn nút <strong className="text-white">Chia sẻ</strong> (hình vuông có mũi tên lên) ở thanh dưới cùng Safari.</li>
+                      <li>Cuộn xuống và chọn <strong className="text-white">"Thêm vào Màn hình chính"</strong> (Add to Home Screen).</li>
+                    </ol>
+                  </div>
+                )}
+
+                {/* Android Chrome Special Installation Guide */}
+                {!isIOS && !deferredPrompt && (
+                  <div className="bg-[#E50914]/10 border border-[#E50914]/20 rounded-xl p-3 mb-4 text-[#ff4c54]">
+                    <p className="text-[10px] font-bold flex items-center gap-1.5 mb-1.5 text-white">
+                      <Smartphone size={12} className="text-[#E50914]" /> Hướng dẫn cài đặt Android Chrome:
+                    </p>
+                    <ol className="text-[10px] space-y-1 text-gray-300 list-decimal list-inside pl-0.5 leading-normal">
+                      <li>Nhấn vào <strong className="text-white">nút 3 chấm dọc</strong> ở góc trên bên phải trình duyệt Chrome.</li>
+                      <li>Chọn <strong className="text-white">"Cài đặt ứng dụng"</strong> hoặc <strong className="text-white">"Thêm vào Màn hình chính"</strong>.</li>
                     </ol>
                   </div>
                 )}
@@ -196,18 +209,32 @@ export const PWAInstallModal: React.FC = () => {
                 {/* Action Buttons */}
                 <div className="flex flex-col gap-2">
                   {deferredPrompt ? (
-                    <button
-                      onClick={handleInstallClick}
-                      onTouchEnd={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleInstallClick();
-                      }}
-                      className="w-full flex items-center justify-center gap-1.5 bg-[#E50914] hover:bg-[#ff2e35] active:scale-98 text-white font-bold py-2.5 px-4 rounded-xl text-[10px] sm:text-xs uppercase tracking-wider shadow-[0_4px_15px_rgba(229,9,20,0.3)] transition-all cursor-pointer"
-                    >
-                      <Download size={14} />
-                      <span>Cài Đặt App Ngay</span>
-                    </button>
+                    <>
+                      <button
+                        onClick={handleInstallClick}
+                        onTouchEnd={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleInstallClick();
+                        }}
+                        className="w-full flex items-center justify-center gap-1.5 bg-[#E50914] hover:bg-[#ff2e35] active:scale-98 text-white font-bold py-2.5 px-4 rounded-xl text-[10px] sm:text-xs uppercase tracking-wider shadow-[0_4px_15px_rgba(229,9,20,0.3)] transition-all cursor-pointer"
+                      >
+                        <Download size={14} />
+                        <span>Cài Đặt App Ngay</span>
+                      </button>
+
+                      <button
+                        onClick={handleDismiss}
+                        onTouchEnd={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleDismiss();
+                        }}
+                        className="w-full py-2 bg-white/5 hover:bg-white/10 active:scale-98 text-neutral-400 hover:text-white font-bold rounded-xl text-[10px] sm:text-xs transition-colors cursor-pointer text-center"
+                      >
+                        Để sau
+                      </button>
+                    </>
                   ) : (
                     <button
                       onClick={handleDismiss}
@@ -216,24 +243,12 @@ export const PWAInstallModal: React.FC = () => {
                         e.stopPropagation();
                         handleDismiss();
                       }}
-                      className="w-full flex items-center justify-center gap-1.5 bg-white text-black hover:bg-white/90 active:scale-98 font-bold py-2.5 px-4 rounded-xl text-[10px] sm:text-xs uppercase tracking-wider transition-all cursor-pointer shadow-md"
+                      className="w-full flex items-center justify-center gap-1.5 bg-[#E50914] hover:bg-[#ff2e35] active:scale-98 text-white font-bold py-2.5 px-4 rounded-xl text-[10px] sm:text-xs uppercase tracking-wider shadow-[0_4px_15px_rgba(229,9,20,0.3)] transition-all cursor-pointer"
                     >
-                      <Smartphone size={14} />
-                      <span>Đã Hiểu / Đóng</span>
+                      <CheckCircle2 size={14} />
+                      <span>Đóng & Tự Cài Đặt</span>
                     </button>
                   )}
-
-                  <button
-                    onClick={handleDismiss}
-                    onTouchEnd={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleDismiss();
-                    }}
-                    className="w-full py-2 bg-white/5 hover:bg-white/10 active:scale-98 text-neutral-400 hover:text-white font-bold rounded-xl text-[10px] sm:text-xs transition-colors cursor-pointer text-center"
-                  >
-                    Để sau
-                  </button>
                 </div>
               </>
             )}
