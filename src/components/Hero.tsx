@@ -128,6 +128,24 @@ export const Hero = ({
     staleTime: 24 * 60 * 60 * 1000, // 24 hours cache
   });
 
+  // Preload Hero background image into RAM & dismiss PWA splash screen seamlessly when ready
+  useEffect(() => {
+    if (isLoaded) {
+      if (activeMovie?.backdrop_path) {
+        const bgUrl = activeMovie.backdrop_path.startsWith('http')
+          ? activeMovie.backdrop_path
+          : `https://image.tmdb.org/t/p/original/${activeMovie.backdrop_path.split('/').pop()}`;
+        const img = new Image();
+        img.src = bgUrl;
+      }
+      if ((window as any).hidePWASplash) {
+        setTimeout(() => {
+          (window as any).hidePWASplash?.();
+        }, 1100);
+      }
+    }
+  }, [isLoaded, activeMovie]);
+
   // Slider Auto rotation
   useEffect(() => {
     if (!maxItems) return;

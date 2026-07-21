@@ -139,16 +139,22 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
-      // Automatically fade out splash screen when page finishes loading / animating
-      window.addEventListener('load', () => {
-        setTimeout(() => {
-          const splash = document.getElementById('pwa-splash-screen');
-          if (splash) {
-            splash.classList.add('fade-out');
-            setTimeout(() => splash.remove(), 500);
-          }
-        }, 1400);
-      });
+      // Global PWA Splash Screen dismiss handler
+      let pwaSplashDismissed = false;
+      window.hidePWASplash = function() {
+        if (pwaSplashDismissed) return;
+        pwaSplashDismissed = true;
+        const splash = document.getElementById('pwa-splash-screen');
+        if (splash) {
+          splash.classList.add('fade-out');
+          setTimeout(() => splash.remove(), 500);
+        }
+      };
+
+      // Fallback timer: Hide splash screen after 1.8 seconds max if React loads fast
+      setTimeout(() => {
+        window.hidePWASplash();
+      }, 1800);
 
       // Automatic Cache Purger & Version Sync for instant UI updates
       const CURRENT_BUILD_VER = '2026-07-18-v10';

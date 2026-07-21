@@ -18,6 +18,7 @@ import {
   MyListRow,
 } from "./components/movie/MovieRows";
 import { ImdbRow } from "./components/movie/ImdbRow";
+import { tmdbGetTrending } from "./api/tmdbApi";
 import { initFetchInterceptor, godModeStore } from "./lib/godmode";
 import "./lib/firebase";
 
@@ -99,6 +100,21 @@ export default function App() {
 
   // Redirect swipe page to home on PC/Desktop
   useEffect(() => {
+    // Prefetch primary Hero trending movies during initial launch screen loading
+    queryClient.prefetchQuery({
+      queryKey: ['tmdb', 'hero-trending', 'home'],
+      queryFn: async () => {
+        const res = await tmdbGetTrending('all', 'day');
+        return {
+          results: (res?.results || []).map((v: any) => ({
+            ...v,
+            media_type: v.media_type || (v.first_air_date ? 'tv' : 'movie')
+          }))
+        };
+      },
+      staleTime: 24 * 60 * 60 * 1000,
+    });
+
     const checkDesktopSwipe = () => {
       if (currentTab === "swipe" && window.innerWidth >= 768) {
         setCurrentTab("home");
