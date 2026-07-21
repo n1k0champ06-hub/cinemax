@@ -65,7 +65,8 @@ cinemax/
     │   ├── layout/              # NavBar, Footer
     │   └── pages/               # Các trang chính (Home, Discover, Search, Swipe, Profile)
     └── hooks/                   # 🪝 React Hooks chứa Business Logic
-        ├── useMovieDetail.ts    # Tính toán & Merge thông tin TMDB + IMDb
+        ├── movie/
+        │   └── useMovieDetail.ts  # Tính toán & Merge thông tin TMDB + IMDb
         └── useStreamAggregator.ts # Kéo luồng (streams) song song từ mọi nguồn
 ```
 
@@ -303,3 +304,4 @@ Context chuyên biệt cho từng domain — đọc file này thay vì đọc to
 | Render cold start ~50s | Free tier sleep sau 15 phút | Cloudflare cron keep-alive mỗi 10 phút | — |
 | wrangler deploy xóa Dashboard vars | Vars set trên Dashboard không có trong `wrangler.json` | Luôn add vars mới vào `wrangler.json` trước khi deploy | Đừng set secret chỉ trên Dashboard |
 | Body scroll bị lock sau back | `body.style.overflow` capture race condition | `classList.add/remove('overflow-hidden')` | Xem Anti-Patterns → DOM |
+| URL history spam khi đổi tập/season | `pushState` tạo quá nhiều history entries | Dùng `replaceState` thay vì `pushState` trong MovieDetail URL sync | Đừng revert về `pushState` cho URL sync |
