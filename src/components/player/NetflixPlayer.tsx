@@ -1882,28 +1882,28 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
       {/* Embed bottom controls bar */}
       {isEmbed && (
-        <div className="w-full bg-[#0a0a0c] border-t border-white/[0.06] p-2.5 sm:p-3 flex items-center justify-between gap-3 shrink-0 z-30 pointer-events-auto select-none">
-          <div className="flex items-center gap-2.5 min-w-0">
+        <div className="w-full bg-[#0a0a0c] border-t border-white/[0.06] px-3 py-2 flex items-center justify-between gap-2 shrink-0 z-30 pointer-events-auto select-none">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <span className="w-2 h-2 rounded-full animate-pulse bg-emerald-400 shrink-0" />
             <div className="flex flex-col min-w-0">
-              <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">Đang phát (Embed)</span>
-              <span className="text-xs font-bold text-white truncate max-w-[200px] sm:max-w-md">{movieName || title}</span>
+              <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider leading-none">Đang phát (Embed)</span>
+              <span className="text-xs font-bold text-white truncate mt-0.5 max-w-[150px] sm:max-w-md">{movieName || title}</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             {isEmbed && (
               <button 
                 onClick={(e) => { 
                   e.stopPropagation(); 
                   setPanelOpen(prev => prev === 'sub' ? 'none' : 'sub'); 
                 }} 
-                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 bg-white/[0.06] hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/90 cursor-pointer transition-colors ${panelOpen === 'sub' ? 'text-[#E50914] bg-white/10' : ''}`}
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 bg-white/[0.06] hover:bg-white/10 border border-white/10 text-[11px] font-semibold text-white/90 cursor-pointer transition-colors whitespace-nowrap ${panelOpen === 'sub' ? 'text-[#E50914] bg-white/10 border-white/20' : ''}`}
               >
-                <span className="font-bold text-[9px] leading-none px-1 py-[1.5px] border border-current/80 rounded-[3px] select-none inline-flex items-center justify-center font-sans tracking-wide shrink-0">
+                <span className="font-bold text-[9px] leading-none px-1 py-[1px] border border-current/80 rounded-[3px] select-none inline-flex items-center justify-center font-sans tracking-wide shrink-0">
                   CC
                 </span>
-                <span>Phụ đề</span>
+                <span className="whitespace-nowrap">Phụ đề</span>
               </button>
             )}
 
@@ -1913,20 +1913,12 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                   e.stopPropagation(); 
                   setPanelOpen(prev => prev === 'settings' ? 'none' : 'settings'); 
                 }} 
-                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 bg-white/[0.06] hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/90 cursor-pointer transition-colors ${panelOpen === 'settings' ? 'text-[#E50914] bg-white/10' : ''}`}
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 bg-white/[0.06] hover:bg-white/10 border border-white/10 text-[11px] font-semibold text-white/90 cursor-pointer transition-colors whitespace-nowrap ${panelOpen === 'settings' ? 'text-[#E50914] bg-white/10 border-white/20' : ''}`}
               >
-                <Settings size={14} className="text-white/70" />
-                <span>Nguồn phát</span>
+                <Settings size={13} className="text-white/70 shrink-0" />
+                <span className="whitespace-nowrap">Nguồn phát</span>
               </button>
             )}
-
-            <button 
-              onClick={() => onClose?.()}
-              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 bg-white/[0.06] hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/90 cursor-pointer transition-colors"
-            >
-              <ArrowLeft size={14} />
-              <span>Trở lại</span>
-            </button>
           </div>
         </div>
       )}
