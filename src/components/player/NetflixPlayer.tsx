@@ -789,16 +789,8 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       }
       clickTimerRef.current = setTimeout(() => {
         if (isMobile) {
-          // On Mobile, single-tap ONLY toggles UI controls visibility, NEVER pauses/plays video!
-          setShowControls(prev => {
-            const next = !prev;
-            if (next) {
-              resetControls();
-            } else {
-              if (timerRef.current) clearTimeout(timerRef.current);
-            }
-            return next;
-          });
+          // On Mobile, single-tap anywhere ALWAYS shows controls & resets the 6s timer!
+          resetControls();
         } else {
           // On Desktop PC, single-click toggles play/pause
           togglePlay();
