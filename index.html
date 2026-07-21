@@ -52,12 +52,60 @@
         opacity: 0;
         visibility: hidden;
       }
+      
+      /* Smooth seamless fade-in for authentic logo on pure black background */
+      .splash-logo-wrapper {
+        position: relative;
+        width: 100px;
+        height: 100px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        animation: splashContentFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      @keyframes splashContentFadeIn {
+        0% { opacity: 0; transform: scale(0.96); }
+        100% { opacity: 1; transform: scale(1); }
+      }
     </style>
   </head>
 
   <body>
-    <!-- Pure Black Seamless PWA Splash Screen (No logo, no text) -->
-    <div id="pwa-splash-screen"></div>
+    <!-- Authentic Cinemax 3D Glasses Logo Left-to-Right Animated Splash Screen -->
+    <div id="pwa-splash-screen">
+      <div class="splash-logo-wrapper">
+        <svg viewBox="0 0 500 500" width="100" height="100" style="overflow: visible;">
+          <defs>
+            <clipPath id="glasses-fill-clip">
+              <rect x="0" y="0" width="0" height="500">
+                <animate attributeName="width" from="0" to="500" dur="1.35s" begin="0.05s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1" />
+              </rect>
+            </clipPath>
+          </defs>
+
+          <!-- Dimmed Base Authentic Cinemax 3D Glasses Logo (Opacity 0.18) -->
+          <image
+            href="https://res.cloudinary.com/dwbbs7rho/image/upload/v1779716516/Elegant_Marquee_Style_Logo_with_Deep_Crimson_C_c2sulc.png"
+            x="0"
+            y="0"
+            width="500"
+            height="500"
+            opacity="0.18"
+          />
+
+          <!-- Full Vibrant Authentic Cinemax 3D Glasses Logo (Reveals Left to Right via SVG ClipPath) -->
+          <image
+            href="https://res.cloudinary.com/dwbbs7rho/image/upload/v1779716516/Elegant_Marquee_Style_Logo_with_Deep_Crimson_C_c2sulc.png"
+            x="0"
+            y="0"
+            width="500"
+            height="500"
+            clip-path="url(#glasses-fill-clip)"
+          />
+        </svg>
+      </div>
+    </div>
 
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
