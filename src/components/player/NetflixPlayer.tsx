@@ -1376,7 +1376,9 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
                     {((servers && servers.length > 0) || (streams && streams.length > 0)) && (
                       <div className="flex flex-col flex-1 p-5 overflow-hidden">
-                        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Nguồn Phát</h3>
+                        <p className="text-[11px] leading-relaxed text-gray-400 mb-4 bg-white/[0.02] p-2.5 rounded-lg border border-white/[0.04] italic">
+                          Thay đổi nguồn phát nếu xảy ra lỗi phim. Đối với nguồn phát cộng đồng và embed sẽ có quảng cáo, vui lòng dùng Adblock hoặc Cốc Cốc để có trải nghiệm mượt mà.
+                        </p>
                         
                         {/* Tab Headers */}
                         {(() => {
