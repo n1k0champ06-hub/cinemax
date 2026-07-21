@@ -1195,7 +1195,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                 <h3 className="text-lg sm:text-xl font-bold text-white mb-4 tracking-wide shrink-0">Âm thanh</h3>
                 <div className="space-y-2.5 overflow-y-auto custom-scrollbar pr-2 flex-1">
                   {(() => {
-                    const formatAudioName = (s: any, idx: number) => {
+                    const formatAudioName = (s: any) => {
                       if (!s) return 'Ngôn ngữ gốc [Gốc]';
                       const label = (s.providerLabel || s.label || s.name || s.provider || '').toLowerCase();
                       const lang = (s.lang || '').toLowerCase();
@@ -1216,17 +1216,17 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
                       // 3. Phim Nhật (Anime), Hàn, Anh, Mỹ:
                       if (lang === 'ja' || label.includes('japanese') || label.includes('anime')) {
-                        return idx === 0 ? 'Tiếng Nhật [Gốc]' : `Tiếng Nhật (Server ${idx + 1})`;
+                        return 'Tiếng Nhật [Gốc]';
                       }
                       if (lang === 'ko' || label.includes('korean')) {
-                        return idx === 0 ? 'Tiếng Hàn [Gốc]' : `Tiếng Hàn (Server ${idx + 1})`;
+                        return 'Tiếng Hàn [Gốc]';
                       }
                       if (lang === 'en' || label.includes('english')) {
-                        return idx === 0 ? 'Tiếng Anh [Gốc]' : `Tiếng Anh (Server ${idx + 1})`;
+                        return 'Tiếng Anh [Gốc]';
                       }
 
                       // 4. Mặc định là Ngôn ngữ gốc [Gốc]
-                      return idx === 0 ? 'Ngôn ngữ gốc [Gốc]' : `Ngôn ngữ gốc (Server ${idx + 1})`;
+                      return 'Ngôn ngữ gốc [Gốc]';
                     };
 
                     // CHỈ lọc các nguồn phim HLS (loại bỏ các nguồn embed iframe 3rd party không can thiệp được)
@@ -1235,9 +1235,9 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                       : [];
 
                     const rawList = (hlsStreamsOnly.length > 0)
-                      ? hlsStreamsOnly.map((s: any, idx: number) => ({
+                      ? hlsStreamsOnly.map((s: any) => ({
                           ...s,
-                          displayName: formatAudioName(s, idx)
+                          displayName: formatAudioName(s)
                         }))
                       : [
                           { displayName: 'Ngôn ngữ gốc [Gốc]', url: url },
@@ -1467,7 +1467,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                         <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 shrink-0">Âm thanh</h4>
                         <div className="space-y-2 overflow-y-auto custom-scrollbar pr-1 flex-1 max-h-[25vh]">
                           {(() => {
-                            const formatAudioName = (s: any, idx: number) => {
+                            const formatAudioName = (s: any) => {
                               if (!s) return 'Ngôn ngữ gốc [Gốc]';
                               const label = (s.providerLabel || s.label || s.name || s.provider || '').toLowerCase();
                               const lang = (s.lang || '').toLowerCase();
@@ -1488,17 +1488,17 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
                               // 3. Phim Nhật (Anime), Hàn, Anh, Mỹ:
                               if (lang === 'ja' || label.includes('japanese') || label.includes('anime')) {
-                                return idx === 0 ? 'Tiếng Nhật [Gốc]' : `Tiếng Nhật (Server ${idx + 1})`;
+                                return 'Tiếng Nhật [Gốc]';
                               }
                               if (lang === 'ko' || label.includes('korean')) {
-                                return idx === 0 ? 'Tiếng Hàn [Gốc]' : `Tiếng Hàn (Server ${idx + 1})`;
+                                return 'Tiếng Hàn [Gốc]';
                               }
                               if (lang === 'en' || label.includes('english')) {
-                                return idx === 0 ? 'Tiếng Anh [Gốc]' : `Tiếng Anh (Server ${idx + 1})`;
+                                return 'Tiếng Anh [Gốc]';
                               }
 
                               // 4. Mặc định là Ngôn ngữ gốc [Gốc]
-                              return idx === 0 ? 'Ngôn ngữ gốc [Gốc]' : `Ngôn ngữ gốc (Server ${idx + 1})`;
+                              return 'Ngôn ngữ gốc [Gốc]';
                             };
 
                             // CHỈ lọc các nguồn phim HLS (loại bỏ các nguồn embed iframe 3rd party không can thiệp được)
@@ -1507,9 +1507,9 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                               : [];
 
                             const rawList = (hlsStreamsOnly.length > 0)
-                              ? hlsStreamsOnly.map((s: any, idx: number) => ({
+                              ? hlsStreamsOnly.map((s: any) => ({
                                   ...s,
-                                  displayName: formatAudioName(s, idx)
+                                  displayName: formatAudioName(s)
                                 }))
                               : [
                                   { displayName: 'Ngôn ngữ gốc [Gốc]', url: url },
