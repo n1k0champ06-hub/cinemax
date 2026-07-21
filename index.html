@@ -53,78 +53,71 @@
         visibility: hidden;
       }
       
-      /* Smooth seamless fade-in for logo when switching from OS pure black screen */
+      /* Smooth seamless fade-in for SVG vector glasses on pure black background */
       .splash-logo-wrapper {
         position: relative;
-        width: 92px;
-        height: 92px;
+        width: 130px;
+        height: 75px;
         display: flex;
         align-items: center;
         justify-content: center;
         opacity: 0;
-        animation: splashContentFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        transform: translateZ(0);
-        -webkit-transform: translateZ(0);
-        backface-visibility: hidden;
-        -webkit-backface-visibility: hidden;
+        animation: splashContentFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       }
       @keyframes splashContentFadeIn {
-        0% { opacity: 0; transform: scale(0.95) translateZ(0); }
-        100% { opacity: 1; transform: scale(1) translateZ(0); }
-      }
-
-      /* Dim base layer of 3D Glasses logo — crisp HD rendering */
-      .splash-logo-base {
-        width: 100%;
-        height: 100%;
-        object-fit: contain;
-        opacity: 0.18;
-        image-rendering: -webkit-optimize-contrast;
-        image-rendering: crisp-edges;
-        transform: translateZ(0);
-        -webkit-transform: translateZ(0);
-      }
-      /* Clean vibrant HD 3D glasses logo loading layer moving Left to Right */
-      .splash-logo-fill {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        object-fit: contain;
-        opacity: 1;
-        image-rendering: -webkit-optimize-contrast;
-        image-rendering: crisp-edges;
-        transform: translateZ(0);
-        -webkit-transform: translateZ(0);
-        clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
-        will-change: clip-path;
-        animation: logoFillLeftToRight 1.4s cubic-bezier(0.4, 0, 0.2, 1) 0.1s forwards;
-      }
-      @keyframes logoFillLeftToRight {
-        0% {
-          clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
-        }
-        100% {
-          clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
-        }
+        0% { opacity: 0; transform: scale(0.96); }
+        100% { opacity: 1; transform: scale(1); }
       }
     </style>
   </head>
 
   <body>
-    <!-- Seamless Pure Black #000000 Transition Animated Splash Screen -->
+    <!-- Ultra-Sharp 4K SVG Vector 3D Glasses Left-to-Right Animated Splash Screen -->
     <div id="pwa-splash-screen">
       <div class="splash-logo-wrapper">
-        <img
-          src="https://res.cloudinary.com/dwbbs7rho/image/upload/v1779716516/Elegant_Marquee_Style_Logo_with_Deep_Crimson_C_c2sulc.png"
-          class="splash-logo-base"
-          alt="Cinemax"
-        />
-        <img
-          src="https://res.cloudinary.com/dwbbs7rho/image/upload/v1779716516/Elegant_Marquee_Style_Logo_with_Deep_Crimson_C_c2sulc.png"
-          class="splash-logo-fill"
-          alt="Cinemax Loading"
-        />
+        <svg viewBox="0 0 240 140" width="130" height="75" style="overflow: visible;">
+          <defs>
+            <clipPath id="glasses-fill-clip">
+              <rect x="0" y="0" width="0" height="140">
+                <animate attributeName="width" from="0" to="240" dur="1.35s" begin="0.05s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1" />
+              </rect>
+            </clipPath>
+          </defs>
+
+          <!-- Dimmed Base Vector Glasses (Opacity 0.18) -->
+          <g opacity="0.18">
+            <!-- Left temple stem -->
+            <path d="M 22 64 C 46 52, 78 44, 108 44" fill="none" stroke="#F5E6CA" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M 22 64 C 46 52, 78 44, 108 44" fill="none" stroke="#000000" stroke-width="3" stroke-linecap="round"/>
+            
+            <!-- Left Lens Frame -->
+            <polygon points="104,38 164,40 158,88 98,82" fill="#F5E6CA" stroke="#000000" stroke-width="3.5" stroke-linejoin="round"/>
+            <!-- Right Lens Frame -->
+            <polygon points="164,40 208,44 200,91 158,88" fill="#E8D5B7" stroke="#000000" stroke-width="3.5" stroke-linejoin="round"/>
+
+            <!-- Left Blue Lens -->
+            <polygon points="111,44 156,45 151,81 106,76" fill="#1C2B36" stroke="#000000" stroke-width="2"/>
+            <!-- Right Red Lens -->
+            <polygon points="167,46 201,49 194,84 162,81" fill="#E50914" stroke="#000000" stroke-width="2"/>
+          </g>
+
+          <!-- Crisp Full Color Vector Glasses (Reveals Left to Right via SVG Native ClipPath) -->
+          <g clip-path="url(#glasses-fill-clip)">
+            <!-- Left temple stem -->
+            <path d="M 22 64 C 46 52, 78 44, 108 44" fill="none" stroke="#F5E6CA" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M 22 64 C 46 52, 78 44, 108 44" fill="none" stroke="#000000" stroke-width="3" stroke-linecap="round"/>
+            
+            <!-- Left Lens Frame -->
+            <polygon points="104,38 164,40 158,88 98,82" fill="#F5E6CA" stroke="#000000" stroke-width="3.5" stroke-linejoin="round"/>
+            <!-- Right Lens Frame -->
+            <polygon points="164,40 208,44 200,91 158,88" fill="#E8D5B7" stroke="#000000" stroke-width="3.5" stroke-linejoin="round"/>
+
+            <!-- Left Blue Lens -->
+            <polygon points="111,44 156,45 151,81 106,76" fill="#1C2B36" stroke="#000000" stroke-width="2"/>
+            <!-- Right Red Lens -->
+            <polygon points="167,46 201,49 194,84 162,81" fill="#E50914" stroke="#000000" stroke-width="2"/>
+          </g>
+        </svg>
       </div>
     </div>
 
@@ -149,7 +142,7 @@
       }, 1800);
 
       // Automatic Cache Purger & Version Sync for instant UI updates
-      const CURRENT_BUILD_VER = '2026-07-21-v18';
+      const CURRENT_BUILD_VER = '2026-07-21-v20';
       const savedVer = localStorage.getItem('cinemax_app_version');
       if (savedVer !== CURRENT_BUILD_VER) {
         localStorage.setItem('cinemax_app_version', CURRENT_BUILD_VER);
