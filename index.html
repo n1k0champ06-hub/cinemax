@@ -32,14 +32,124 @@
     <link rel="apple-touch-icon" href="https://res.cloudinary.com/dwbbs7rho/image/upload/v1779716516/Elegant_Marquee_Style_Logo_with_Deep_Crimson_C_c2sulc.png" />
 
     <!-- Cloudflare Web Analytics Placeholder -->
-    <!-- Thay 'YOUR_CF_TOKEN' bằng Web Analytics Token của bạn trên Cloudflare Dashboard -->
     <script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "YOUR_CF_TOKEN"}'></script>
+
+    <style>
+      #pwa-splash-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 9999999;
+        background-color: #050505;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        transition: opacity 0.45s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+        user-select: none;
+        pointer-events: none;
+      }
+      #pwa-splash-screen.fade-out {
+        opacity: 0;
+        visibility: hidden;
+      }
+      .splash-logo-wrapper {
+        position: relative;
+        width: 100px;
+        height: 100px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      /* Dim base layer */
+      .splash-logo-base {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        opacity: 0.18;
+        filter: grayscale(80%);
+      }
+      /* Vibrant loading layer moving Left to Right */
+      .splash-logo-fill {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        opacity: 1;
+        filter: drop-shadow(0 0 16px rgba(229, 9, 20, 0.65));
+        clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+        animation: logoFillLeftToRight 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+      }
+      @keyframes logoFillLeftToRight {
+        0% {
+          clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+        }
+        100% {
+          clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+        }
+      }
+      /* Sleek red loading bar below logo */
+      .splash-progress-track {
+        width: 120px;
+        height: 3px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 999px;
+        margin-top: 24px;
+        overflow: hidden;
+        position: relative;
+      }
+      .splash-progress-bar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #E50914, #ff2e35);
+        border-radius: 999px;
+        box-shadow: 0 0 10px #E50914;
+        animation: progressBarFill 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+      }
+      @keyframes progressBarFill {
+        0% { width: 0%; }
+        100% { width: 100%; }
+      }
+    </style>
   </head>
 
   <body>
+    <!-- Netflix-style Minimalist Animated Splash Screen -->
+    <div id="pwa-splash-screen">
+      <div class="splash-logo-wrapper">
+        <img
+          src="https://res.cloudinary.com/dwbbs7rho/image/upload/v1779716516/Elegant_Marquee_Style_Logo_with_Deep_Crimson_C_c2sulc.png"
+          class="splash-logo-base"
+          alt="Cinemax"
+        />
+        <img
+          src="https://res.cloudinary.com/dwbbs7rho/image/upload/v1779716516/Elegant_Marquee_Style_Logo_with_Deep_Crimson_C_c2sulc.png"
+          class="splash-logo-fill"
+          alt="Cinemax Loading"
+        />
+      </div>
+      <div class="splash-progress-track">
+        <div class="splash-progress-bar"></div>
+      </div>
+    </div>
+
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
+      // Automatically fade out splash screen when page finishes loading / animating
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          const splash = document.getElementById('pwa-splash-screen');
+          if (splash) {
+            splash.classList.add('fade-out');
+            setTimeout(() => splash.remove(), 500);
+          }
+        }, 1400);
+      });
+
       // Automatic Cache Purger & Version Sync for instant UI updates
       const CURRENT_BUILD_VER = '2026-07-18-v10';
       const savedVer = localStorage.getItem('cinemax_app_version');
@@ -76,4 +186,3 @@
     </script>
   </body>
 </html>
-
