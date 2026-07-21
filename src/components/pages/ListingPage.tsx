@@ -24,6 +24,7 @@ export const ListingPage = ({ currentTab, onSelect, setTab }: { currentTab: stri
   // Sync ListingPage filters to URL query parameters
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    if (currentTab && currentTab !== "home") params.set("tab", currentTab);
     if (filterType !== 'popular') params.set("filterType", filterType);
     else params.delete("filterType");
     if (selectedGenre) params.set("subgenre", selectedGenre);
@@ -34,7 +35,7 @@ export const ListingPage = ({ currentTab, onSelect, setTab }: { currentTab: stri
     if (window.location.search !== (queryString ? `?${queryString}` : "")) {
       window.history.replaceState({}, "", newUrl);
     }
-  }, [filterType, selectedGenre]);
+  }, [filterType, selectedGenre, currentTab]);
 
   // Handle popstate for filters
   React.useEffect(() => {

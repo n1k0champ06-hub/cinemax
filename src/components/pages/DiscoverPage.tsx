@@ -184,6 +184,7 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
   // Sync discover page filters to URL
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    if (!params.get("tab")) params.set("tab", "discover");
     if (selectedMediaType !== "all") params.set("media", selectedMediaType);
     else params.delete("media");
     if (selectedSort !== "popularity.desc") params.set("sort", selectedSort);

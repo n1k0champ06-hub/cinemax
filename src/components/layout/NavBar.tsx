@@ -189,8 +189,15 @@ export const NavBar = ({
              return (
                <button
                  key={tab.id}
-                 onClick={tab.action}
-                 className="flex-1 flex flex-col justify-center items-center h-full relative cursor-pointer"
+                 onClick={(e) => {
+                   e.preventDefault();
+                   tab.action();
+                 }}
+                 onTouchEnd={(e) => {
+                   e.preventDefault();
+                   tab.action();
+                 }}
+                 className="flex-1 flex flex-col justify-center items-center h-full relative cursor-pointer touch-manipulation select-none active:scale-95 transition-transform"
                >
                  <motion.div
                    animate={isHeartTab && pulseHeart ? {
