@@ -46,6 +46,7 @@
         transition: opacity 0.45s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.45s cubic-bezier(0.4, 0, 0.2, 1);
         user-select: none;
         pointer-events: none;
+        -webkit-tap-highlight-color: transparent;
       }
       #pwa-splash-screen.fade-out {
         opacity: 0;
@@ -53,21 +54,28 @@
       }
       .splash-logo-wrapper {
         position: relative;
-        width: 88px;
-        height: 88px;
+        width: 104px;
+        height: 104px;
         display: flex;
         align-items: center;
         justify-content: center;
+        transform: translateZ(0);
+        -webkit-transform: translateZ(0);
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
       }
-      /* Dim base layer of 3D Glasses logo */
+      /* Dim base layer of 3D Glasses logo — no filter grayscale blur for ultra-sharp mobile rendering */
       .splash-logo-base {
         width: 100%;
         height: 100%;
         object-fit: contain;
-        opacity: 0.22;
-        filter: grayscale(60%);
+        opacity: 0.18;
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+        transform: translateZ(0);
+        -webkit-transform: translateZ(0);
       }
-      /* Clean vibrant 3D glasses logo loading layer moving Left to Right (No red glow, pure black background) */
+      /* Clean vibrant HD 3D glasses logo loading layer moving Left to Right (Sharp crisp edges) */
       .splash-logo-fill {
         position: absolute;
         inset: 0;
@@ -75,7 +83,12 @@
         height: 100%;
         object-fit: contain;
         opacity: 1;
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+        transform: translateZ(0);
+        -webkit-transform: translateZ(0);
         clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+        will-change: clip-path;
         animation: logoFillLeftToRight 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
       }
       @keyframes logoFillLeftToRight {
@@ -90,7 +103,7 @@
   </head>
 
   <body>
-    <!-- Clean 3D Glasses Left-to-Right Animated Splash Screen (Pure #000000 Black, No Progress Bar, No Glow) -->
+    <!-- Ultra-Sharp Crisp HD 3D Glasses Left-to-Right Animated Splash Screen -->
     <div id="pwa-splash-screen">
       <div class="splash-logo-wrapper">
         <img
@@ -127,7 +140,7 @@
       }, 1800);
 
       // Automatic Cache Purger & Version Sync for instant UI updates
-      const CURRENT_BUILD_VER = '2026-07-21-v15';
+      const CURRENT_BUILD_VER = '2026-07-21-v16';
       const savedVer = localStorage.getItem('cinemax_app_version');
       if (savedVer !== CURRENT_BUILD_VER) {
         localStorage.setItem('cinemax_app_version', CURRENT_BUILD_VER);
