@@ -303,7 +303,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   [activeStream, url]);
 
   const resolvedEmbedUrl = useMemo(() =>
-    activeStream?.type === 'embed' ? activeStream.url : embedUrl,
+    activeStream?.type === 'hls' ? null : (activeStream?.type === 'embed' ? activeStream.url : embedUrl),
   [activeStream, embedUrl]);
 
   const isEmbed = !!resolvedEmbedUrl;

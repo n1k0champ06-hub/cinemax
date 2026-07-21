@@ -268,14 +268,21 @@ export default function App() {
     }
   }, [currentTab, selectedMovieSlug, showSearch]);
 
-  // Safety fallback: ensure body overflow-hidden is removed whenever no modal/movie detail is active
+  // Manage body overflow-hidden at App level so lifecycle matches animation exit duration
   useEffect(() => {
-    if (!selectedMovieSlug && !showSearch && !showUserGuide) {
-      document.body.classList.remove('overflow-hidden');
-      requestAnimationFrame(() => {
-        window.dispatchEvent(new Event('resize'));
-        window.dispatchEvent(new Event('scroll'));
-      });
+    if (selectedMovieSlug || showSearch || showUserGuide) {
+      document.body.classList.add('overflow-hidden');
+    } else {
+      // Delay matches the exit animation duration (0.28s) so pointer-events
+      // are restored only after the fixed overlay has fully unmounted
+      const t = window.setTimeout(() => {
+        document.body.classList.remove('overflow-hidden');
+        requestAnimationFrame(() => {
+          window.dispatchEvent(new Event('resize'));
+          window.dispatchEvent(new Event('scroll'));
+        });
+      }, 350);
+      return () => window.clearTimeout(t);
     }
   }, [selectedMovieSlug, showSearch, showUserGuide]);
 
@@ -692,6 +699,8 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
               transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+              style={{ pointerEvents: 'auto' }}
+              onAnimationStart={() => {}}
             >
               <MovieDetail
                 slug={selectedMovieSlug}

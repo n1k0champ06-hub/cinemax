@@ -444,6 +444,9 @@ const MovieDetailContent: React.FC<{
   // Sync player states to URL query parameters
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    // If movie param is missing (App.tsx is closing MovieDetail), do NOT overwrite URL!
+    if (!params.get("movie")) return;
+
     if (isPlaying) {
       params.set("play", "true");
     } else {
@@ -1902,17 +1905,6 @@ export const MovieDetail: React.FC<{
   const movieDetailProps = useMovieDetail(slug);
   const { isLoading, data } = movieDetailProps;
 
-  useEffect(() => {
-    // Dùng class thay vì inline style để CSS stylesheet override đúng khi cleanup
-    document.body.classList.add('overflow-hidden');
-    return () => {
-      document.body.classList.remove('overflow-hidden');
-      requestAnimationFrame(() => {
-        window.dispatchEvent(new Event('resize'));
-        window.dispatchEvent(new Event('scroll'));
-      });
-    };
-  }, []);
 
   return (
     <motion.div

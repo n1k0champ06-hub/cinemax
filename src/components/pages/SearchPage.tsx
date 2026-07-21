@@ -39,6 +39,7 @@ export const SearchPage = ({
   // Sync keyword state to URL
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    if (!params.get("search")) return;
     if (keyword) {
       params.set("q", keyword);
     } else {
