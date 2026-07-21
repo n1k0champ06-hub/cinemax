@@ -1288,53 +1288,7 @@ async function handleRequest(request, env, ctx) {
 
     }
 
-    // 8-new. On-Demand HLS Resolver → /api/resolver/stream
-    // Kiểm tra MongoDB xem có link m3u8 sạch chưa (< 24h). Nếu không → đẩy queue.
-    if (url.pathname === "/api/resolver/stream") {
-      const hollysheeshApiUrl = (env.HOLLYSHEESH_API_URL || '').trim().replace(/\/$/, '');
-      if (!hollysheeshApiUrl) {
-        return json({ ok: false, status: 'unavailable', note: 'HOLLYSHEESH_API_URL not configured' }, 503);
-      }
 
-      const tmdbId  = url.searchParams.get('tmdbId')  || '';
-      const type    = url.searchParams.get('type')     || 'movie';
-      const season  = url.searchParams.get('season')   || '1';
-      const episode = url.searchParams.get('episode')  || '1';
-
-      if (!tmdbId) return json({ ok: false, error: 'tmdbId is required' }, 400);
-
-      try {
-        // Kiểm tra cache clean link tại Bridge
-        const checkRes = await fetch(
-          `${hollysheeshApiUrl}/api/resolver/check?tmdbId=${tmdbId}&type=${type}&season=${season}&episode=${episode}`,
-          { headers: { 'User-Agent': 'CinemaxWorker/1.0' }, signal: AbortSignal.timeout(5000) }
-        );
-
-        if (checkRes.ok) {
-          const checkData = await checkRes.json();
-          if (checkData.ok && checkData.streamUrl) {
-            // Có link sạch còn hạn — trả về ngay
-            return json({ ok: true, status: 'ready', streamUrl: checkData.streamUrl, provider: 'vidsrc-resolver' });
-          }
-        }
-
-        // Không có link — đẩy vào hàng đợi tại Bridge
-        const queueRes = await fetch(`${hollysheeshApiUrl}/api/resolver/queue`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'User-Agent': 'CinemaxWorker/1.0' },
-          body: JSON.stringify({ tmdbId, type, season: parseInt(season), episode: parseInt(episode) }),
-          signal: AbortSignal.timeout(5000),
-        });
-
-        if (!queueRes.ok) {
-          return json({ ok: false, status: 'error', error: `Queue push failed: ${queueRes.status}` }, 502);
-        }
-
-        return json({ ok: true, status: 'processing', message: 'Đang giải mã link phim sạch, thử lại sau 4 giây...' }, 202);
-      } catch (err) {
-        return json({ ok: false, status: 'error', error: err.message }, 502);
-      }
-    }
 
     // 8a. Scraper database resolver (Hollysheesh proxy) -> /api/admin/scraper/streams
 

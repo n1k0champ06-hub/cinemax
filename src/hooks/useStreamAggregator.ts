@@ -15,7 +15,6 @@ import type { AggregatorState, StreamQuery, StreamItem } from '../api/streamAggr
 import { VI_PROVIDERS } from '../api/streamProviders/viProviders';
 import { animapperProvider } from '../api/streamProviders/animapperProvider';
 import { cineproProvider } from '../api/streamProviders/cineproProvider';
-import { resolverProvider } from '../api/streamProviders/resolverProvider';
 import { EMBED_PROVIDERS } from '../api/streamProviders/embedProviders';
 import { allmangaProvider } from '../api/streamProviders/allmangaProvider';
 import { hianimeProvider } from '../api/streamProviders/hianimeProvider';
@@ -174,8 +173,7 @@ export function useStreamAggregator({
     // 2. CinePro HLS (provides all international HLS and embeds dynamically)
     allProviders.push(cineproProvider);
 
-    // 2.5. On-Demand HLS Decryptor & Resolver
-    allProviders.push(resolverProvider);
+
 
     // 3. CinemaOS VIP Embed (Backup embed source)
     allProviders.push(cinemaosProvider);

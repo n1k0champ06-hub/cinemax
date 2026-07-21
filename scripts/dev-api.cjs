@@ -476,422 +476,198 @@ async function handleLocalScraperStats() {
       connected: false,
       moviesCount: 0,
       streamsCount: 0,
-      cineproConnected: false,
-      resolverQueue: 0,
-      resolverCached: 0,
+      animeCount: 0,
       error: "Chưa kết nối MongoDB"
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
   try {
     const moviesCount = await db.collection('movies').countDocuments();
     const streamsCount = await db.collection('streams').countDocuments();
-    const cineproConnected = await isPortOpen(3232);
-    
-    // Thống kê VidSrc Resolver
-    const pendingCount = await db.collection('resolving_queue').countDocuments({ status: 'pending' });
-    const processingCount = await db.collection('resolving_queue').countDocuments({ status: 'processing' });
-    const resolverCached = await db.collection('vidsrc_streams').countDocuments({ expiredAt: { $gt: new Date() } });
+    const animeCount = await db.collection('movies').countDocuments({ $or: [{ type: 'anime' }, { source: 'niniyo' }] });
 
     return new Response(JSON.stringify({
       connected: true,
       moviesCount,
       streamsCount,
-      cineproConnected,
-      resolverQueue: pendingCount + processingCount,
-      resolverCached
+      animeCount,
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 }
 
-async function handleResolverCheck(searchParams) {
-  if (!db) {
-    return new Response(JSON.stringify({ ok: false, error: 'Chưa kết nối MongoDB' }), { status: 503, headers: { 'Content-Type': 'application/json' } });
-  }
-  const tmdbId  = searchParams.get('tmdbId')  || '';
-  const type    = searchParams.get('type')     || 'movie';
-  const season  = parseInt(searchParams.get('season')  || '1');
-  const episode = parseInt(searchParams.get('episode') || '1');
+async function startAnimeSync(anilistId) {
+  if (runningJobs.has('niniyo-' + anilistId)) return;
 
-  if (!tmdbId) {
-    return new Response(JSON.stringify({ ok: false, error: 'tmdbId required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-  }
-
-  try {
-    const stream = await db.collection('vidsrc_streams').findOne({
-      tmdbId: String(tmdbId),
-      type,
-      season,
-      episode,
-      expiredAt: { $gt: new Date() }
-    });
-
-    if (stream) {
-      return new Response(JSON.stringify({ ok: true, streamUrl: stream.streamUrl }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
-    return new Response(JSON.stringify({ ok: true, streamUrl: null }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-  } catch (err) {
-    return new Response(JSON.stringify({ ok: false, error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-  }
-}
-
-async function importMovieFromTMDB(tmdbId, type, targetSeason = 1) {
-  const tmdbToken = process.env.VITE_TMDB_ACCESS_TOKEN || process.env.TMDB_ACCESS_TOKEN;
-  if (!tmdbToken) throw new Error('Chưa cấu hình TMDB Access Token trong .env');
-
-  // 1. Gọi TMDB API chi tiết để lấy thông tin phim (bằng tiếng Việt)
-  const url = `https://api.themoviedb.org/3/${type}/${tmdbId}?language=vi-VN&append_to_response=external_ids`;
-  const res = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${tmdbToken}`,
-      'Accept': 'application/json'
-    }
-  });
-
-  if (!res.ok) {
-    throw new Error(`Không thể lấy thông tin từ TMDB (HTTP ${res.status})`);
-  }
-
-  const data = await res.json();
-
-  const title = type === 'movie' ? data.title : data.name;
-  const originTitle = type === 'movie' ? data.original_title : data.original_name;
-  const releaseDate = type === 'movie' ? data.release_date : data.first_air_date;
-  const year = releaseDate ? parseInt(releaseDate.split('-')[0], 10) : new Date().getFullYear();
-  
-  // Format link ảnh qua proxy cục bộ /img/ để tránh nhà mạng chặn hiển thị ảnh
-  const posterUrl = data.poster_path ? `/img/https://image.tmdb.org/t/p/w500${data.poster_path}` : '';
-  const thumbUrl = posterUrl;
-  const backdropUrl = data.backdrop_path ? `/img/https://image.tmdb.org/t/p/w1280${data.backdrop_path}` : '';
-
-  const genres = (data.genres || []).map(g => g.name);
-  const overview = data.overview || '';
-  const slug = `tmdb-${tmdbId}-${type}`;
-
-  // 2. Lưu vào collection 'movies'
-  const moviePayload = {
-    title,
-    originTitle,
-    slug,
-    type,
-    thumbUrl,
-    posterUrl,
-    backdropUrl,
-    year,
-    status: type === 'movie' ? 'completed' : 'ongoing',
-    genres,
-    overview,
-    source: 'vidsrc',
-    updatedAt: new Date()
+  const job = {
+    source: 'niniyo',
+    processed: 0,
+    total: 100,
+    task: `Đồng bộ Anime ID ${anilistId}`
   };
+  runningJobs.set('niniyo-' + anilistId, job);
+  addScraperLog(`[NINIYO] Bắt đầu cào Anime từ AniList ID ${anilistId}...`);
 
-  // Tạo thêm Vector Embedding nếu cấu hình AI Studio để hỗ trợ AI Semantic Search
   try {
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (GEMINI_API_KEY) {
-      const textToEmbed = `${title} (${originTitle} - ${year}). Thể loại: ${genres.join(', ')}. Nội dung: ${overview}`.slice(0, 1000);
-      const embedding = await getGeminiEmbedding(textToEmbed);
-      if (embedding) {
-        moviePayload.embedding = embedding;
-      }
+    if (!db) {
+      throw new Error("Chưa kết nối cơ sở dữ liệu MongoDB. Hãy cấu hình MONGODB_URI trong file .env");
     }
-  } catch (err) {
-    console.warn('[TMDB Importer] Lỗi tạo embedding:', err.message);
-  }
 
-  await db.collection('movies').updateOne(
-    { slug },
-    { $set: moviePayload },
-    { upsert: true }
-  );
+    const moviesCol = db.collection('movies');
+    const streamsCol = db.collection('streams');
 
-  console.log(`[TMDB Importer] Đã đồng bộ thông tin phim: ${title} (${originTitle})`);
+    addScraperLog(`[NINIYO] Đang tải thông tin Anime từ AniMapper...`);
+    const metaUrl = `https://api.animapper.net/api/v1/metadata?id=${anilistId}`;
+    const metaRes = await fetch(metaUrl);
+    if (!metaRes.ok) {
+      throw new Error(`Lỗi tải metadata từ AniMapper (HTTP ${metaRes.status})`);
+    }
 
-  // 3. Tạo các luồng phát trong collection 'streams' và đẩy vào resolving_queue
-  let createdStreams = 0;
-  
-  if (type === 'movie') {
-    const streamUrl = `/api/resolver/stream?tmdbId=${tmdbId}&type=movie&season=1&episode=1`;
-    await db.collection('streams').updateOne(
-      { slug, server: 'VidSrc Clean', episode: '1' },
-      {
-        $set: {
-          title,
-          slug,
-          server: 'VidSrc Clean',
-          episode: '1',
-          streamUrl,
-          updatedAt: new Date()
-        }
-      },
+    const metaData = await metaRes.json();
+    const result = metaData?.result;
+    if (!result) {
+      throw new Error("Không tìm thấy thông tin Anime trên AniMapper");
+    }
+
+    const title = result.titles?.vi || result.titles?.en || result.titles?.ja || "Unknown Title";
+    const originTitle = result.titles?.ja || result.titles?.en || "";
+    const description = result.descriptions?.vi || result.descriptions?.en || "";
+    const posterUrl = result.images?.coverLg || result.images?.coverXl || "";
+    const thumbUrl = result.images?.coverMd || posterUrl;
+    const bannerImage = result.images?.bannerUrl || "";
+    const genres = (result.genres || []).map(g => g.name || g);
+    const year = result.seasonYear || new Date().getFullYear();
+
+    const slug = `anilist-${anilistId}`;
+
+    addScraperLog(`[NINIYO] Đã nhận diện Anime: ${title} (${originTitle})`);
+
+    let embedding = null;
+    try {
+      const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+      if (GEMINI_API_KEY) {
+        const textToEmbed = `${title} (${originTitle} - ${year}). Thể loại: ${genres.join(', ')}. Nội dung: ${description}`.slice(0, 1000);
+        embedding = await getGeminiEmbedding(textToEmbed);
+      }
+    } catch (err) {
+      console.warn('[Niniyo Importer] Lỗi tạo embedding:', err.message);
+    }
+
+    const moviePayload = {
+      title,
+      originTitle,
+      slug,
+      type: 'anime',
+      thumbUrl,
+      posterUrl,
+      backdropUrl: bannerImage,
+      year,
+      status: result.status || 'completed',
+      category: ['Hoạt Hình', 'Anime', ...genres],
+      actor: [],
+      director: [],
+      content: description,
+      source: 'niniyo',
+      updatedAt: new Date()
+    };
+    if (embedding) moviePayload.embedding = embedding;
+
+    await moviesCol.updateOne(
+      { slug },
+      { $set: moviePayload },
       { upsert: true }
     );
+    addScraperLog(`[NINIYO] Đã lưu thông tin Anime '${title}' vào database.`);
 
-    const existingQueue = await db.collection('resolving_queue').findOne({
-      tmdbId: String(tmdbId),
-      type: 'movie',
-      season: 1,
-      episode: 1,
-      status: { $in: ['pending', 'processing'] }
-    });
-
-    if (!existingQueue) {
-      await db.collection('resolving_queue').insertOne({
-        tmdbId: String(tmdbId),
-        type: 'movie',
-        season: 1,
-        episode: 1,
-        status: 'pending',
-        createdAt: new Date(),
-        retries: 0
-      });
-    }
-    createdStreams = 1;
-
-  } else {
-    // TV Show: Lấy số lượng tập chính xác của season từ TMDB
-    const seasonObj = (data.seasons || []).find(s => s.season_number === targetSeason);
-    const episodeCount = seasonObj ? seasonObj.episode_count : 12;
-
-    for (let ep = 1; ep <= episodeCount; ep++) {
-      const streamUrl = `/api/resolver/stream?tmdbId=${tmdbId}&type=tv&season=${targetSeason}&episode=${ep}`;
-      const epStr = String(ep);
-      
-      await db.collection('streams').updateOne(
-        { slug, server: 'VidSrc Clean', episode: epStr },
-        {
-          $set: {
-            title: `${title} - Tập ${ep}`,
-            slug,
-            server: 'VidSrc Clean',
-            episode: epStr,
-            streamUrl,
-            updatedAt: new Date()
-          }
-        },
-        { upsert: true }
-      );
-
-      const existingQueue = await db.collection('resolving_queue').findOne({
-        tmdbId: String(tmdbId),
-        type: 'tv',
-        season: targetSeason,
-        episode: ep,
-        status: { $in: ['pending', 'processing'] }
-      });
-
-      if (!existingQueue) {
-        await db.collection('resolving_queue').insertOne({
-          tmdbId: String(tmdbId),
-          type: 'tv',
-          season: targetSeason,
-          episode: ep,
-          status: 'pending',
-          createdAt: new Date(),
-          retries: 0
-        });
-      }
-      createdStreams++;
-    }
-  }
-
-  return {
-    title,
-    originTitle,
-    year,
-    type,
-    createdStreams
-  };
-}
-
-async function handleResolverQueue(bodyBuffer) {
-  if (!db) {
-    return new Response(JSON.stringify({ ok: false, error: 'Chưa kết nối MongoDB' }), { status: 503, headers: { 'Content-Type': 'application/json' } });
-  }
-
-  try {
-    const bodyStr = bodyBuffer ? bodyBuffer.toString('utf-8') : '{}';
-    const { tmdbId, type, season } = JSON.parse(bodyStr);
-
-    if (!tmdbId) {
-      return new Response(JSON.stringify({ ok: false, error: 'tmdbId required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    addScraperLog(`[NINIYO] Đang tải danh sách tập phim từ provider NINIYO...`);
+    const epUrl = `https://api.animapper.net/api/v1/stream/episodes?id=${anilistId}&provider=NINIYO`;
+    const epRes = await fetch(epUrl);
+    if (!epRes.ok) {
+      throw new Error(`Lỗi tải danh sách tập phim (HTTP ${epRes.status})`);
     }
 
-    const cleanType = type || 'movie';
-    const targetSeason = parseInt(season || 1);
-
-    addScraperLog(`[RESOLVER] Bắt đầu cào thông tin và tạo luồng từ TMDB ID: ${tmdbId} (${cleanType})`);
-
-    // Thực hiện đào trọn gói từ A-Z
-    const result = await importMovieFromTMDB(tmdbId, cleanType, targetSeason);
-    
-    addScraperLog(`[RESOLVER] Hoàn tất cào phim: ${result.title}. Đã tạo ${result.createdStreams} tập/luồng phát và đẩy vào queue bẻ khóa!`);
-
-    return new Response(JSON.stringify({ ok: true, queued: true, movie: result }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-  } catch (err) {
-    addScraperLog(`[RESOLVER] [ERROR] Đào từ A-Z thất bại cho TMDB ID ${tmdbId}: ${err.message}`);
-    return new Response(JSON.stringify({ ok: false, error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-  }
-}
-
-async function handleResolverAutoTrending() {
-  if (!db) {
-    return new Response(JSON.stringify({ ok: false, error: 'Chưa kết nối MongoDB' }), { status: 503, headers: { 'Content-Type': 'application/json' } });
-  }
-
-  const tmdbToken = process.env.VITE_TMDB_ACCESS_TOKEN || process.env.TMDB_ACCESS_TOKEN;
-  if (!tmdbToken) {
-    return new Response(JSON.stringify({ ok: false, error: 'Chưa cấu hình TMDB Access Token trong .env' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-  }
-
-  try {
-    addScraperLog('[RESOLVER] Bắt đầu quét danh sách phim Trending từ TMDB...');
-    
-    // Gọi TMDB API lấy phim lẻ và phim bộ hot trong tuần
-    const fetchTrending = async (type) => {
-      const url = `https://api.themoviedb.org/3/trending/${type}/week?language=vi-VN`;
-      const res = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${tmdbToken}`,
-          'Accept': 'application/json'
-        }
-      });
-      if (!res.ok) throw new Error(`TMDB API error: HTTP ${res.status}`);
-      const data = await res.json();
-      return data.results || [];
-    };
-
-    const trendingMovies = await fetchTrending('movie');
-    const trendingTv = await fetchTrending('tv');
-
-    // Lấy top 15 phim lẻ và 15 phim bộ
-    const allTrending = [
-      ...trendingMovies.slice(0, 15).map(m => ({ id: String(m.id), type: 'movie', title: m.title || m.original_title })),
-      ...trendingTv.slice(0, 15).map(t => ({ id: String(t.id), type: 'tv', title: t.name || t.original_name }))
-    ];
-
-    addScraperLog(`[RESOLVER] Tìm thấy tổng cộng ${allTrending.length} phim hot trending trong tuần.`);
-
-    let importedCount = 0;
-    let totalStreamsCreated = 0;
-
-    for (const item of allTrending) {
-      try {
-        addScraperLog(`[RESOLVER] Đang tiến hành đào trọn gói A-Z cho phim: ${item.title} (TMDB ID ${item.id})...`);
-        const result = await importMovieFromTMDB(item.id, item.type, 1);
-        importedCount++;
-        totalStreamsCreated += result.createdStreams;
-      } catch (err) {
-        addScraperLog(`[RESOLVER] [ERROR] Đào phim ${item.title} thất bại: ${err.message}`);
-      }
-    }
-
-    addScraperLog(`[RESOLVER] Quá trình đào A-Z hoàn tất! Đã nhập thành công ${importedCount}/${allTrending.length} phim | Đã tạo ${totalStreamsCreated} luồng phát.`);
-    return new Response(JSON.stringify({ ok: true, trendingScanned: allTrending.length, importedCount, totalStreamsCreated }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-  } catch (err) {
-    addScraperLog(`[RESOLVER] [ERROR] Lỗi tự động quét trending: ${err.message}`);
-    return new Response(JSON.stringify({ ok: false, error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-  }
-}
-
-async function runContinuousMiningLoop() {
-  if (!continuousMiningActive) return;
-  
-  try {
-    const tmdbToken = process.env.VITE_TMDB_ACCESS_TOKEN || process.env.TMDB_ACCESS_TOKEN;
-    if (!tmdbToken) {
-      addScraperLog('[24/7 MINER] [WARN] Chưa cấu hình TMDB Access Token. Dừng đào 24/7.');
-      continuousMiningActive = false;
+    const epData = await epRes.json();
+    const episodes = epData.episodes || [];
+    if (episodes.length === 0) {
+      addScraperLog(`[NINIYO] [WARN] Không tìm thấy tập phim nào từ Niniyo cho Anime này.`);
       return;
     }
 
-    addScraperLog(`[24/7 MINER] Đang quét Trang ${continuousMiningPage} danh sách phổ biến (${continuousMiningType === 'movie' ? 'Phim lẻ' : 'Phim bộ'})...`);
-    
-    const listType = continuousMiningType === 'movie' ? 'movie/popular' : 'tv/popular';
-    const url = `https://api.themoviedb.org/3/${listType}?language=vi-VN&page=${continuousMiningPage}`;
-    const res = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${tmdbToken}`,
-        'Accept': 'application/json'
+    job.total = episodes.length;
+    addScraperLog(`[NINIYO] Tìm thấy ${episodes.length} tập phim. Bắt đầu lấy link stream...`);
+
+    const concurrency = 5;
+    let processedCount = 0;
+
+    const worker = async () => {
+      while (episodes.length > 0) {
+        const ep = episodes.shift();
+        if (!ep) break;
+
+        const epNum = ep.episodeNumber;
+        const episodeId = ep.episodeId;
+        const serverName = ep.server || 'Niniyo';
+
+        try {
+          const sourceParams = new URLSearchParams({
+            episodeData: episodeId,
+            provider: 'NINIYO',
+          });
+          if (ep.server) {
+            sourceParams.set('server', ep.server);
+          }
+
+          const sourceUrl = `https://api.animapper.net/api/v1/stream/source?${sourceParams.toString()}`;
+          const sourceRes = await fetch(sourceUrl);
+          if (sourceRes.ok) {
+            const sourceData = await sourceRes.json();
+            if (sourceData && sourceData.url) {
+              const streamUrl = sourceData.url;
+              const referer = sourceData.proxyHeaders?.Referer || sourceData.proxyHeaders?.referer || 'https://animevietsub.page';
+              
+              await streamsCol.updateOne(
+                { slug, server: `Niniyo - ${serverName}`, episode: String(epNum) },
+                {
+                  $set: {
+                    title: `${title} - Tập ${epNum}`,
+                    slug,
+                    server: `Niniyo - ${serverName}`,
+                    episode: String(epNum),
+                    streamUrl,
+                    referer,
+                    source: 'niniyo',
+                    updatedAt: new Date()
+                  }
+                },
+                { upsert: true }
+              );
+            }
+          }
+        } catch (err) {
+          console.error(`[Niniyo Importer] Failed to resolve episode ${epNum}:`, err.message);
+        }
+
+        processedCount++;
+        job.processed = processedCount;
+        if (processedCount % 5 === 0 || processedCount === job.total) {
+          addScraperLog(`[NINIYO] Tiến trình: ${processedCount}/${job.total} tập đã hoàn tất.`);
+        }
+        
+        await new Promise(r => setTimeout(r, 150));
       }
-    });
+    };
 
-    if (!res.ok) {
-      throw new Error(`TMDB API HTTP ${res.status}`);
-    }
+    const workers = Array.from({ length: concurrency }, worker);
+    await Promise.all(workers);
 
-    const data = await res.json();
-    const results = data.results || [];
-    addScraperLog(`[24/7 MINER] Trang ${continuousMiningPage} có ${results.length} phim.`);
+    addScraperLog(`[NINIYO] Đồng bộ hoàn tất thành công! Đã nạp ${processedCount} tập cho phim '${title}'.`);
 
-    let newMoviesAdded = 0;
-    for (const item of results) {
-      if (!continuousMiningActive) break;
-
-      const tmdbId = String(item.id);
-      const title = item.title || item.name || item.original_title || item.original_name;
-      
-      const slug = `tmdb-${tmdbId}-${continuousMiningType}`;
-      const existingStream = await db.collection('streams').findOne({ slug, server: 'VidSrc Clean' });
-      
-      if (existingStream) {
-        continue;
-      }
-
-      addScraperLog(`[24/7 MINER] Phát hiện phim mới: ${title} (TMDB ${tmdbId}). Đang đào trọn gói A-Z...`);
-      try {
-        const result = await importMovieFromTMDB(tmdbId, continuousMiningType, 1);
-        newMoviesAdded++;
-        addScraperLog(`[24/7 MINER] Đã đào xong: ${result.title} (${result.createdStreams} tập). Nghỉ 5s...`);
-        await new Promise(r => setTimeout(r, 5000));
-      } catch (err) {
-        addScraperLog(`[24/7 MINER] [ERROR] Lỗi đào phim ${title}: ${err.message}`);
-      }
-    }
-
-    addScraperLog(`[24/7 MINER] Hoàn thành Trang ${continuousMiningPage}. Đã thêm mới ${newMoviesAdded} phim.`);
-
-    if (continuousMiningType === 'movie') {
-      continuousMiningType = 'tv';
-    } else {
-      continuousMiningType = 'movie';
-      continuousMiningPage++;
-      if (continuousMiningPage > 150) {
-        continuousMiningPage = 1;
-      }
-    }
   } catch (err) {
-    addScraperLog(`[24/7 MINER] [ERROR] Lỗi hệ thống trong vòng lặp đào: ${err.message}`);
+    addScraperLog(`[NINIYO] [ERROR] Lỗi đồng bộ: ${err.message}`);
+    console.error(err);
+  } finally {
+    runningJobs.delete('niniyo-' + anilistId);
   }
-
-  if (continuousMiningActive) {
-    addScraperLog('[24/7 MINER] Nghỉ 30 giây trước khi quét trang tiếp theo...');
-    setTimeout(runContinuousMiningLoop, 30000);
-  }
-}
-
-async function handleContinuousMiningStatus() {
-  return new Response(JSON.stringify({
-    active: continuousMiningActive,
-    page: continuousMiningPage,
-    type: continuousMiningType
-  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-}
-
-async function handleContinuousMiningToggle() {
-  continuousMiningActive = !continuousMiningActive;
-  
-  if (continuousMiningActive) {
-    addScraperLog('[24/7 MINER] >>> KÍCH HOẠT CHẾ ĐỘ ĐÀO LIÊN TỤC 24/7 <<<');
-    setTimeout(runContinuousMiningLoop, 1000);
-  } else {
-    addScraperLog('[24/7 MINER] >>> ĐÃ TẮT CHẾ ĐỘ ĐÀO LIÊN TỤC 24/7 <<<');
-  }
-
-  return new Response(JSON.stringify({
-    active: continuousMiningActive
-  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
 let pythonProcess = null;
@@ -995,6 +771,16 @@ async function handleLocalScraperStart(searchParams) {
     // Chạy nền kịch bản Python
     runPythonScraper(tmdbId, title);
     return new Response(JSON.stringify({ ok: true, message: 'Đã kích hoạt kịch bản Python Scrapling chạy ngầm.' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  if (source === 'niniyo') {
+    const anilistId = searchParams.get('anilist_id');
+    if (!anilistId) {
+      return new Response(JSON.stringify({ error: 'Thiếu AniList ID' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    // Chạy nền cào Anime Niniyo
+    startAnimeSync(anilistId);
+    return new Response(JSON.stringify({ ok: true, message: `Đã kích hoạt cào Anime từ AniList ID ${anilistId} chạy ngầm.` }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
   // Chạy nền
@@ -1231,41 +1017,7 @@ async function main() {
       return;
     }
 
-    if (pathname === '/api/admin/resolver/auto-trending') {
-      const response = await handleResolverAutoTrending();
-      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
-      res.end(Buffer.from(await response.arrayBuffer()));
-      return;
-    }
 
-    if (pathname === '/api/admin/resolver/continuous/status') {
-      const response = await handleContinuousMiningStatus();
-      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
-      res.end(Buffer.from(await response.arrayBuffer()));
-      return;
-    }
-
-    
-    if (pathname === '/api/admin/resolver/focus') {
-      const active = searchParams.get('active') === 'true';
-      const concurrency = active ? 12 : 8;
-      if (db) {
-        db.collection('system_settings').updateOne(
-          { key: 'max_concurrent' },
-          { $set: { key: 'max_concurrent', value: concurrency, updatedAt: new Date() } },
-          { upsert: true }
-        ).catch(err => console.error(err));
-      }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, active, maxConcurrent: concurrency }));
-      return;
-    }
-    if (pathname === '/api/admin/resolver/continuous/toggle') {
-      const response = await handleContinuousMiningToggle();
-      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
-      res.end(Buffer.from(await response.arrayBuffer()));
-      return;
-    }
 
     if (!pathname.startsWith('/api/') && !pathname.startsWith('/tmdb/') && !pathname.startsWith('/img/')) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -1290,19 +1042,7 @@ async function main() {
     // Remove host header to let Request constructor resolve it to local
     delete headers['host'];
 
-    // Intercept On-Demand Resolver endpoints locally
-    if (pathname === '/api/resolver/check') {
-      const response = await handleResolverCheck(searchParams);
-      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
-      res.end(Buffer.from(await response.arrayBuffer()));
-      return;
-    }
-    if (pathname === '/api/resolver/queue') {
-      const response = await handleResolverQueue(body);
-      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
-      res.end(Buffer.from(await response.arrayBuffer()));
-      return;
-    }
+
 
     const request = new Request(url, {
       method: req.method,
@@ -1352,47 +1092,8 @@ async function main() {
     console.log(`  /api/tmdb?path=/movie/popular`);
     console.log('\n  Run Vite in a separate terminal: npm run dev\n');
 
-    // Tự động khởi chạy resolver.cjs làm tiến trình con chạy nền (hỗ trợ auto-restart đệ quy trọn đời)
-    try {
-      const { fork } = require('child_process');
-      const resolverPath = path.join(__dirname, '..', 'hollysheesh-bridge', 'resolver.cjs');
-      
-      function startResolverProcess() {
-        console.log('[dev-api] Khởi chạy tiến trình bẻ khóa VidSrc (resolver.cjs)...');
-        const resolverProcess = fork(resolverPath, [], { silent: true });
-        
-        resolverProcess.stdout.on('data', (data) => {
-          const lines = data.toString().split('\n');
-          lines.forEach(line => {
-            const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '').trim();
-            if (cleanLine) addScraperLog(`[RESOLVER] ${cleanLine}`);
-          });
-        });
-
-        resolverProcess.stderr.on('data', (data) => {
-          const lines = data.toString().split('\n');
-          lines.forEach(line => {
-            const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '').trim();
-            if (cleanLine) addScraperLog(`[RESOLVER] [ERROR] ${cleanLine}`);
-          });
-        });
-
-        resolverProcess.on('error', (err) => {
-          console.error('[dev-api] Tiến trình bẻ khóa lỗi:', err.message);
-          addScraperLog(`[RESOLVER] [ERROR] Lỗi hệ thống: ${err.message}`);
-        });
-
-        resolverProcess.on('exit', (code) => {
-          console.warn(`[dev-api] Tiến trình bẻ khóa thoát với mã code: ${code}. Đang tự động khởi động lại sau 5s...`);
-          addScraperLog(`[RESOLVER] [WARN] Tiến trình bẻ khóa thoát (mã ${code}). Đang tự động khởi động lại sau 5s...`);
-          setTimeout(startResolverProcess, 5000);
-        });
-      }
-      
-      startResolverProcess();
-    } catch (err) {
-      console.error('[dev-api] Không thể khởi chạy resolver process:', err.message);
-    }
+    // Local Dev-API initialized successfully.
+    // VidSrc Clean Playwright Daemon Resolver is removed.
   });
 }
 

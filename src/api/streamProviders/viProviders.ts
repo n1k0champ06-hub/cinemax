@@ -805,9 +805,13 @@ async function fetchFromHollysheeshApi(query: StreamQuery): Promise<StreamItem[]
       
       let url = s.streamUrl;
       if (type === 'hls') {
-        // Hollysheesh streams come from VI CDNs (phimapi/ophim/nguonc) which have CORS support
-        // → play directly in browser, no proxy needed (avoids 200-500ms Render overhead per .ts segment)
-        url = s.streamUrl;
+        const VI_CDN_PATTERNS = ['kkphim', 'phimapi', 'phimimg', 'ophim', 'opstream', 'nguonc', 'phim.nguonc', 'xem20', 'xemphim', 'sing.phimmoi', 's3.phimmoi', 'stream.ophim'];
+        const isViCDN = VI_CDN_PATTERNS.some(p => s.streamUrl.includes(p));
+        if (!isViCDN && s.referer) {
+          url = buildProxiedM3u8Url(s.streamUrl, s.referer);
+        } else {
+          url = s.streamUrl;
+        }
       }
 
       const normServer = String(s.server).replace(/\s*#\d+/g, '');
@@ -829,6 +833,7 @@ async function fetchFromHollysheeshApi(query: StreamQuery): Promise<StreamItem[]
         label: `HOLLYSHEESH · ${s.server} · ${type.toUpperCase()}`,
         episodeName: s.episode,
         category: 'vi',
+        headers: s.referer ? { Referer: s.referer } : undefined,
       };
       return { ...item, score: 999 };
     });

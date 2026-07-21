@@ -208,6 +208,7 @@ export default function App() {
     console.log('[APP] setSelectedMovieSlug called with:', slug);
     if (slug) {
       setSelectedMovieSlugState(slug);
+      window.scrollTo({ top: 0, behavior: 'instant' });
       if (autoPlay) {
         const params = new URLSearchParams(window.location.search);
         params.set("play", "true");
@@ -667,14 +668,21 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        <AnimatePresence>
+        <AnimatePresence mode="wait">
           {selectedMovieSlug && (
-            <MovieDetail
+            <motion.div
               key={selectedMovieSlug}
-              slug={selectedMovieSlug}
-              onClose={() => setSelectedMovieSlug(null)}
-              onSelect={setSelectedMovieSlug}
-            />
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <MovieDetail
+                slug={selectedMovieSlug}
+                onClose={() => setSelectedMovieSlug(null)}
+                onSelect={setSelectedMovieSlug}
+              />
+            </motion.div>
           )}
         </AnimatePresence>
 

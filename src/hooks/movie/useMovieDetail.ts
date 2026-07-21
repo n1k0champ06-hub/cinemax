@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { fetchDetail, fetchSearch } from "../../api/phimApi";
 import { useMyList } from "../useStorage";
-import { useTmdbDetails, useTmdbSearch } from "../useTmdb";
+import { useTmdbDetails, useTmdbSearch, useTmdbTvSeason } from "../useTmdb";
 import { computeMatchScore } from "../../utils/movieMatcher";
 
 const cleanSearchQuery = (str: string): string => {
@@ -24,7 +24,15 @@ const cleanString = (str: string): string => {
     .trim();
 };
 
-export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
+const cleanTitleForSeasonSearch = (title: string | undefined | null): string => {
+  if (!title) return "";
+  return String(title)
+    .replace(/\s*[\(\[]?(Phần|Season|Mùa|SS|Part|Vol|Tập|Ep)\s*\d+[\)\]]?/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+export const useMovieDetail = (rawSlug: string) => {
   const queryClient = useQueryClient();
 
   const slug = rawSlug.replace(/^resolved-/, '');
@@ -131,25 +139,217 @@ export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
     return false;
   }, [isAnilistSlug, finalTmdbData]);
 
+  const filteredSeasons = useMemo(() => {
+    return finalTmdbData?.seasons ? finalTmdbData.seasons.filter((s: any) => s.season_number > 0) : [];
+  }, [finalTmdbData]);
+  const isTv = filteredSeasons.length > 0;
+
+  const [activeSeasonNumber, setActiveSeasonNumber] = useState<number | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlSeason = params.get("season");
+    if (urlSeason) return Number(urlSeason);
+    
+    try {
+      const stored = localStorage.getItem('cinemax_progress');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const saved = parsed[slug];
+        if (saved && saved.season) {
+          return Number(saved.season);
+        }
+      }
+    } catch (e) {}
+    return null;
+  });
+
+  const [activeEpSeason, setActiveEpSeason] = useState<number>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlSeason = params.get("season");
+    if (urlSeason) return Number(urlSeason);
+    
+    try {
+      const stored = localStorage.getItem('cinemax_progress');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const saved = parsed[slug];
+        if (saved && saved.season) {
+          return Number(saved.season);
+        }
+      }
+    } catch (e) {}
+    return 1;
+  });
+
+  const isSeasonValid = useMemo(() => {
+    if (activeSeasonNumber === null) return true;
+    if (!isTv) return false;
+    return filteredSeasons.some((s: any) => s.season_number === activeSeasonNumber);
+  }, [activeSeasonNumber, isTv, filteredSeasons]);
+
+  const validatedActiveSeasonNumber = isSeasonValid ? activeSeasonNumber : null;
+
+  useEffect(() => {
+    if (activeSeasonNumber !== null && !isSeasonValid) {
+      setActiveSeasonNumber(null);
+    }
+  }, [activeSeasonNumber, isSeasonValid]);
+
+  const isEpSeasonValid = useMemo(() => {
+    if (!isTv) return true;
+    return filteredSeasons.some((s: any) => s.season_number === activeEpSeason);
+  }, [activeEpSeason, isTv, filteredSeasons]);
+
+  const validatedActiveEpSeason = isEpSeasonValid ? activeEpSeason : 1;
+
+  useEffect(() => {
+    if (!isEpSeasonValid) {
+      setActiveEpSeason(1);
+    }
+  }, [activeEpSeason, isEpSeasonValid]);
+
+  const defaultSeason = isTv ? filteredSeasons[0].season_number : null;
+  const urlSeason = isTmdbSlug && slugParts.length > 3 ? parseInt(slugParts[3]) : null;
+  const currentSeason = validatedActiveSeasonNumber !== null ? validatedActiveSeasonNumber : (urlSeason || defaultSeason || 1);
+
+  // TV Season Query from TMDB
+  const { data: seasonData, isFetching: isFetchingTmdbSeason } = useTmdbTvSeason(isTv ? finalTmdbData?.id : null, currentSeason);
+
+  // TV Season Server Data Query
+  const { data: seasonServerData } = useQuery({
+    queryKey: ["season-servers", slug, finalTmdbData?.id, currentSeason],
+    queryFn: async () => {
+        if (!isTv || !finalTmdbData) return null;
+        
+        const titlesToSearch = [
+            cleanTitleForSeasonSearch(finalTmdbData?.name),
+            cleanTitleForSeasonSearch(finalTmdbData?.original_name)
+        ].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i) as string[];
+
+        let results: any[] = [];
+        let matchedTitle = titlesToSearch[0] || "";
+
+        // Generate prioritized search terms
+        const searchTerms: string[] = [];
+        
+        // 1. Season-specific terms for all titles
+        for (const title of titlesToSearch) {
+            searchTerms.push(`${title} (Season ${currentSeason})`);
+            searchTerms.push(`${title} (Phần ${currentSeason})`);
+            searchTerms.push(`${title} (Mùa ${currentSeason})`);
+            searchTerms.push(`${title} Season ${currentSeason}`);
+            searchTerms.push(`${title} Phần ${currentSeason}`);
+            searchTerms.push(`${title} Mùa ${currentSeason}`);
+            searchTerms.push(`${title} ${currentSeason}`);
+        }
+        
+        // 2. Base title terms if currentSeason is 1
+        if (currentSeason === 1) {
+            for (const title of titlesToSearch) {
+                searchTerms.push(title);
+            }
+        }
+
+        // Fetch search terms sequentially and stop on the first match
+        for (const term of searchTerms) {
+            try {
+                const searchResults = await fetchSearch(term);
+                if (searchResults && searchResults.length > 0) {
+                    const tvResults = searchResults.filter((item: any) => {
+                        const isItemMovie = item.type === 'single' || item.type === 'phimle' || item.type === 'movie';
+                        return !isItemMovie;
+                    });
+                    if (tvResults.length > 0) {
+                        results = tvResults;
+                        matchedTitle = term;
+                        break;
+                    }
+                }
+            } catch (err) {}
+        }
+
+        // Fallback: search base titles without season suffix sequentially
+        if (results.length === 0) {
+            for (const title of titlesToSearch) {
+                try {
+                    const fallbackResults = await fetchSearch(title);
+                    if (fallbackResults && fallbackResults.length > 0) {
+                        const tvResults = fallbackResults.filter((item: any) => {
+                            const isItemMovie = item.type === 'single' || item.type === 'phimle' || item.type === 'movie';
+                            return !isItemMovie;
+                        });
+                        if (tvResults.length > 0) {
+                            results = tvResults;
+                            matchedTitle = title;
+                            break;
+                        }
+                    }
+                } catch (err) {}
+            }
+        }
+
+        let seasonSlug = null;
+        let originalSlug = null;
+        if (results.length > 0) {
+            const currentSeasonObj = finalTmdbData?.seasons ? finalTmdbData.seasons.find((s: any) => s.season_number === currentSeason) : null;
+            const tmdbYear = currentSeasonObj?.air_date 
+                ? parseInt(currentSeasonObj.air_date.substring(0,4))
+                : (finalTmdbData?.first_air_date ? parseInt(finalTmdbData.first_air_date.substring(0,4)) : 0);
+            
+            const scoredMatches = results.map((item: any) => ({
+                ...item,
+                score: computeMatchScore(item, { title: matchedTitle, original_title: finalTmdbData?.name || "", year: tmdbYear, type: 'tv' }) 
+                       + (currentSeason > 1 && (item.slug.includes(currentSeason.toString()) || item.name.includes(currentSeason.toString())) ? 50 : 0)
+            })).sort((a: any, b: any) => b.score - a.score);
+
+            if (scoredMatches[0] && scoredMatches[0].score >= 75) {
+                seasonSlug = scoredMatches[0].slug;
+                originalSlug = scoredMatches[0].slug;
+            }
+        }
+
+        const targetSlug = originalSlug || seasonSlug;
+        if (targetSlug) {
+            const detail = await fetchDetail(targetSlug);
+            return detail?.episodes || [];
+        }
+        return [];
+    },
+    enabled: isTv && !!finalTmdbData?.id && !!currentSeason,
+    staleTime: 1000 * 60 * 60 * 24
+  });
+
   // 4. Resolve AniList ID for TMDB Anime
   const { data: resolvedAnilistId } = useQuery({
-    queryKey: ["resolvedAnilistId", resolvedTmdbId, finalTmdbData?.title],
+    queryKey: ["resolvedAnilistId", resolvedTmdbId, finalTmdbData?.title, mediaType === 'tv' ? currentSeason : 1],
     queryFn: async () => {
       if (!finalTmdbData) return null;
-      const title = finalTmdbData.original_name || finalTmdbData.original_title || finalTmdbData.title || finalTmdbData.name;
-      if (!title) return null;
+      const baseTitle = finalTmdbData.original_name || finalTmdbData.original_title || finalTmdbData.title || finalTmdbData.name;
+      if (!baseTitle) return null;
       
       try {
-        const searchUrl = `https://api.animapper.net/api/v1/search?title=${encodeURIComponent(title)}&mediaType=ANIME&limit=1`;
-        const res = await fetch(searchUrl);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && data.results && data.results.length > 0) {
-            return data.results[0].id;
+        // Build search queries: season-specific first, then base title
+        let searchQueries = [baseTitle];
+        if (mediaType === 'tv' && currentSeason > 1) {
+          searchQueries = [
+            `${baseTitle} Season ${currentSeason}`,
+            `${baseTitle} Part ${currentSeason}`,
+            `${baseTitle} ${currentSeason}`,
+            baseTitle
+          ];
+        }
+
+        for (const q of searchQueries) {
+          const searchUrl = `https://api.animapper.net/api/v1/search?title=${encodeURIComponent(q)}&mediaType=ANIME&limit=5`;
+          const res = await fetch(searchUrl);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && data.results && data.results.length > 0) {
+              return data.results[0].id;
+            }
           }
         }
       } catch (err) {
-        console.warn(`[useMovieDetail] Failed to search AniList ID for "${title}":`, err);
+        console.warn(`[useMovieDetail] Failed to search AniList ID for "${baseTitle}":`, err);
       }
       return null;
     },
@@ -479,7 +679,12 @@ export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
   const servers = useMemo(() => {
     if (!data?.movie) return [];
     
-    let rawServers = (detailData && Array.isArray(detailData.episodes)) ? detailData.episodes : [];
+    let rawServers = [];
+    if (mediaType === 'tv') {
+      rawServers = seasonServerData || [];
+    } else {
+      rawServers = (detailData && Array.isArray(detailData.episodes)) ? detailData.episodes : [];
+    }
     
     const mainNames = ['OPhim', 'KKPhim', 'NguonC'];
     let processedServers: any[] = mainNames.map(name => {
@@ -536,7 +741,7 @@ export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
       processedServers = processedServers.filter((s: any) => s.status === 'ok');
     }
 
-    // Add VIP Server (Hollysheesh) and Community Server (CinemaOS)
+    // Add VIP Server (Hollysheesh), Community Server (CinemaOS), and VidNest (Community)
     if (finalTmdbData?.id) {
        let baseEps = [];
        const firstServerWithEps = processedServers.find((s: any) => s.server_data && s.server_data.length > 0);
@@ -558,7 +763,7 @@ export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
            let cinemaosUrl = `https://cinemaos.tech/player/${finalTmdbData.id}?theme=ffffff`;
            if (mediaType === "tv") {
               const epNum = parseInt(ep.name) || (index + 1);
-              cinemaosUrl = `https://cinemaos.tech/player/${finalTmdbData.id}/1/${epNum}?theme=ffffff`;
+              cinemaosUrl = `https://cinemaos.tech/player/${finalTmdbData.id}/${currentSeason}/${epNum}?theme=ffffff`;
            }
            return {
                ...ep,
@@ -573,6 +778,14 @@ export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
            link_m3u8: ""
        }));
 
+       const vidNestServerData = baseEps.map((ep: any, index: number) => ({
+           ...ep,
+           name: ep.name || `${index + 1}`,
+           filename: ep.filename || `Tập ${index + 1}`,
+           link_m3u8: '',
+           link_embed: '',
+       }));
+
        if (cinemaosServerData.length > 0) {
            processedServers.push({
                server_name: "Community Server (CinemaOS)",
@@ -581,18 +794,29 @@ export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
            });
        }
 
-        if (hollysheeshServerData.length > 0) {
-            processedServers.push({
-                server_name: "VIP Server (Hollysheesh)",
-                server_data: hollysheeshServerData,
-                status: 'ok',
-                _isHollysheesh: true
-            });
-        }
+       if (hollysheeshServerData.length > 0) {
+           processedServers.push({
+               server_name: "VIP Server (Hollysheesh)",
+               server_data: hollysheeshServerData,
+               status: 'ok',
+               _isHollysheesh: true
+           });
+       }
+
+       if (vidNestServerData.length > 0) {
+           processedServers.push({
+               server_name: "VidNest (Community) — Sub Việt",
+               server_data: vidNestServerData,
+               status: 'ok',
+               _isVidNest: true,
+               _tmdbId: finalTmdbData.id,
+               _mediaType: mediaType
+           });
+       }
     }
 
     return processedServers;
-  }, [detailData, isAnime, finalAnilistData, finalTmdbData?.id, mediaType, data]);
+  }, [detailData, isAnime, finalAnilistData, finalTmdbData?.id, mediaType, data, seasonServerData, currentSeason]);
 
   const isEpValid = useMemo(() => {
     if (!activeEp) return false;
@@ -698,6 +922,18 @@ export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
     activeEp: validatedActiveEp, setActiveEp,
     isPlaying, setIsPlaying,
     inList, handleToggleList,
-    servers
+    servers,
+    currentSeason,
+    activeSeasonNumber,
+    setActiveSeasonNumber,
+    activeEpSeason,
+    setActiveEpSeason,
+    seasonData,
+    isFetchingTmdbSeason,
+    seasonServerData,
+    activeAnilistId,
+    isAnime,
+    isTv,
+    filteredSeasons
   };
 };

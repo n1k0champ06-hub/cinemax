@@ -151,7 +151,8 @@ async function handleStats(req, res) {
   try {
     const movies  = await db.collection('movies').countDocuments();
     const streams = await db.collection('streams').countDocuments();
-    return json(res, { ok: true, movies, streams });
+    const anime   = await db.collection('movies').countDocuments({ $or: [{ type: 'anime' }, { source: 'niniyo' }] });
+    return json(res, { ok: true, movies, streams, anime });
   } catch (err) {
     return json(res, { ok: false, error: err.message }, 500);
   }
@@ -390,68 +391,7 @@ const server = http.createServer(async (req, res) => {
     return await handleM3u8Proxy(req, res, searchParams);
   }
 
-  // ---------------------------------------------------------------------------
-  // On-Demand Resolver Routes
-  // ---------------------------------------------------------------------------
 
-  // GET /api/resolver/check — Kiểm tra có link sạch còn hạn không
-  if (pathname === '/api/resolver/check') {
-    if (!db) return json(res, { ok: false, error: 'Database not connected' }, 503);
-    const tmdbId  = searchParams.get('tmdbId')  || '';
-    const type    = searchParams.get('type')     || 'movie';
-    const season  = parseInt(searchParams.get('season')  || '1');
-    const episode = parseInt(searchParams.get('episode') || '1');
-    if (!tmdbId) return json(res, { ok: false, error: 'tmdbId required' }, 400);
-    try {
-      const cached = await db.collection('vidsrc_streams').findOne({
-        tmdbId: String(tmdbId), type, season, episode,
-        expiredAt: { $gt: new Date() },
-      });
-      if (cached) {
-        return json(res, { ok: true, streamUrl: cached.streamUrl, provider: cached.provider, resolvedAt: cached.resolvedAt });
-      }
-      return json(res, { ok: false, reason: 'no_cache' });
-    } catch (err) {
-      return json(res, { ok: false, error: err.message }, 500);
-    }
-  }
-
-  // POST /api/resolver/queue — Đẩy yêu cầu giải mã vào hàng đợi
-  if (pathname === '/api/resolver/queue' && req.method === 'POST') {
-    if (!db) return json(res, { ok: false, error: 'Database not connected' }, 503);
-    let body = '';
-    for await (const chunk of req) body += chunk;
-    let payload;
-    try { payload = JSON.parse(body); } catch { return json(res, { ok: false, error: 'Invalid JSON' }, 400); }
-
-    const { tmdbId, type = 'movie', season = 1, episode = 1 } = payload;
-    if (!tmdbId) return json(res, { ok: false, error: 'tmdbId required' }, 400);
-
-    try {
-      // Idempotent: không thêm nếu job cùng key đang pending/processing
-      const existing = await db.collection('resolving_queue').findOne({
-        tmdbId: String(tmdbId), type,
-        season: parseInt(season), episode: parseInt(episode),
-        status: { $in: ['pending', 'processing'] },
-      });
-
-      if (existing) {
-        return json(res, { ok: true, queued: false, note: 'Job đã tồn tại trong hàng đợi' });
-      }
-
-      await db.collection('resolving_queue').insertOne({
-        tmdbId: String(tmdbId), type,
-        season: parseInt(season), episode: parseInt(episode),
-        status: 'pending',
-        createdAt: new Date(),
-        retries: 0,
-      });
-
-      return json(res, { ok: true, queued: true });
-    } catch (err) {
-      return json(res, { ok: false, error: err.message }, 500);
-    }
-  }
 
   return json(res, { error: 'Not found' }, 404);
 });
@@ -464,28 +404,7 @@ connectDB()
     server.listen(PORT, () => {
       console.log(`[Bridge] Server listening on port ${PORT}`);
 
-      // Tự động khởi chạy resolver.cjs dưới dạng tiến trình con chạy nền
-      try {
-        const { fork } = require('child_process');
-        const path = require('path');
-        const resolverPath = path.join(__dirname, 'resolver.cjs');
-        
-        console.log('[Bridge] Khởi chạy tiến trình bẻ khóa VidSrc (resolver.cjs)...');
-        const resolverProcess = fork(resolverPath);
-        
-        resolverProcess.on('error', (err) => {
-          console.error('[Bridge] Tiến trình bẻ khóa lỗi:', err.message);
-        });
-
-        resolverProcess.on('exit', (code) => {
-          console.warn(`[Bridge] Tiến trình bẻ khóa thoát với mã code: ${code}. Đang khởi động lại sau 5s...`);
-          setTimeout(() => {
-            fork(resolverPath);
-          }, 5000);
-        });
-      } catch (err) {
-        console.error('[Bridge] Không thể khởi chạy resolver process:', err.message);
-      }
+      // On-demand HLS resolver process has been deprecated and removed.
     });
   })
   .catch(err => {

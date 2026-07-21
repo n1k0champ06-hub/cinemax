@@ -5,8 +5,7 @@ interface ScraperStats {
   connected: boolean;
   moviesCount: number;
   streamsCount: number;
-  resolverQueue: number;
-  resolverCached: number;
+  animeCount: number;
   error?: string;
 }
 
@@ -19,7 +18,7 @@ interface ScraperStatus {
 }
 
 export default function ScraperDashboard() {
-  const [stats, setStats] = useState<ScraperStats>({ connected: false, moviesCount: 0, streamsCount: 0, resolverQueue: 0, resolverCached: 0 });
+  const [stats, setStats] = useState<ScraperStats>({ connected: false, moviesCount: 0, streamsCount: 0, animeCount: 0 });
   const [status, setStatus] = useState<ScraperStatus>({ isRunning: false, currentTask: 'Idle', processed: 0, total: 0, logs: [] });
   const [source, setSource] = useState<'kkphim' | 'ophim' | 'nguonc'>('kkphim');
   const [limitPages, setLimitPages] = useState<number>(2);
@@ -32,13 +31,9 @@ export default function ScraperDashboard() {
   const [customTmdbId, setCustomTmdbId] = useState<string>('');
   const [customTitle, setCustomTitle] = useState<string>('');
 
-  const [resolverTmdbId, setResolverTmdbId] = useState<string>('');
-  const [resolverType, setResolverType] = useState<'movie' | 'tv'>('movie');
-  const [resolverSeason, setResolverSeason] = useState<number>(1);
-  const [resolverEpisode, setResolverEpisode] = useState<number>(1);
+  const [animeAnilistId, setAnimeAnilistId] = useState<string>('');
   
   const [loading, setLoading] = useState<boolean>(false);
-  const [continuousMining, setContinuousMining] = useState<boolean>(false);
   const logsContainerRef = useRef<HTMLDivElement | null>(null);
   const [focusMode, setFocusMode] = useState<boolean>(false);
   useEffect(() => {
@@ -71,7 +66,7 @@ export default function ScraperDashboard() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [focusMode, status.isRunning, continuousMining]);
+  }, [focusMode, status.isRunning]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -105,12 +100,6 @@ export default function ScraperDashboard() {
         const data = await res.json();
         setStatus(data);
       }
-      
-      const contRes = await fetch('http://localhost:3001/api/admin/resolver/continuous/status');
-      if (contRes.ok) {
-        const contData = await contRes.json();
-        setContinuousMining(contData.active);
-      }
     } catch (e) {
       console.error("Failed to fetch scraper status:", e);
     }
@@ -119,18 +108,12 @@ export default function ScraperDashboard() {
   const handleToggleAllMining = async () => {
     setLoading(true);
     try {
-      const currentlyActive = status.isRunning || continuousMining;
+      const currentlyActive = status.isRunning;
       if (currentlyActive) {
         await fetch('http://localhost:3001/api/admin/scraper/stop', { method: 'POST' });
-        if (continuousMining) {
-          await fetch('http://localhost:3001/api/admin/resolver/continuous/toggle', { method: 'POST' });
-        }
       } else {
         const limit = syncAll ? 9999 : limitPages;
         await fetch(`http://localhost:3001/api/admin/scraper/start?source=all&limit=${limit}`, { method: 'POST' });
-        if (!continuousMining) {
-          await fetch('http://localhost:3001/api/admin/resolver/continuous/toggle', { method: 'POST' });
-        }
       }
       await fetchStatus();
       fetchStats();
@@ -162,23 +145,16 @@ export default function ScraperDashboard() {
     }
   };
 
-  const handleRunResolverManual = async (e: React.FormEvent) => {
+  const handleRunAnimeScraper = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!resolverTmdbId) return;
+    if (!animeAnilistId) return;
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:3001/api/resolver/queue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tmdbId: resolverTmdbId,
-          type: resolverType,
-          season: resolverType === 'tv' ? resolverSeason : 1,
-          episode: resolverType === 'tv' ? resolverEpisode : 1
-        })
+      const res = await fetch(`http://localhost:3001/api/admin/scraper/start?source=niniyo&anilist_id=${animeAnilistId}`, {
+        method: 'POST'
       });
       if (res.ok) {
-        setResolverTmdbId('');
+        setAnimeAnilistId('');
         fetchStats();
         await fetchStatus();
       }
@@ -195,9 +171,9 @@ export default function ScraperDashboard() {
     const interval = setInterval(() => {
       fetchStatus();
       fetchStats();
-    }, (status.isRunning || continuousMining) ? 1500 : 3000);
+    }, 3000);
     return () => clearInterval(interval);
-  }, [status.isRunning, continuousMining]);
+  }, []);
 
   useEffect(() => {
     if (logsContainerRef.current) {
@@ -205,7 +181,7 @@ export default function ScraperDashboard() {
     }
   }, [status.logs, showLogs]);
 
-  const activeAll = status.isRunning || continuousMining;
+  const activeAll = status.isRunning;
 
   
   if (focusMode) {
@@ -248,7 +224,7 @@ export default function ScraperDashboard() {
             <div className="text-[9px] text-zinc-700 font-mono">Nhấn <span className="text-zinc-500 border border-zinc-900 px-1 py-0.5 rounded">Ctrl + Enter</span> để thoát</div>
           </div>
         </div>
-        <div className="w-full max-w-4xl grid grid-cols-2 md:grid-cols-4 gap-8 py-5 border-t border-zinc-950 z-10 text-center md:text-left">
+        <div className="w-full max-w-4xl grid grid-cols-2 md:grid-cols-3 gap-8 py-5 border-t border-zinc-950 z-10 text-center md:text-left">
           <div className="flex flex-col">
             <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase font-mono">Phim Đã Cào</span>
             <span className="text-2xl font-light text-zinc-100 mt-1.5 font-mono tracking-tight">{stats.moviesCount.toLocaleString()}</span>
@@ -258,12 +234,8 @@ export default function ScraperDashboard() {
             <span className="text-2xl font-light text-zinc-100 mt-1.5 font-mono tracking-tight">{stats.streamsCount.toLocaleString()}</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase font-mono">VidSrc Clean</span>
-            <span className="text-2xl font-light text-emerald-400 mt-1.5 font-mono tracking-tight">{stats.resolverCached}</span>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase font-mono">Hàng Đợi</span>
-            <span className="text-2xl font-light text-amber-400 mt-1.5 font-mono tracking-tight">{stats.resolverQueue}</span>
+            <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase font-mono">Anime Đã Cào</span>
+            <span className="text-2xl font-light text-emerald-400 mt-1.5 font-mono tracking-tight">{stats.animeCount?.toLocaleString() || 0}</span>
           </div>
         </div>
       </div>
@@ -284,7 +256,7 @@ export default function ScraperDashboard() {
         </div>
 
         {/* Apple watch complications design stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 py-2">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-6 py-2">
           <div className="flex flex-col">
             <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase font-mono">Phim Đã Cào</span>
             <span className="text-xl font-light text-zinc-200 mt-1 font-mono tracking-tight">{stats.moviesCount.toLocaleString()}</span>
@@ -294,12 +266,8 @@ export default function ScraperDashboard() {
             <span className="text-xl font-light text-zinc-200 mt-1 font-mono tracking-tight">{stats.streamsCount.toLocaleString()}</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase font-mono">VidSrc Clean</span>
-            <span className="text-xl font-light text-emerald-500 mt-1 font-mono tracking-tight">{stats.resolverCached}</span>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase font-mono">Hàng Đợi</span>
-            <span className="text-xl font-light text-amber-500 mt-1 font-mono tracking-tight">{stats.resolverQueue}</span>
+            <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase font-mono">Anime Đã Cào</span>
+            <span className="text-xl font-light text-emerald-500 mt-1 font-mono tracking-tight">{stats.animeCount?.toLocaleString() || 0}</span>
           </div>
         </div>
       </div>
@@ -335,7 +303,7 @@ export default function ScraperDashboard() {
               {activeAll ? 'RUNNING' : 'START MINING'}
             </span>
             <span className="text-[8px] font-bold text-zinc-600 font-mono tracking-wider uppercase">
-              {activeAll ? 'Đang chạy 24/7' : 'Kích hoạt máy đào'}
+              {activeAll ? 'Đang chạy' : 'Kích hoạt máy đào'}
             </span>
           </div>
         </button>
@@ -344,12 +312,7 @@ export default function ScraperDashboard() {
           <div className="mt-8 flex items-center gap-4 text-[9px] font-mono tracking-wider text-zinc-500">
             <span className="flex items-center gap-1.5">
               <span className="h-1 w-1 rounded-full bg-emerald-500 animate-ping" />
-              Đồng bộ VN: ON
-            </span>
-            <span className="h-2 w-px bg-zinc-900" />
-            <span className="flex items-center gap-1.5">
-              <span className="h-1 w-1 rounded-full bg-emerald-500 animate-ping" />
-              VidSrc 24/7: ON
+              Đồng bộ nguồn Việt Nam: ON
             </span>
           </div>
         )}
@@ -440,57 +403,27 @@ export default function ScraperDashboard() {
               </div>
             </div>
 
-            {/* VidSrc Manual */}
+            {/* Niniyo Anime Scraper Manual */}
             <div className="space-y-4">
-              <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest font-mono border-b border-zinc-950 pb-2">Giải Mã Thủ Công VidSrc</h3>
-              <form onSubmit={handleRunResolverManual} className="space-y-3">
-                <div className="flex gap-2">
+              <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest font-mono border-b border-zinc-950 pb-2">Đào Anime từ AniList (Niniyo)</h3>
+              <form onSubmit={handleRunAnimeScraper} className="space-y-3">
+                <div className="space-y-1">
+                  <span className="text-[8px] font-bold text-zinc-600 uppercase tracking-wider font-mono">AniList ID</span>
                   <input
                     type="text"
-                    placeholder="TMDB ID"
-                    value={resolverTmdbId}
-                    onChange={(e) => setResolverTmdbId(e.target.value)}
-                    className="flex-1 bg-black border border-zinc-950 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-300 focus:outline-none focus:border-zinc-900"
+                    placeholder="Nhập AniList ID (ví dụ: 16498)"
+                    value={animeAnilistId}
+                    onChange={(e) => setAnimeAnilistId(e.target.value)}
+                    className="w-full bg-black border border-zinc-950 rounded-lg px-2.5 py-1.5 text-xs font-mono text-zinc-300 focus:outline-none focus:border-zinc-900"
                   />
-                  <select
-                    value={resolverType}
-                    onChange={(e) => setResolverType(e.target.value as 'movie' | 'tv')}
-                    className="bg-black border border-zinc-950 rounded-lg px-2 py-1.5 text-xs font-mono text-zinc-500 focus:outline-none focus:border-zinc-900"
-                  >
-                    <option value="movie">Movie</option>
-                    <option value="tv">TV</option>
-                  </select>
                 </div>
-
-                {resolverType === 'tv' && (
-                  <div className="flex gap-2 text-xs font-mono">
-                    <div className="flex-1 flex items-center justify-between bg-black border border-zinc-950 rounded-lg px-2.5 py-1">
-                      <span className="text-zinc-650">S</span>
-                      <input
-                        type="number"
-                        value={resolverSeason}
-                        onChange={(e) => setResolverSeason(Math.max(1, parseInt(e.target.value) || 1))}
-                        className="w-8 bg-transparent text-right text-zinc-300 focus:outline-none"
-                      />
-                    </div>
-                    <div className="flex-1 flex items-center justify-between bg-black border border-zinc-950 rounded-lg px-2.5 py-1">
-                      <span className="text-zinc-655">E</span>
-                      <input
-                        type="number"
-                        value={resolverEpisode}
-                        onChange={(e) => setResolverEpisode(Math.max(1, parseInt(e.target.value) || 1))}
-                        className="w-8 bg-transparent text-right text-zinc-300 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                )}
 
                 <button
                   type="submit"
-                  disabled={loading || !resolverTmdbId}
+                  disabled={loading || !animeAnilistId}
                   className="w-full bg-zinc-950 hover:bg-zinc-900 border border-zinc-900 text-zinc-300 font-bold py-1.5 rounded-lg text-xs font-mono tracking-wider transition-all cursor-pointer disabled:opacity-50"
                 >
-                  GIẢI MÃ ON-DEMAND
+                  BẮT ĐẦU ĐÀO ANIME
                 </button>
               </form>
 
