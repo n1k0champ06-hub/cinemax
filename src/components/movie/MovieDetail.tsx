@@ -842,28 +842,6 @@ const MovieDetailContent: React.FC<{
   const bgDetailImg = proxyImage(rawBg);
   const rawPoster = tmdbPosterUrl || (movie.poster_url && typeof movie.poster_url === 'string' ? (movie.poster_url.startsWith("http") ? movie.poster_url : `https://phimimg.com/${movie.poster_url}`) : rawBg);
   const posterUrl = proxyImage(rawPoster);
-  const handleStreamSelect = useCallback((stream: any) => {
-    selectStream(stream);
-    if (stream && currentServers?.length) {
-      const idx = currentServers.findIndex((s: any) => {
-        const sName = (s.server_name || '').toLowerCase();
-        const pName = (stream.providerLabel || stream.provider || '').toLowerCase();
-        if (s._isHollysheesh && pName.includes('hollysheesh')) return true;
-        if (s._isVidNest && pName.includes('vidnest')) return true;
-        if (sName.includes('cinemaos') && pName.includes('cinemaos')) return true;
-        if (sName.includes('ophim') && pName.includes('ophim')) return true;
-        if (sName.includes('kkphim') && pName.includes('kkphim')) return true;
-        if (sName.includes('nguonc') && pName.includes('nguonc')) return true;
-        if (sName.includes('hianime') && pName.includes('hianime')) return true;
-        return false;
-      });
-      if (idx !== -1) {
-        setSelectedServerId(idx);
-        prevSelectedServerIdRef.current = idx;
-      }
-    }
-  }, [selectStream, currentServers]);
-
   const cleanMovieName = isTv ? `${cleanTitleForSeasonSearch(movie.name)} (Phần ${currentSeason})` : movie.name;
 
   return (
@@ -974,7 +952,7 @@ const MovieDetailContent: React.FC<{
                     tmdbEpisodes={seasonData?.episodes || []}
                     streams={streams}
                     activeStream={activeStream}
-                    onStreamSelect={handleStreamSelect}
+                    onStreamSelect={selectStream}
                     isAggregatorLoading={isAggregatorLoading}
                   />
                 </motion.div>

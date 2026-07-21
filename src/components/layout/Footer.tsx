@@ -1,5 +1,5 @@
 import React from "react";
-import { ShieldAlert, Flag, ExternalLink } from "lucide-react";
+import { ShieldAlert } from "lucide-react";
 
 export const Footer = () => {
   return (
@@ -49,17 +49,6 @@ export const Footer = () => {
               </svg>
               <span>Tải App Cinemax</span>
             </button>
-
-            <a
-              href="https://www.facebook.com/n1k0vac"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 max-w-[180px] bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 px-3 py-2 rounded-full text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all duration-300 active:scale-95 cursor-pointer touch-manipulation"
-            >
-              <Flag className="w-3 h-3 shrink-0" />
-              <span>Report / Góp ý</span>
-              <ExternalLink className="w-2.5 h-2.5 opacity-60" />
-            </a>
           </div>
         </div>
       </div>
@@ -71,14 +60,9 @@ export const Footer = () => {
         </div>
         <div className="flex items-center gap-1.5">
           <span>Phát triển & Vận hành bởi</span>
-          <a 
-            href="https://www.facebook.com/n1k0vac" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="text-neutral-400 hover:text-white transition-colors duration-200 hover:underline font-semibold"
-          >
+          <span className="text-neutral-400 font-semibold">
             n1k0vac
-          </a>
+          </span>
         </div>
       </div>
     </footer>
