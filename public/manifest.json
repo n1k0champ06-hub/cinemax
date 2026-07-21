@@ -4,13 +4,13 @@
   "description": "Ứng dụng xem phim trực tuyến hàng đầu.",
   "icons": [
     {
-      "src": "https://res.cloudinary.com/dwbbs7rho/image/upload/v1779716516/Elegant_Marquee_Style_Logo_with_Deep_Crimson_C_c2sulc.png",
+      "src": "/icon-black.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any maskable"
     },
     {
-      "src": "https://res.cloudinary.com/dwbbs7rho/image/upload/v1779716516/Elegant_Marquee_Style_Logo_with_Deep_Crimson_C_c2sulc.png",
+      "src": "/icon-black.png",
       "type": "image/png",
       "sizes": "192x192",
       "purpose": "any maskable"
