@@ -35,16 +35,25 @@ export const Footer = () => {
             </span>
           </div>
           
-          <a
-            href="https://www.facebook.com/n1k0vac"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 px-4 py-2 sm:py-1 rounded-full text-xs font-semibold flex items-center justify-center gap-1.5 transition-all duration-300 hover:scale-[1.02] active:scale-95 shadow-[0_2px_8px_rgba(239,68,68,0.05)] w-full sm:w-auto mt-3 sm:mt-0 cursor-pointer"
-          >
-            <Flag className="w-3.5 h-3.5" />
-            <span>Report lỗi hoặc đề xuất</span>
-            <ExternalLink className="w-3 h-3 opacity-60" />
-          </a>
+          <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto mt-3 sm:mt-0">
+            <button
+              onClick={() => (window as any).triggerPWAInstall?.()}
+              className="bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 hover:border-emerald-500/50 text-emerald-400 px-4 py-2 sm:py-1.5 rounded-full text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-300 hover:scale-[1.02] active:scale-95 cursor-pointer shadow-md"
+            >
+              <span>📱 Tải App Cinemax</span>
+            </button>
+
+            <a
+              href="https://www.facebook.com/n1k0vac"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 px-4 py-2 sm:py-1.5 rounded-full text-xs font-semibold flex items-center justify-center gap-1.5 transition-all duration-300 hover:scale-[1.02] active:scale-95 shadow-[0_2px_8px_rgba(239,68,68,0.05)] cursor-pointer"
+            >
+              <Flag className="w-3.5 h-3.5" />
+              <span>Report lỗi hoặc đề xuất</span>
+              <ExternalLink className="w-3 h-3 opacity-60" />
+            </a>
+          </div>
         </div>
       </div>
 

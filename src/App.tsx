@@ -42,6 +42,7 @@ const ReportNotification = lazy(() => import("./components/layout/ReportNotifica
 const GodModeConsole = lazy(() => import("./components/debug/GodModeConsole").then(m => ({ default: m.GodModeConsole })));
 const MobileSimulator = lazy(() => import("./components/debug/MobileSimulator").then(m => ({ default: m.MobileSimulator })));
 const ScraperDashboard = lazy(() => import("./components/admin/ScraperDashboard"));
+const PWAInstallModal = lazy(() => import("./components/layout/PWAInstallModal").then(m => ({ default: m.PWAInstallModal })));
 
 // Preload primary page bundles during browser idle time so tab clicks respond instantly
 if (typeof window !== 'undefined') {
@@ -698,6 +699,7 @@ export default function App() {
         <GodModeConsole />
         <MobileSimulator />
         <ReportNotification />
+        <PWAInstallModal />
       </div>
       </Suspense>
     </PersistQueryClientProvider>

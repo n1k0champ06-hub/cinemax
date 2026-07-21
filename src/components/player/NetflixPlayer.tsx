@@ -587,8 +587,14 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       if (panelOpen === 'none') setShowControls(false);
-    }, 4500);
+    }, 6000);
   }, [panelOpen]);
+
+  const handleMouseMove = useCallback(() => {
+    if (!isMobile) {
+      resetControls();
+    }
+  }, [isMobile, resetControls]);
 
   const handleSeekMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!duration) return;
@@ -843,7 +849,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
             playsInline
             preload="auto"
             onClick={handleVideoClick}
-            onMouseMove={resetControls}
+            onMouseMove={handleMouseMove}
           />
         )}
 
@@ -870,7 +876,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
           {showControls && !isEmbed && (
             <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration:0.2 }}
               className="absolute inset-0 z-40 flex flex-col justify-between pointer-events-none"
-              onMouseMove={resetControls}>
+              onMouseMove={handleMouseMove}>
               {isLocked ? (
                 /* Locked screen overlay: only show Unlock button in center */
                 <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
