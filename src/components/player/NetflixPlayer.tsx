@@ -413,9 +413,9 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       const isVi = activeStream?.category === 'vi';
       hls = new Hls({
         loader: AdFilteringHlsLoader as any,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
-        maxBufferSize: 60 * 1024 * 1024,
+        maxBufferLength: 240, // Tải trước lên tới 4 phút (mặc định 30s)
+        maxMaxBufferLength: 480, // Tối đa lên tới 8 phút
+        maxBufferSize: 200 * 1024 * 1024, // Tăng dung lượng bộ đệm tối đa lên 200MB (mặc định 60MB)
         enableWorker: true,
         lowLatencyMode: false,
         capLevelToPlayerSize: true,
