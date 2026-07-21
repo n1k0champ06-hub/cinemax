@@ -358,7 +358,7 @@ export default function App() {
           />
         )}
 
-        <AnimatePresence mode="sync">
+        <AnimatePresence mode="wait">
           {currentTab === "home" ? (
             <motion.div
               key="home"
@@ -522,7 +522,7 @@ export default function App() {
                     title="Anime Phổ Biến Nhất"
                     type="anime-popular"
                     onSelect={setSelectedMovieSlug}
-                    aspectRatio="poster"
+                    aspectRatio="landscape"
                     isAnime
                   />
                 </div>
@@ -540,7 +540,7 @@ export default function App() {
                     title="Phiêu Lưu & Kỳ Ảo"
                     type="anime-fantasy"
                     onSelect={setSelectedMovieSlug}
-                    aspectRatio="poster"
+                    aspectRatio="landscape"
                     isAnime
                   />
                 </div>
@@ -558,7 +558,7 @@ export default function App() {
                     title="Hài Hước & Đời Thường"
                     type="anime-comedy"
                     onSelect={setSelectedMovieSlug}
-                    aspectRatio="poster"
+                    aspectRatio="landscape"
                     isAnime
                   />
                 </div>

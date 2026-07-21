@@ -36,6 +36,15 @@ import { useTmdbExternalIds } from "../../hooks/useTmdb";
 import { useStreamAggregator } from "../../hooks/useStreamAggregator";
 import { NetflixPlayer } from "../player/NetflixPlayer";
 import { ReportModal } from "../ui/ReportModal";
+
+const cleanTitleForSeasonSearch = (title: string | undefined | null): string => {
+  if (!title) return "";
+  return String(title)
+    .replace(/\s*[\(\[]?(Phần|Season|Mùa|SS|Part|Vol|Tập|Ep)\s*\d+[\)\]]?/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
 const getEpisodeNumber = (nameStr: string | number | undefined | null): number | null => {
   if (nameStr === undefined || nameStr === null) return null;
   const cleaned = nameStr.toString().replace(/\D/g, '');
@@ -147,8 +156,7 @@ const MovieDetailContent: React.FC<{
   } = movieDetailProps;
 
   // Determine media type from slug or TMDB data
-  const filteredSeasons = finalTmdbData?.seasons ? finalTmdbData.seasons.filter((s: any) => s.season_number > 0) : [];
-  const isTv = filteredSeasons.length > 0;
+  // (filteredSeasons and isTv are already destructured from movieDetailProps above)
 
   const isTmdbSlugLocal = slug.startsWith('tmdb-');
   const slugPartsLocal = isTmdbSlugLocal ? slug.split('-') : [];
@@ -167,7 +175,7 @@ const MovieDetailContent: React.FC<{
     if (!ep?.link_embed) return "";
     let url = ep.link_embed;
     // Substitute dynamic placeholders seamlessly
-    url = url.replace("{season}", (validatedActiveEpSeason || 1).toString());
+    url = url.replace("{season}", (activeEpSeason || 1).toString());
     return url;
   };
 
@@ -1538,7 +1546,7 @@ const MovieDetailContent: React.FC<{
 
                             const epNameStr = ep.episode_number ? `${ep.episode_number}` : ep.name;
                             const stillPath = getEpStillPath(epNameStr, tmdbEp?.still_path || ep.still_path);
-                            const isSelected = currentSeason === validatedActiveEpSeason && (activeEp === ep || (activeEp?.name && isSameEpisode(ep.episode_number || ep.name, activeEp.name)));
+                            const isSelected = currentSeason === activeEpSeason && (activeEp === ep || (activeEp?.name && isSameEpisode(ep.episode_number || ep.name, activeEp.name)));
                             
                             const displayEpName = ep.episode_number ? `Tập ${ep.episode_number}` : (String(ep.name).startsWith("Tập") ? ep.name : `Tập ${ep.name}`);
                             const displayEpTitle = tmdbEp?.name && !isGenericEpisodeName(tmdbEp.name, tmdbEp.episode_number)
