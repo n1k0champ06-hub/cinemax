@@ -25,28 +25,22 @@ export const Footer = () => {
         </p>
 
         {/* Badges & Actions */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mt-1.5 w-full">
-          <div className="flex flex-wrap gap-1.5">
-            <span className="bg-[#2f190e]/60 border border-[#582f1b]/40 text-[#f7b05b] px-2.5 py-0.5 rounded-full text-[9px] md:text-[10px] font-semibold tracking-wide">
+        <div className="flex flex-col items-center gap-3 mt-1.5 w-full">
+          {/* Badges Row */}
+          <div className="flex items-center justify-center flex-wrap gap-1.5">
+            <span className="bg-[#2f190e]/60 border border-[#582f1b]/40 text-[#f7b05b] px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide">
               Third-party Content
             </span>
-            <span className="bg-[#2f190e]/60 border border-[#582f1b]/40 text-[#f7b05b] px-2.5 py-0.5 rounded-full text-[9px] md:text-[10px] font-semibold tracking-wide">
+            <span className="bg-[#2f190e]/60 border border-[#582f1b]/40 text-[#f7b05b] px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide">
               No File Hosting
             </span>
           </div>
-          
-          <div className="flex items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+
+          {/* Action Buttons Row */}
+          <div className="flex items-center justify-center gap-2 w-full">
             <button
-              onClick={(e) => {
-                e.preventDefault();
-                (window as any).triggerPWAInstall?.();
-              }}
-              onTouchEnd={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                (window as any).triggerPWAInstall?.();
-              }}
-              className="flex-1 sm:flex-initial bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 hover:border-emerald-500/50 text-emerald-400 px-3 py-1.5 rounded-full text-[10px] md:text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-300 hover:scale-[1.02] active:scale-95 cursor-pointer shadow-md"
+              onClick={() => (window as any).triggerPWAInstall?.()}
+              className="flex-1 max-w-[180px] bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 hover:border-emerald-500/50 text-emerald-400 px-3 py-2 rounded-full text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all duration-300 active:scale-95 cursor-pointer touch-manipulation"
             >
               <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="5" y="2" width="14" height="20" rx="3" />
@@ -60,9 +54,9 @@ export const Footer = () => {
               href="https://www.facebook.com/n1k0vac"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 sm:flex-initial bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 px-3 py-1.5 rounded-full text-[10px] md:text-xs font-semibold flex items-center justify-center gap-1.5 transition-all duration-300 hover:scale-[1.02] active:scale-95 shadow-md cursor-pointer"
+              className="flex-1 max-w-[180px] bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 px-3 py-2 rounded-full text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all duration-300 active:scale-95 cursor-pointer touch-manipulation"
             >
-              <Flag className="w-3 h-3" />
+              <Flag className="w-3 h-3 shrink-0" />
               <span>Report / Góp ý</span>
               <ExternalLink className="w-2.5 h-2.5 opacity-60" />
             </a>
