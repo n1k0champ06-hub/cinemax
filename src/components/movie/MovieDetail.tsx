@@ -1901,12 +1901,12 @@ export const MovieDetail: React.FC<{
   const { isLoading, data } = movieDetailProps;
 
   useEffect(() => {
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    // Dùng class thay vì inline style để CSS stylesheet override đúng khi cleanup
+    document.body.classList.add('overflow-hidden');
     return () => {
-      document.body.style.overflow = originalOverflow;
+      document.body.classList.remove('overflow-hidden');
     };
-  }, [slug]);
+  }, []);
 
   return (
     <motion.div

@@ -123,18 +123,26 @@ async function handleStreams(req, res, searchParams) {
 
     // Timeout MongoDB query 5s để không treo khi DB chậm
     const queryPromise = db.collection('streams')
-      .find({ slug: matchedSlug })
-      .limit(50)
-      .toArray();
+      .findOne({ slug: matchedSlug });
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('MongoDB query timeout')), 5000)
     );
-    const allStreams = await Promise.race([queryPromise, timeoutPromise]);
+    const streamDoc = await Promise.race([queryPromise, timeoutPromise]);
+    const rawStreams = (streamDoc && Array.isArray(streamDoc.streams)) ? streamDoc.streams : [];
 
-    const streams = allStreams.filter(s => {
-      const sEpNum = getEpNum(s.episode);
-      return sEpNum === targetEpNum || String(s.episode).toLowerCase() === String(episode).toLowerCase();
-    });
+    const streams = rawStreams
+      .filter(s => {
+        const sEpNum = getEpNum(s.episode);
+        return sEpNum === targetEpNum || String(s.episode).toLowerCase() === String(episode).toLowerCase();
+      })
+      .map(s => ({
+        slug: matchedSlug,
+        server: s.server,
+        episode: s.episode,
+        streamUrl: s.streamUrl,
+        referer: s.referer,
+        updatedAt: s.updatedAt || streamDoc.updatedAt
+      }));
 
     return json(res, { ok: true, movie: bestMovie, streams });
   } catch (err) {

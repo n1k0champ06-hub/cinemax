@@ -379,58 +379,82 @@ async function startBackgroundSync(source, limitPages = 2, customUrl = '') {
         }
 
         // Lưu thông tin phim vào bộ sưu tập movies
+        const isMatched = !!aiData.resolved.tmdb_id;
         const updateDoc = {
           title: aiData.resolved.titleVi || movie.name,
           originTitle: aiData.resolved.title || movie.origin_name,
           slug: movie.slug,
-          thumbUrl: movie.thumb_url,
-          posterUrl: movie.poster_url,
           type: movie.type || 'series',
           status: movie.status || 'ongoing',
           year: aiData.resolved.year || movie.year || new Date().getFullYear(),
-          content: movie.content || '',
-          category: Array.isArray(movie.category) ? movie.category.map(c => c.name || c) : [],
-          actor: Array.isArray(movie.actor) ? movie.actor.map(a => a.name || a) : [],
-          director: Array.isArray(movie.director) ? movie.director.map(d => d.name || d) : [],
           tmdbId: aiData.resolved.tmdb_id || null,
           updatedAt: new Date()
         };
 
-        if (aiData.embedding) {
-          updateDoc.embedding = aiData.embedding;
+        if (!isMatched) {
+          updateDoc.thumbUrl = movie.thumb_url;
+          updateDoc.posterUrl = movie.poster_url;
+          updateDoc.content = movie.content || '';
+          updateDoc.category = Array.isArray(movie.category) ? movie.category.map(c => c.name || c) : [];
+          updateDoc.actor = Array.isArray(movie.actor) ? movie.actor.map(a => a.name || a) : [];
+          updateDoc.director = Array.isArray(movie.director) ? movie.director.map(d => d.name || d) : [];
+          
+          if (aiData.embedding) {
+            updateDoc.embedding = aiData.embedding;
+          }
+        }
+
+        const updateOp = { $set: updateDoc };
+        if (isMatched) {
+          updateOp.$unset = {
+            thumbUrl: "",
+            posterUrl: "",
+            content: "",
+            category: "",
+            actor: "",
+            director: "",
+            embedding: ""
+          };
         }
 
         await moviesCol.updateOne(
           { slug: movie.slug },
-          { $set: updateDoc },
+          updateOp,
           { upsert: true }
         );
 
         // Lưu thông tin luồng phát vào bộ sưu tập streams
         let addedEpisodesCount = 0;
+        const streamsList = [];
         for (const epGroup of episodes) {
           const serverName = epGroup.server_name;
           const serverData = epGroup.server_data || epGroup.items || [];
           for (const ep of serverData) {
             const streamUrl = ep.link_m3u8 || ep.m3u8 || ep.embed || '';
             if (streamUrl) {
-              await streamsCol.updateOne(
-                { slug: movie.slug, server: serverName, episode: ep.name },
-                {
-                  $set: {
-                    title: movie.name,
-                    slug: movie.slug,
-                    server: serverName,
-                    episode: ep.name,
-                    streamUrl: streamUrl,
-                    updatedAt: new Date()
-                  }
-                },
-                { upsert: true }
-              );
+              streamsList.push({
+                server: serverName,
+                episode: String(ep.name),
+                streamUrl: streamUrl,
+                updatedAt: new Date()
+              });
               addedEpisodesCount++;
             }
           }
+        }
+
+        if (streamsList.length > 0) {
+          await db.collection('streams').updateOne(
+            { slug: movie.slug },
+            {
+              $set: {
+                slug: movie.slug,
+                streams: streamsList,
+                updatedAt: new Date()
+              }
+            },
+            { upsert: true }
+          );
         }
 
         addScraperLog(`[${source.toUpperCase()}] Đã đồng bộ phim '${movie.name}' (${addedEpisodesCount} tập).`);
@@ -496,6 +520,157 @@ async function handleLocalScraperStats() {
   }
 }
 
+async function syncSingleAnime(anilistId, job = null) {
+  if (!db) {
+    throw new Error("Chưa kết nối cơ sở dữ liệu MongoDB. Hãy cấu hình MONGODB_URI trong file .env");
+  }
+
+  const moviesCol = db.collection('movies');
+
+  addScraperLog(`[NINIYO] [ID: ${anilistId}] Đang tải thông tin Anime từ AniMapper...`);
+  const metaUrl = `https://api.animapper.net/api/v1/metadata?id=${anilistId}`;
+  const metaRes = await fetch(metaUrl);
+  if (!metaRes.ok) {
+    throw new Error(`Lỗi tải metadata từ AniMapper (HTTP ${metaRes.status})`);
+  }
+
+  const metaData = await metaRes.json();
+  const result = metaData?.result;
+  if (!result) {
+    throw new Error("Không tìm thấy thông tin Anime trên AniMapper");
+  }
+
+  const title = result.titles?.vi || result.titles?.en || result.titles?.ja || "Unknown Title";
+  const originTitle = result.titles?.ja || result.titles?.en || "";
+  const year = result.seasonYear || new Date().getFullYear();
+
+  const slug = `anilist-${anilistId}`;
+
+  addScraperLog(`[NINIYO] [ID: ${anilistId}] Đã nhận diện Anime: ${title} (${originTitle})`);
+
+  const moviePayload = {
+    title,
+    originTitle,
+    slug,
+    type: 'anime',
+    year,
+    source: 'niniyo',
+    updatedAt: new Date()
+  };
+
+  await moviesCol.updateOne(
+    { slug },
+    { 
+      $set: moviePayload,
+      $unset: {
+        thumbUrl: "",
+        posterUrl: "",
+        backdropUrl: "",
+        category: "",
+        actor: "",
+        director: "",
+        content: "",
+        embedding: ""
+      }
+    },
+    { upsert: true }
+  );
+  addScraperLog(`[NINIYO] [ID: ${anilistId}] Đã lưu thông tin Anime '${title}' vào database.`);
+
+  addScraperLog(`[NINIYO] [ID: ${anilistId}] Đang tải danh sách tập phim từ NINIYO...`);
+  const epUrl = `https://api.animapper.net/api/v1/stream/episodes?id=${anilistId}&provider=NINIYO`;
+  const epRes = await fetch(epUrl);
+  if (!epRes.ok) {
+    throw new Error(`Lỗi tải danh sách tập phim (HTTP ${epRes.status})`);
+  }
+
+  const epData = await epRes.json();
+  const episodes = epData.episodes || [];
+  if (episodes.length === 0) {
+    addScraperLog(`[NINIYO] [ID: ${anilistId}] [WARN] Không tìm thấy tập phim nào từ Niniyo cho Anime này.`);
+    return;
+  }
+
+  if (job) {
+    job.total = episodes.length;
+    job.processed = 0;
+  }
+  addScraperLog(`[NINIYO] [ID: ${anilistId}] Tìm thấy ${episodes.length} tập phim. Bắt đầu lấy link stream...`);
+
+  const concurrency = 5;
+  let processedCount = 0;
+  const streamsList = [];
+
+  const worker = async () => {
+    while (episodes.length > 0) {
+      const ep = episodes.shift();
+      if (!ep) break;
+
+      const epNum = ep.episodeNumber;
+      const episodeId = ep.episodeId;
+      const serverName = ep.server || 'Niniyo';
+
+      try {
+        const sourceParams = new URLSearchParams({
+          episodeData: episodeId,
+          provider: 'NINIYO',
+        });
+        if (ep.server) {
+          sourceParams.set('server', ep.server);
+        }
+
+        const sourceUrl = `https://api.animapper.net/api/v1/stream/source?${sourceParams.toString()}`;
+        const sourceRes = await fetch(sourceUrl);
+        if (sourceRes.ok) {
+          const sourceData = await sourceRes.json();
+          if (sourceData && sourceData.url) {
+            const streamUrl = sourceData.url;
+            const referer = sourceData.proxyHeaders?.Referer || sourceData.proxyHeaders?.referer || 'https://animevietsub.page';
+            
+            streamsList.push({
+              server: `Niniyo - ${serverName}`,
+              episode: String(epNum),
+              streamUrl,
+              referer,
+              source: 'niniyo',
+              updatedAt: new Date()
+            });
+          }
+        }
+      } catch (err) {
+        console.error(`[Niniyo Importer] Failed to resolve episode ${epNum}:`, err.message);
+      }
+
+      processedCount++;
+      if (job) job.processed = processedCount;
+      if (processedCount % 5 === 0 || processedCount === (job ? job.total : processedCount)) {
+        addScraperLog(`[NINIYO] [ID: ${anilistId}] Tiến trình: ${processedCount}/${job ? job.total : processedCount} tập đã hoàn tất.`);
+      }
+      
+      await new Promise(r => setTimeout(r, 150));
+    }
+  };
+
+  const workers = Array.from({ length: concurrency }, worker);
+  await Promise.all(workers);
+
+  if (streamsList.length > 0) {
+    await db.collection('streams').updateOne(
+      { slug },
+      {
+        $set: {
+          slug,
+          streams: streamsList,
+          updatedAt: new Date()
+        }
+      },
+      { upsert: true }
+    );
+  }
+
+  addScraperLog(`[NINIYO] [ID: ${anilistId}] Đồng bộ hoàn tất thành công! Đã nạp ${processedCount} tập cho phim '${title}'.`);
+}
+
 async function startAnimeSync(anilistId) {
   if (runningJobs.has('niniyo-' + anilistId)) return;
 
@@ -509,164 +684,95 @@ async function startAnimeSync(anilistId) {
   addScraperLog(`[NINIYO] Bắt đầu cào Anime từ AniList ID ${anilistId}...`);
 
   try {
-    if (!db) {
-      throw new Error("Chưa kết nối cơ sở dữ liệu MongoDB. Hãy cấu hình MONGODB_URI trong file .env");
-    }
-
-    const moviesCol = db.collection('movies');
-    const streamsCol = db.collection('streams');
-
-    addScraperLog(`[NINIYO] Đang tải thông tin Anime từ AniMapper...`);
-    const metaUrl = `https://api.animapper.net/api/v1/metadata?id=${anilistId}`;
-    const metaRes = await fetch(metaUrl);
-    if (!metaRes.ok) {
-      throw new Error(`Lỗi tải metadata từ AniMapper (HTTP ${metaRes.status})`);
-    }
-
-    const metaData = await metaRes.json();
-    const result = metaData?.result;
-    if (!result) {
-      throw new Error("Không tìm thấy thông tin Anime trên AniMapper");
-    }
-
-    const title = result.titles?.vi || result.titles?.en || result.titles?.ja || "Unknown Title";
-    const originTitle = result.titles?.ja || result.titles?.en || "";
-    const description = result.descriptions?.vi || result.descriptions?.en || "";
-    const posterUrl = result.images?.coverLg || result.images?.coverXl || "";
-    const thumbUrl = result.images?.coverMd || posterUrl;
-    const bannerImage = result.images?.bannerUrl || "";
-    const genres = (result.genres || []).map(g => g.name || g);
-    const year = result.seasonYear || new Date().getFullYear();
-
-    const slug = `anilist-${anilistId}`;
-
-    addScraperLog(`[NINIYO] Đã nhận diện Anime: ${title} (${originTitle})`);
-
-    let embedding = null;
-    try {
-      const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-      if (GEMINI_API_KEY) {
-        const textToEmbed = `${title} (${originTitle} - ${year}). Thể loại: ${genres.join(', ')}. Nội dung: ${description}`.slice(0, 1000);
-        embedding = await getGeminiEmbedding(textToEmbed);
-      }
-    } catch (err) {
-      console.warn('[Niniyo Importer] Lỗi tạo embedding:', err.message);
-    }
-
-    const moviePayload = {
-      title,
-      originTitle,
-      slug,
-      type: 'anime',
-      thumbUrl,
-      posterUrl,
-      backdropUrl: bannerImage,
-      year,
-      status: result.status || 'completed',
-      category: ['Hoạt Hình', 'Anime', ...genres],
-      actor: [],
-      director: [],
-      content: description,
-      source: 'niniyo',
-      updatedAt: new Date()
-    };
-    if (embedding) moviePayload.embedding = embedding;
-
-    await moviesCol.updateOne(
-      { slug },
-      { $set: moviePayload },
-      { upsert: true }
-    );
-    addScraperLog(`[NINIYO] Đã lưu thông tin Anime '${title}' vào database.`);
-
-    addScraperLog(`[NINIYO] Đang tải danh sách tập phim từ provider NINIYO...`);
-    const epUrl = `https://api.animapper.net/api/v1/stream/episodes?id=${anilistId}&provider=NINIYO`;
-    const epRes = await fetch(epUrl);
-    if (!epRes.ok) {
-      throw new Error(`Lỗi tải danh sách tập phim (HTTP ${epRes.status})`);
-    }
-
-    const epData = await epRes.json();
-    const episodes = epData.episodes || [];
-    if (episodes.length === 0) {
-      addScraperLog(`[NINIYO] [WARN] Không tìm thấy tập phim nào từ Niniyo cho Anime này.`);
-      return;
-    }
-
-    job.total = episodes.length;
-    addScraperLog(`[NINIYO] Tìm thấy ${episodes.length} tập phim. Bắt đầu lấy link stream...`);
-
-    const concurrency = 5;
-    let processedCount = 0;
-
-    const worker = async () => {
-      while (episodes.length > 0) {
-        const ep = episodes.shift();
-        if (!ep) break;
-
-        const epNum = ep.episodeNumber;
-        const episodeId = ep.episodeId;
-        const serverName = ep.server || 'Niniyo';
-
-        try {
-          const sourceParams = new URLSearchParams({
-            episodeData: episodeId,
-            provider: 'NINIYO',
-          });
-          if (ep.server) {
-            sourceParams.set('server', ep.server);
-          }
-
-          const sourceUrl = `https://api.animapper.net/api/v1/stream/source?${sourceParams.toString()}`;
-          const sourceRes = await fetch(sourceUrl);
-          if (sourceRes.ok) {
-            const sourceData = await sourceRes.json();
-            if (sourceData && sourceData.url) {
-              const streamUrl = sourceData.url;
-              const referer = sourceData.proxyHeaders?.Referer || sourceData.proxyHeaders?.referer || 'https://animevietsub.page';
-              
-              await streamsCol.updateOne(
-                { slug, server: `Niniyo - ${serverName}`, episode: String(epNum) },
-                {
-                  $set: {
-                    title: `${title} - Tập ${epNum}`,
-                    slug,
-                    server: `Niniyo - ${serverName}`,
-                    episode: String(epNum),
-                    streamUrl,
-                    referer,
-                    source: 'niniyo',
-                    updatedAt: new Date()
-                  }
-                },
-                { upsert: true }
-              );
-            }
-          }
-        } catch (err) {
-          console.error(`[Niniyo Importer] Failed to resolve episode ${epNum}:`, err.message);
-        }
-
-        processedCount++;
-        job.processed = processedCount;
-        if (processedCount % 5 === 0 || processedCount === job.total) {
-          addScraperLog(`[NINIYO] Tiến trình: ${processedCount}/${job.total} tập đã hoàn tất.`);
-        }
-        
-        await new Promise(r => setTimeout(r, 150));
-      }
-    };
-
-    const workers = Array.from({ length: concurrency }, worker);
-    await Promise.all(workers);
-
-    addScraperLog(`[NINIYO] Đồng bộ hoàn tất thành công! Đã nạp ${processedCount} tập cho phim '${title}'.`);
-
+    await syncSingleAnime(anilistId, job);
   } catch (err) {
-    addScraperLog(`[NINIYO] [ERROR] Lỗi đồng bộ: ${err.message}`);
+    addScraperLog(`[NINIYO] [ERROR] Lỗi đồng bộ ID ${anilistId}: ${err.message}`);
     console.error(err);
   } finally {
     runningJobs.delete('niniyo-' + anilistId);
+  }
+}
+
+async function startBulkAnimeSync(limit = 20) {
+  if (runningJobs.has('niniyo')) return;
+
+  const job = {
+    source: 'niniyo',
+    processed: 0,
+    total: limit,
+    task: `Đồng bộ hàng loạt ${limit} Anime Hot`
+  };
+  runningJobs.set('niniyo', job);
+  addScraperLog(`[NINIYO] Bắt đầu đồng bộ hàng loạt ${limit} Anime Hot từ AniList...`);
+
+  try {
+    const query = `
+    query ($page: Int, $perPage: Int) {
+      Page (page: $page, perPage: $perPage) {
+        media (type: ANIME, sort: TRENDING_DESC) {
+          id
+          title {
+            romaji
+            english
+            native
+          }
+        }
+      }
+    }
+    `;
+
+    const res = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        query: query,
+        variables: {
+          page: 1,
+          perPage: limit
+        }
+      })
+    });
+
+    if (!res.ok) {
+      throw new Error(`Lỗi tải danh sách AniList (HTTP ${res.status})`);
+    }
+
+    const json = await res.json();
+    const mediaList = json?.data?.Page?.media || [];
+    addScraperLog(`[NINIYO] Tìm thấy ${mediaList.length} Anime Hot cần cào.`);
+    job.total = mediaList.length;
+
+    for (let i = 0; i < mediaList.length; i++) {
+      if (!runningJobs.has('niniyo')) {
+        addScraperLog(`[NINIYO] Dừng đồng bộ hàng loạt bởi người dùng.`);
+        break;
+      }
+
+      const m = mediaList[i];
+      const anilistId = m.id;
+      const title = m.title.english || m.title.romaji || m.title.native;
+
+      addScraperLog(`[NINIYO] [${i+1}/${mediaList.length}] Đang cào Anime: ${title} (ID: ${anilistId})...`);
+      
+      try {
+        await syncSingleAnime(anilistId, null);
+      } catch (singleErr) {
+        addScraperLog(`[NINIYO] [${i+1}/${mediaList.length}] [WARN] Không cào được Anime ID ${anilistId}: ${singleErr.message}`);
+      }
+
+      job.processed = i + 1;
+      await new Promise(r => setTimeout(r, 1000));
+    }
+
+    addScraperLog(`[NINIYO] Hoàn tất đồng bộ hàng loạt Anime!`);
+  } catch (err) {
+    addScraperLog(`[NINIYO] [ERROR] Lỗi đồng bộ hàng loạt: ${err.message}`);
+    console.error(err);
+  } finally {
+    runningJobs.delete('niniyo');
   }
 }
 
@@ -736,39 +842,42 @@ async function handleLocalScraperStart(searchParams) {
   const customUrl = searchParams.get('customUrl') || '';
   
   if (source === 'all') {
-    const activeSources = ['kkphim', 'ophim', 'nguonc'];
+    const activeSources = ['kkphim', 'ophim', 'nguonc', 'niniyo'];
     let startedCount = 0;
     
     for (const src of activeSources) {
-      if (!runningJobs.has(src)) {
-        let defaultUrl = '';
-        if (src === 'kkphim') defaultUrl = 'https://phimapi.com';
-        else if (src === 'nguonc') defaultUrl = 'https://phim.nguonc.com/api';
-        else defaultUrl = 'https://ophim1.com';
-        
-        startBackgroundSync(src, limit, defaultUrl);
+      const isJobRunning = src === 'niniyo' ? runningJobs.has('niniyo') : runningJobs.has(src);
+      if (!isJobRunning) {
+        if (src === 'niniyo') {
+          startBulkAnimeSync(limit === 9999 ? 50 : 20);
+        } else {
+          let defaultUrl = '';
+          if (src === 'kkphim') defaultUrl = 'https://phimapi.com';
+          else if (src === 'nguonc') defaultUrl = 'https://phim.nguonc.com/api';
+          else defaultUrl = 'https://ophim1.com';
+          
+          startBackgroundSync(src, limit, defaultUrl);
+        }
         startedCount++;
       }
     }
     
     if (startedCount === 0) {
-      return new Response(JSON.stringify({ error: 'Tất cả 3 nguồn đều đang chạy rồi.' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ error: 'Tất cả các nguồn đều đang chạy rồi.' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
     
     return new Response(JSON.stringify({ ok: true, message: `Đã kích hoạt song song ${startedCount} nguồn chạy ngầm.` }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
-  if (runningJobs.has(source)) {
-    return new Response(JSON.stringify({ error: `Nguồn ${source.toUpperCase()} đang được đồng bộ. Vui lòng chờ hoàn thành.` }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-  }
-
   if (source === 'python') {
+    if (runningJobs.has(source)) {
+      return new Response(JSON.stringify({ error: `Nguồn ${source.toUpperCase()} đang được đồng bộ. Vui lòng chờ hoàn thành.` }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
     const tmdbId = searchParams.get('tmdb_id');
     const title = searchParams.get('title');
     if (!tmdbId || !title) {
       return new Response(JSON.stringify({ error: 'Thiếu TMDB ID hoặc Tiêu đề phim' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
-    // Chạy nền kịch bản Python
     runPythonScraper(tmdbId, title);
     return new Response(JSON.stringify({ ok: true, message: 'Đã kích hoạt kịch bản Python Scrapling chạy ngầm.' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
@@ -776,16 +885,25 @@ async function handleLocalScraperStart(searchParams) {
   if (source === 'niniyo') {
     const anilistId = searchParams.get('anilist_id');
     if (!anilistId) {
-      return new Response(JSON.stringify({ error: 'Thiếu AniList ID' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      if (runningJobs.has('niniyo')) {
+        return new Response(JSON.stringify({ error: 'Đang chạy đồng bộ hàng loạt Anime rồi.' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
+      startBulkAnimeSync(limit === 9999 ? 50 : 20);
+      return new Response(JSON.stringify({ ok: true, message: 'Đã kích hoạt đồng bộ hàng loạt Anime Hot chạy ngầm.' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
-    // Chạy nền cào Anime Niniyo
+    
+    if (runningJobs.has('niniyo-' + anilistId)) {
+      return new Response(JSON.stringify({ error: `Đang cào Anime ID ${anilistId} rồi.` }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
     startAnimeSync(anilistId);
     return new Response(JSON.stringify({ ok: true, message: `Đã kích hoạt cào Anime từ AniList ID ${anilistId} chạy ngầm.` }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
-  // Chạy nền
-  startBackgroundSync(source, limit, customUrl);
+  if (runningJobs.has(source)) {
+    return new Response(JSON.stringify({ error: `Nguồn ${source.toUpperCase()} đang được đồng bộ. Vui lòng chờ hoàn thành.` }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+  }
 
+  startBackgroundSync(source, limit, customUrl);
   return new Response(JSON.stringify({ ok: true, message: 'Đã kích hoạt máy đào chạy ngầm.' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
@@ -925,9 +1043,10 @@ async function handleLocalScraperGetStreams(searchParams) {
       return new Response(JSON.stringify({ streams: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
-    const streams = await db.collection('streams').find({
+    const streamDoc = await db.collection('streams').findOne({
       slug: matchedSlug
-    }).toArray();
+    });
+    const rawStreams = (streamDoc && Array.isArray(streamDoc.streams)) ? streamDoc.streams : [];
 
     const getEpNum = (str) => {
       const num = String(str).toLowerCase().replace(/\D/g, '');
@@ -935,10 +1054,19 @@ async function handleLocalScraperGetStreams(searchParams) {
     };
     const targetEpNum = getEpNum(episode);
 
-    const matchedStreams = streams.filter(s => {
-      const sEpNum = getEpNum(s.episode);
-      return sEpNum === targetEpNum || String(s.episode).toLowerCase() === String(episode).toLowerCase();
-    });
+    const matchedStreams = rawStreams
+      .filter(s => {
+        const sEpNum = getEpNum(s.episode);
+        return sEpNum === targetEpNum || String(s.episode).toLowerCase() === String(episode).toLowerCase();
+      })
+      .map(s => ({
+        slug: matchedSlug,
+        server: s.server,
+        episode: s.episode,
+        streamUrl: s.streamUrl,
+        referer: s.referer,
+        updatedAt: s.updatedAt || streamDoc.updatedAt
+      }));
 
     return new Response(JSON.stringify({
       ok: true,

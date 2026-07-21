@@ -147,12 +147,12 @@ export default function ScraperDashboard() {
 
   const handleRunAnimeScraper = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!animeAnilistId) return;
     setLoading(true);
     try {
-      const res = await fetch(`http://localhost:3001/api/admin/scraper/start?source=niniyo&anilist_id=${animeAnilistId}`, {
-        method: 'POST'
-      });
+      const url = animeAnilistId 
+        ? `http://localhost:3001/api/admin/scraper/start?source=niniyo&anilist_id=${animeAnilistId}`
+        : `http://localhost:3001/api/admin/scraper/start?source=niniyo`;
+      const res = await fetch(url, { method: 'POST' });
       if (res.ok) {
         setAnimeAnilistId('');
         fetchStats();
@@ -420,10 +420,14 @@ export default function ScraperDashboard() {
 
                 <button
                   type="submit"
-                  disabled={loading || !animeAnilistId}
-                  className="w-full bg-zinc-950 hover:bg-zinc-900 border border-zinc-900 text-zinc-300 font-bold py-1.5 rounded-lg text-xs font-mono tracking-wider transition-all cursor-pointer disabled:opacity-50"
+                  disabled={loading}
+                  className={`w-full border font-bold py-1.5 rounded-lg text-xs font-mono tracking-wider transition-all cursor-pointer disabled:opacity-50 ${
+                    animeAnilistId 
+                      ? 'bg-emerald-950/20 border-emerald-900 text-emerald-400 hover:bg-emerald-900/20' 
+                      : 'bg-zinc-950 hover:bg-zinc-900 border-zinc-900 text-zinc-300'
+                  }`}
                 >
-                  BẮT ĐẦU ĐÀO ANIME
+                  {animeAnilistId ? 'ĐÀO ANIME THEO ID' : 'ĐỒNG BỘ 20 ANIME HOT'}
                 </button>
               </form>
 

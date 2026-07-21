@@ -95,3 +95,8 @@ a, button, [role="button"], [tabindex] {
     transition: none;
   }
 }
+
+/* Utility cho JS toggle — đảm bảo override đúng khi dùng classList */
+body.overflow-hidden {
+  overflow: hidden !important;
+}
