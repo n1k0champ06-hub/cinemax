@@ -4314,15 +4314,30 @@ async function handleXem20Proxy(request, url) {
       const watchUrl = `https://xem20.net/xem-phim/${epSlug}`;
       const wRes = await fetch(watchUrl, { headers });
       const wHtml = await wRes.text();
+
+      // Strategy 1: JW Player inline setup (new xem20 format)
+      // e.g. jwplayer("my-video").setup({ file: "https://....m3u8", ... })
+      const jwFileMatch = wHtml.match(/file\s*:\s*["'](https?:\/\/[^"']+\.m3u8[^"']*)/i);
+      if (jwFileMatch) {
+        return jsonResponse({ m3u8Url: jwFileMatch[1] });
+      }
+
+      // Strategy 2: m3u8 URL anywhere in page HTML (backup)
+      const directM3u8Match = wHtml.match(/(https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)/i);
+      if (directM3u8Match) {
+        return jsonResponse({ m3u8Url: directM3u8Match[1] });
+      }
+
+      // Strategy 3: Legacy iframe → fetch player page (old xem20 format)
       const iframeMatch = wHtml.match(/<iframe[^>]+data-src="([^"]+)"/i) || wHtml.match(/<iframe[^>]+src="([^"]+)"/i);
-      if (!iframeMatch) throw new Error("Iframe not found");
+      if (!iframeMatch) throw new Error("m3u8 and iframe not found in watch page");
       const playerUrl = iframeMatch[1];
 
       const pRes = await fetch(playerUrl, { headers: { 'Referer': 'https://xem20.net/', 'User-Agent': headers['User-Agent'] }});
       const pHtml = await pRes.text();
-      const m3u8Match = pHtml.match(/(https:\/\/[^"']+\.m3u8[^"']*)/i);
+      const m3u8Match = pHtml.match(/(https?:\/\/[^"']+\.m3u8[^"']*)/i);
       if (!m3u8Match) throw new Error("m3u8 not found in player");
-      
+
       return jsonResponse({ m3u8Url: m3u8Match[1] });
     }
     throw new Error("Invalid action");

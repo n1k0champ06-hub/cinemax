@@ -295,6 +295,8 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   const [progressMap,  setProgressMap]  = useState<Record<string, any>>({});
   const [episodeProgressMap, setEpisodeProgressMap] = useState<Record<string, any>>({});
   const [activeSourceTab, setActiveSourceTab] = useState<'vi' | 'vip' | 'comm'>('vi');
+  const [hoverTime, setHoverTime] = useState<number | null>(null);
+  const [hoverX, setHoverX] = useState<number>(0);
 
   const resolvedUrl = useMemo(() =>
     activeStream?.type === 'hls' ? activeStream.url : url,
@@ -587,6 +589,19 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       if (panelOpen === 'none') setShowControls(false);
     }, 4500);
   }, [panelOpen]);
+
+  const handleSeekMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percent = Math.max(0, Math.min(1, x / rect.width));
+    setHoverTime(percent * duration);
+    setHoverX(x);
+  }, [duration]);
+
+  const handleSeekMouseLeave = useCallback(() => {
+    setHoverTime(null);
+  }, []);
 
   useEffect(() => { resetControls(); return () => { if (timerRef.current) clearTimeout(timerRef.current); }; }, [resetControls]);
 
@@ -1075,7 +1090,11 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                     <div className="pointer-events-none flex flex-col gap-0 px-3 sm:px-6 pb-3 sm:pb-5 pt-10 sm:pt-16 bg-gradient-to-t from-black/95 via-black/70 to-transparent z-40">
                       {/* Seek bar */}
                       {!isEmbed && (
-                        <div className="pointer-events-auto relative w-full h-4 sm:h-5 flex items-center group/seek mb-1 cursor-pointer">
+                        <div 
+                          onMouseMove={handleSeekMouseMove}
+                          onMouseLeave={handleSeekMouseLeave}
+                          className="pointer-events-auto relative w-full h-4 sm:h-5 flex items-center group/seek mb-1 cursor-pointer"
+                        >
                           <div className="absolute left-0 h-1 group-hover/seek:h-2 bg-white/20 rounded-full transition-all duration-150" style={{ width: `${buffered}%` }} />
                           <div className="absolute left-0 h-1 group-hover/seek:h-2 bg-[#E50914] rounded-full transition-all duration-150 pointer-events-none" style={{ width: `${progress}%` }}>
                             <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-[#E50914] shadow-[0_0_10px_#E50914] opacity-0 group-hover/seek:opacity-100 transition-all transform group-hover/seek:scale-110" />
@@ -1084,6 +1103,17 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                           <input type="range" min="0" max={duration || 0} step="0.5" value={currentTime}
                             onChange={handleSeekBar} onClick={e => e.stopPropagation()}
                             className="absolute inset-0 w-full opacity-0 cursor-pointer h-full z-10" />
+                          
+                          {hoverTime !== null && (
+                            <div 
+                              className="absolute bottom-6 px-2 py-1.5 bg-[#0a0a0d]/98 border border-white/10 rounded-md text-[11px] font-bold text-white shadow-xl pointer-events-none select-none font-mono z-50 transform -translate-x-1/2 flex flex-col items-center"
+                              style={{ left: `${hoverX}px` }}
+                            >
+                              <span>{formatTime(hoverTime)}</span>
+                              {/* Little arrow at bottom */}
+                              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0a0a0d] rotate-45 border-r border-b border-white/10" />
+                            </div>
+                          )}
                         </div>
                       )}
 
