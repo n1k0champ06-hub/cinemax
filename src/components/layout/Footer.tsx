@@ -38,9 +38,14 @@ export const Footer = () => {
           <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto mt-3 sm:mt-0">
             <button
               onClick={() => (window as any).triggerPWAInstall?.()}
-              className="bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 hover:border-emerald-500/50 text-emerald-400 px-4 py-2 sm:py-1.5 rounded-full text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-300 hover:scale-[1.02] active:scale-95 cursor-pointer shadow-md"
+              className="bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 hover:border-emerald-500/50 text-emerald-400 px-4 py-2 sm:py-1.5 rounded-full text-xs font-bold flex items-center justify-center gap-2 transition-all duration-300 hover:scale-[1.02] active:scale-95 cursor-pointer shadow-md"
             >
-              <span>📱 Tải App Cinemax</span>
+              <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="5" y="2" width="14" height="20" rx="3" />
+                <path d="M12 7v7" />
+                <path d="m9 11 3 3 3-3" />
+              </svg>
+              <span>Tải App Cinemax</span>
             </button>
 
             <a
