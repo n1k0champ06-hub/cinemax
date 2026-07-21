@@ -31,27 +31,32 @@ export const PWAInstallModal: React.FC = () => {
       e.preventDefault();
       setDeferredPrompt(e);
 
-      // Check if user dismissed prompt recently (within 3 days)
-      const dismissedTime = localStorage.getItem('cinemax_pwa_dismissed_time');
-      if (!dismissedTime || (Date.now() - parseInt(dismissedTime, 10) > 3 * 24 * 60 * 60 * 1000)) {
-        // Delay popup by 4 seconds after page load for smooth onboarding
-        const timer = setTimeout(() => setIsOpen(true), 4000);
+      // Show popup ONCE for first-time visitors / users who haven't seen it yet
+      const hasPrompted = localStorage.getItem('cinemax_pwa_has_prompted');
+      if (!hasPrompted) {
+        const timer = setTimeout(() => {
+          setIsOpen(true);
+          localStorage.setItem('cinemax_pwa_has_prompted', 'true');
+        }, 3000);
         return () => clearTimeout(timer);
       }
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
-    // Also trigger for iOS Safari if not dismissed and not standalone
+    // Also trigger for iOS Safari if not prompted yet and not standalone
     if (ios && !window.matchMedia('(display-mode: standalone)').matches) {
-      const dismissedTime = localStorage.getItem('cinemax_pwa_dismissed_time');
-      if (!dismissedTime || (Date.now() - parseInt(dismissedTime, 10) > 3 * 24 * 60 * 60 * 1000)) {
-        const timer = setTimeout(() => setIsOpen(true), 5000);
+      const hasPrompted = localStorage.getItem('cinemax_pwa_has_prompted');
+      if (!hasPrompted) {
+        const timer = setTimeout(() => {
+          setIsOpen(true);
+          localStorage.setItem('cinemax_pwa_has_prompted', 'true');
+        }, 4000);
         return () => clearTimeout(timer);
       }
     }
 
-    // Register global trigger so any button (Footer, Settings) can open this modal
+    // Register global trigger so any button (Footer, UserGuideModal) can open this modal
     (window as any).triggerPWAInstall = () => setIsOpen(true);
 
     return () => {
@@ -61,6 +66,7 @@ export const PWAInstallModal: React.FC = () => {
   }, []);
 
   const handleInstallClick = async () => {
+    localStorage.setItem('cinemax_pwa_has_prompted', 'true');
     if (deferredPrompt) {
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
@@ -73,7 +79,7 @@ export const PWAInstallModal: React.FC = () => {
   };
 
   const handleDismiss = () => {
-    localStorage.setItem('cinemax_pwa_dismissed_time', Date.now().toString());
+    localStorage.setItem('cinemax_pwa_has_prompted', 'true');
     setIsOpen(false);
   };
 
@@ -87,7 +93,7 @@ export const PWAInstallModal: React.FC = () => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md select-none"
+          className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md select-none"
           onClick={handleDismiss}
         >
           <motion.div
@@ -95,7 +101,7 @@ export const PWAInstallModal: React.FC = () => {
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
             transition={{ type: 'spring', stiffness: 260, damping: 25 }}
-            className="relative w-full max-w-md bg-[#0d0d12]/95 border border-white/15 rounded-3xl p-6 sm:p-7 shadow-[0_25px_70px_rgba(0,0,0,0.9)] overflow-hidden"
+            className="relative w-full max-w-md bg-[#0d0d12]/95 border border-white/15 rounded-3xl p-6 sm:p-7 shadow-[0_25px_70px_rgba(0,0,0,0.9)] overflow-hidden text-left"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Ambient Background Gradient Glow */}
