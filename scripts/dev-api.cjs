@@ -693,22 +693,27 @@ async function startAnimeSync(anilistId) {
   }
 }
 
-async function startBulkAnimeSync(limit = 20) {
+async function startBulkAnimeSync(limitPages = 5) {
   if (runningJobs.has('niniyo')) return;
+
+  const maxPages = limitPages === 9999 ? 50 : Math.min(Math.max(1, limitPages), 50);
 
   const job = {
     source: 'niniyo',
     processed: 0,
-    total: limit,
-    task: `Đồng bộ hàng loạt ${limit} Anime Hot`
+    total: 0,
+    task: `Đồng bộ hàng loạt Anime (Tối đa ${maxPages} trang)`
   };
   runningJobs.set('niniyo', job);
-  addScraperLog(`[NINIYO] Bắt đầu đồng bộ hàng loạt ${limit} Anime Hot từ AniList...`);
+  addScraperLog(`[NINIYO] Bắt đầu đồng bộ hàng loạt Anime (${maxPages} trang) từ AniList...`);
 
   try {
     const query = `
     query ($page: Int, $perPage: Int) {
       Page (page: $page, perPage: $perPage) {
+        pageInfo {
+          hasNextPage
+        }
         media (type: ANIME, sort: TRENDING_DESC) {
           id
           title {
@@ -721,53 +726,72 @@ async function startBulkAnimeSync(limit = 20) {
     }
     `;
 
-    const res = await fetch('https://graphql.anilist.co', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify({
-        query: query,
-        variables: {
-          page: 1,
-          perPage: limit
-        }
-      })
-    });
+    let totalProcessed = 0;
 
-    if (!res.ok) {
-      throw new Error(`Lỗi tải danh sách AniList (HTTP ${res.status})`);
-    }
-
-    const json = await res.json();
-    const mediaList = json?.data?.Page?.media || [];
-    addScraperLog(`[NINIYO] Tìm thấy ${mediaList.length} Anime Hot cần cào.`);
-    job.total = mediaList.length;
-
-    for (let i = 0; i < mediaList.length; i++) {
+    for (let page = 1; page <= maxPages; page++) {
       if (!runningJobs.has('niniyo')) {
         addScraperLog(`[NINIYO] Dừng đồng bộ hàng loạt bởi người dùng.`);
         break;
       }
 
-      const m = mediaList[i];
-      const anilistId = m.id;
-      const title = m.title.english || m.title.romaji || m.title.native;
+      addScraperLog(`[NINIYO] Đang tải danh sách Anime trang ${page}/${maxPages}...`);
 
-      addScraperLog(`[NINIYO] [${i+1}/${mediaList.length}] Đang cào Anime: ${title} (ID: ${anilistId})...`);
-      
-      try {
-        await syncSingleAnime(anilistId, null);
-      } catch (singleErr) {
-        addScraperLog(`[NINIYO] [${i+1}/${mediaList.length}] [WARN] Không cào được Anime ID ${anilistId}: ${singleErr.message}`);
+      const res = await fetch('https://graphql.anilist.co', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          query: query,
+          variables: {
+            page: page,
+            perPage: 50
+          }
+        })
+      });
+
+      if (!res.ok) {
+        addScraperLog(`[NINIYO] [WARN] Lỗi tải trang ${page} AniList (HTTP ${res.status}).`);
+        break;
       }
 
-      job.processed = i + 1;
-      await new Promise(r => setTimeout(r, 1000));
+      const json = await res.json();
+      const mediaList = json?.data?.Page?.media || [];
+      const hasNextPage = json?.data?.Page?.pageInfo?.hasNextPage;
+
+      if (mediaList.length === 0) break;
+
+      job.total += mediaList.length;
+      addScraperLog(`[NINIYO] Trang ${page}: Tìm thấy ${mediaList.length} Anime cần cào.`);
+
+      for (let i = 0; i < mediaList.length; i++) {
+        if (!runningJobs.has('niniyo')) {
+          addScraperLog(`[NINIYO] Dừng đồng bộ hàng loạt bởi người dùng.`);
+          break;
+        }
+
+        const m = mediaList[i];
+        const anilistId = m.id;
+        const title = m.title.english || m.title.romaji || m.title.native;
+
+        addScraperLog(`[NINIYO] [Trang ${page} - ${i+1}/${mediaList.length}] Đang cào Anime: ${title} (ID: ${anilistId})...`);
+        
+        try {
+          await syncSingleAnime(anilistId, null);
+        } catch (singleErr) {
+          addScraperLog(`[NINIYO] [WARN] Không cào được Anime ID ${anilistId}: ${singleErr.message}`);
+        }
+
+        totalProcessed++;
+        job.processed = totalProcessed;
+        await new Promise(r => setTimeout(r, 600));
+      }
+
+      if (!hasNextPage) break;
     }
 
-    addScraperLog(`[NINIYO] Hoàn tất đồng bộ hàng loạt Anime!`);
+    addScraperLog(`[NINIYO] Hoàn tất đồng bộ hàng loạt Anime (${totalProcessed} bộ phim)!`);
   } catch (err) {
     addScraperLog(`[NINIYO] [ERROR] Lỗi đồng bộ hàng loạt: ${err.message}`);
     console.error(err);

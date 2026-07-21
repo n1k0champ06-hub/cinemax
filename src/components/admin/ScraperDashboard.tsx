@@ -427,7 +427,7 @@ export default function ScraperDashboard() {
                       : 'bg-zinc-950 hover:bg-zinc-900 border-zinc-900 text-zinc-300'
                   }`}
                 >
-                  {animeAnilistId ? 'ĐÀO ANIME THEO ID' : 'ĐỒNG BỘ 20 ANIME HOT'}
+                  {animeAnilistId ? 'ĐÀO ANIME THEO ID' : 'ĐỒNG BỘ TOÀN BỘ ANIME HOT'}
                 </button>
               </form>
 

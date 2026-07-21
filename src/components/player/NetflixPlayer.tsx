@@ -493,7 +493,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       if (hls) { try { hls.detachMedia(); hls.destroy(); } catch {} hlsRef.current = null; }
       try { video.pause(); video.currentTime = 0; video.removeAttribute('src'); video.load(); } catch {}
     };
-  }, [resolvedUrl, slug, episodeName, serializedHeaders, activeStream?.category]);
+  }, [resolvedUrl, slug, episodeName, serializedHeaders, activeStream?.category, isEmbed, activeStream?.id]);
 
   useEffect(() => {
     if (!slug || !episodeName || !movieName) return;
@@ -1302,7 +1302,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                           : idx === 0;
 
                         return (
-                          <button key={idx} onClick={() => s.url && onStreamSelect?.(s)}
+                          <button key={idx} onClick={() => { if (s.url) { onStreamSelect?.(s); setIsPlaying(true); } }}
                             className={`flex items-center gap-3 text-left w-full cursor-pointer py-2 px-3 rounded-xl transition-all group ${isActive ? 'bg-white/10 border border-white/20' : 'hover:bg-white/5'}`}>
                             <Check size={18} className={isActive ? "text-[#E50914] opacity-100" : "opacity-0"} />
                             <span className={`text-sm sm:text-base truncate ${isActive ? 'text-white font-bold' : 'text-white/70 group-hover:text-white'}`}>
@@ -1479,7 +1479,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                                 {activeList.map((s, idx) => {
                                   const isActive = activeStream?.providerLabel === s.providerLabel && activeStream?.url === s.url;
                                   return (
-                                    <div key={`source-${currentTab}-${idx}`} onClick={() => onStreamSelect?.(s)}
+                                    <div key={`source-${currentTab}-${idx}`} onClick={() => { onStreamSelect?.(s); setIsPlaying(true); }}
                                       className={`flex items-center justify-between p-3 rounded-lg border transition-all cursor-pointer ${isActive ? 'bg-white/10 border-[#E50914] shadow-[0_0_12px_rgba(229,9,20,0.25)]' : 'bg-white/5 border-transparent hover:border-white/20 hover:bg-white/10'}`}>
                                       <div className="flex flex-col min-w-0 pr-2">
                                         <div className="flex items-center gap-2">
