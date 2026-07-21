@@ -17,6 +17,11 @@ export interface ReportPayload {
   userAgent?: string;
   screenResolution?: string;
   timestamp: string;
+  consoleLogs?: string[];
+  networkState?: {
+    online: boolean;
+    effectiveType?: string;
+  };
 }
 
 const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1523007458719694898/Dm7HuW025WgM28TSyqBgR6CMohRVvVBQYVzSiTeL8Kh1cx2P0Q0UO-CRCvbNR2qqDOEf';
@@ -76,6 +81,17 @@ export const sendReportToDiscord = async (payload: ReportPayload): Promise<boole
       playbackText = `⏳ ${formatTime(payload.currentTime)} / ${formatTime(payload.duration)} (${ratio}%)`;
     }
 
+    // Format logs snippet for Discord embed field (max 950 chars)
+    let logsFieldText = '*Không có console logs recorded*';
+    if (payload.consoleLogs && payload.consoleLogs.length > 0) {
+      const recentSnippet = payload.consoleLogs.slice(-8).join('\n');
+      logsFieldText = recentSnippet.length > 950 ? recentSnippet.substring(recentSnippet.length - 950) : recentSnippet;
+    }
+
+    const networkInfo = payload.networkState 
+      ? `Online: ${payload.networkState.online ? '✅' : '❌'}${payload.networkState.effectiveType ? ` (${payload.networkState.effectiveType})` : ''}`
+      : 'N/A';
+
     // Build the Discord fields
     const fields = [
       { name: 'Report ID', value: payload.reportId ? `\`${payload.reportId}\`` : 'N/A', inline: true },
@@ -85,8 +101,10 @@ export const sendReportToDiscord = async (payload: ReportPayload): Promise<boole
       { name: 'Nguồn / Server', value: payload.serverName || 'N/A', inline: true },
       { name: 'Chất lượng', value: payload.quality || 'N/A', inline: true },
       { name: 'Loại luồng', value: payload.streamType ? `\`${payload.streamType}\`` : 'N/A', inline: true },
-      { name: 'Tiến trình', value: playbackText, inline: false },
+      { name: 'Tiến trình', value: playbackText, inline: true },
+      { name: 'Mạng internet', value: networkInfo, inline: true },
       { name: 'Chi tiết lỗi', value: `\`\`\`\n${detailsText}\n\`\`\``, inline: false },
+      { name: '📜 Console Logs Gần Nhất', value: `\`\`\`log\n${logsFieldText}\n\`\`\``, inline: false },
       { name: 'Browser / OS', value: `\`${payload.userAgent || 'Unknown'}\``, inline: false }
     ];
 
@@ -117,8 +135,10 @@ export const sendReportToDiscord = async (payload: ReportPayload): Promise<boole
       client: {
         userAgent: payload.userAgent,
         screen: payload.screenResolution,
-        timestamp: payload.timestamp
-      }
+        timestamp: payload.timestamp,
+        network: payload.networkState
+      },
+      logs: payload.consoleLogs || []
     };
 
     const discordPayload = {
@@ -135,7 +155,7 @@ export const sendReportToDiscord = async (payload: ReportPayload): Promise<boole
         },
         {
           title: '🤖 Agent Context Data (JSON)',
-          description: `\`\`\`json\n${JSON.stringify(agentMetadata, null, 2)}\n\`\`\``,
+          description: `\`\`\`json\n${JSON.stringify(agentMetadata, null, 2)}\n\`\`\``.substring(0, 4000),
           color: 3066993 // Green color indicating structured data
         }
       ]

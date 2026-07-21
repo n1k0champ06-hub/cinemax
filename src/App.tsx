@@ -259,9 +259,25 @@ export default function App() {
     const newUrl = queryString ? `/?${queryString}` : "/";
 
     if (window.location.search !== (queryString ? `?${queryString}` : "")) {
-      window.history.pushState({}, "", newUrl);
+      // Use replaceState when closing movie or search to prevent ghost history entries
+      if (!selectedMovieSlug && !showSearch) {
+        window.history.replaceState({}, "", newUrl);
+      } else {
+        window.history.pushState({}, "", newUrl);
+      }
     }
   }, [currentTab, selectedMovieSlug, showSearch]);
+
+  // Safety fallback: ensure body overflow-hidden is removed whenever no modal/movie detail is active
+  useEffect(() => {
+    if (!selectedMovieSlug && !showSearch && !showUserGuide) {
+      document.body.classList.remove('overflow-hidden');
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'));
+        window.dispatchEvent(new Event('scroll'));
+      });
+    }
+  }, [selectedMovieSlug, showSearch, showUserGuide]);
 
   // Handle browser back / forward buttons
   useEffect(() => {

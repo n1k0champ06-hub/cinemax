@@ -4,6 +4,7 @@ import {
   X, AlertTriangle, Play, Wifi, Subtitles, Volume2, HelpCircle, Loader2, CheckCircle2 
 } from 'lucide-react';
 import { sendReportToDiscord, ReportPayload } from '../../api/reportApi';
+import { getRecentLogs } from '../../lib/loggerBuffer';
 import { cn } from '../../lib/utils';
 
 interface ReportModalProps {
@@ -61,6 +62,9 @@ export const ReportModal: React.FC<ReportModalProps> = ({
 
     const reportId = `rep_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 
+    const nav = typeof navigator !== 'undefined' ? (navigator as any) : null;
+    const connectionType = nav?.connection?.effectiveType || nav?.mozConnection?.effectiveType || nav?.webkitConnection?.effectiveType;
+
     const payload: ReportPayload = {
       reportId,
       movieTitle,
@@ -77,9 +81,14 @@ export const ReportModal: React.FC<ReportModalProps> = ({
       duration,
       errorType,
       errorDetails,
-      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown',
+      userAgent: nav?.userAgent || 'Unknown',
       screenResolution: typeof window !== 'undefined' ? `${window.screen.width}x${window.screen.height}` : 'Unknown',
       timestamp: new Date().toISOString(),
+      consoleLogs: getRecentLogs(30),
+      networkState: {
+        online: nav?.onLine ?? true,
+        effectiveType: connectionType,
+      },
     };
 
     const success = await sendReportToDiscord(payload);
@@ -229,6 +238,10 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                     className="w-full h-20 bg-white/[0.02] hover:bg-white/[0.04] focus:bg-black/50 border border-white/5 focus:border-white/15 rounded-xl p-3 text-xs text-white placeholder-gray-500 outline-none resize-none transition-all duration-200"
                     maxLength={500}
                   />
+                  <div className="flex items-center gap-2 text-[10px] text-gray-400 bg-white/[0.02] border border-white/5 rounded-xl px-3 py-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                    <span>Tự động đính kèm 30 console log &amp; thông số mạng gần nhất để hỗ trợ sửa lỗi nhanh.</span>
+                  </div>
                 </div>
 
                 {status === 'error' && (

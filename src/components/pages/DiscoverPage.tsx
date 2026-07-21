@@ -114,6 +114,23 @@ const ANIME_GENRES = [
   { id: '27', label: 'Shounen' }
 ];
 
+const MAL_TO_TMDB_GENRE: Record<string, string> = {
+  '1': '10759',  // Action
+  '2': '10759',  // Adventure
+  '4': '35',     // Comedy
+  '8': '18',     // Drama
+  '10': '10765', // Fantasy
+  '14': '27',    // Horror
+  '7': '9648',   // Mystery
+  '22': '10749', // Romance
+  '24': '10765', // Sci-Fi
+  '36': '18',    // Slice of Life
+  '19': '10402', // Music
+  '13': '36',    // History
+  '15': '10762', // Kids
+  '27': '10759', // Shounen
+};
+
 const YEARS = [
   { id: 'all', label: 'Mọi năm' },
   { id: '2026', label: 'Năm 2026' },
@@ -287,7 +304,11 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
     // Genres mapping
     let genreId = selectedGenre;
     if (selectedMediaType === 'anime') {
-      genreId = genreId === 'all' ? '16' : `${genreId},16`;
+      const mappedGenre = MAL_TO_TMDB_GENRE[genreId] || genreId;
+      genreId = genreId === 'all' ? '16' : `${mappedGenre},16`;
+      if (selectedCountry === 'all') {
+        params.with_original_language = 'ja';
+      }
     }
     if (genreId !== 'all' && genreId !== '') {
       params.with_genres = genreId;
@@ -295,7 +316,7 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
 
     // Years scaling query
     if (selectedYear !== 'all') {
-      if (selectedYear === '2020s') {
+      if (selectedYear.endsWith('s')) {
         params[`${type === 'movie' ? 'primary_release_date' : 'first_air_date'}.gte`] = '2020-01-01';
         params[`${type === 'movie' ? 'primary_release_date' : 'first_air_date'}.lte`] = '2029-12-31';
       } else if (selectedYear === '2010s') {
@@ -335,100 +356,140 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
     queryKey: ['discover_list', selectedMediaType, selectedSort, selectedGenre, selectedCountry, selectedYear, selectedRating],
     queryFn: async ({ pageParam = 1 }) => {
       if (selectedMediaType === 'anime') {
-        const params: Record<string, string | number> = {
-          page: pageParam,
-          limit: 20
-        };
+        try {
+          const params: Record<string, string | number> = {
+            page: pageParam,
+            limit: 20
+          };
 
-        if (selectedGenre !== 'all') {
-          params.genres = selectedGenre;
-        }
-
-        // Map sorting
-        if (selectedSort === 'popularity.desc') {
-          params.order_by = 'popularity';
-          params.sort = 'desc';
-        } else if (selectedSort === 'release_date.desc') {
-          params.order_by = 'start_date';
-          params.sort = 'desc';
-        } else if (selectedSort === 'vote_average.desc') {
-          params.order_by = 'score';
-          params.sort = 'desc';
-        }
-
-        // Map year
-        if (selectedYear !== 'all') {
-          if (selectedYear.endsWith('s')) {
-            params.year = selectedYear.substring(0, 4);
-          } else {
-            params.year = selectedYear;
+          if (selectedGenre !== 'all') {
+            params.genres = selectedGenre;
           }
-        }
 
-        // Map rating
-        if (selectedRating !== 'all') {
-          params.min_score = selectedRating;
-        }
+          // Map sorting
+          if (selectedSort === 'popularity.desc') {
+            params.order_by = 'popularity';
+            params.sort = 'desc';
+          } else if (selectedSort === 'release_date.desc') {
+            params.order_by = 'start_date';
+            params.sort = 'desc';
+          } else if (selectedSort === 'vote_average.desc') {
+            params.order_by = 'score';
+            params.sort = 'desc';
+          }
 
-        const queryStr = new URLSearchParams(params as any).toString();
-        const response = await fetch(`https://api.jikan.moe/v4/anime?${queryStr}`);
-        if (!response.ok) {
-          throw new Error('Jikan API error');
-        }
-        const data = await response.json();
-        const results = data.data || [];
-        const uniqueAnimes = new Map<string, any>();
-        
-        const cleanTitle = (t: string) => {
-          if (!t) return '';
-          return t.toLowerCase()
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .replace(/[^a-z0-9]/g, '')
-            .trim();
-        };
-
-        results.forEach((item: any) => {
-          const mainTitle = item.title_english || item.title || '';
-          const normTitle = cleanTitle(mainTitle);
-          if (!normTitle) return;
-
-          const existing = uniqueAnimes.get(normTitle);
-          if (!existing) {
-            uniqueAnimes.set(normTitle, item);
-          } else {
-            const isExistingTv = existing.type === 'TV';
-            const isCurrentTv = item.type === 'TV';
-            if (isCurrentTv && !isExistingTv) {
-              uniqueAnimes.set(normTitle, item);
-            } else if (isCurrentTv === isExistingTv) {
-              const existingScore = existing.score || 0;
-              const currentScore = item.score || 0;
-              if (currentScore > existingScore) {
-                uniqueAnimes.set(normTitle, item);
-              }
+          // Map year
+          if (selectedYear !== 'all') {
+            if (selectedYear.endsWith('s')) {
+              params.year = selectedYear.substring(0, 4);
+            } else {
+              params.year = selectedYear;
             }
           }
-        });
 
-        const dedupedResults = Array.from(uniqueAnimes.values());
+          // Map rating
+          if (selectedRating !== 'all') {
+            params.min_score = selectedRating;
+          }
 
-        return {
-          results: dedupedResults.map((item: any) => ({
-            id: item.mal_id ? `jikan-${item.mal_id}` : '',
-            slug: item.mal_id ? `jikan-${item.mal_id}` : '',
-            name: item.title_english || item.title || item.title_japanese,
-            origin_name: item.title || item.title_japanese,
-            poster_url: item.images?.webp?.large_image_url || item.images?.jpg?.large_image_url || null,
-            tmdb: { vote_average: item.score || 0 },
-            year: item.year?.toString() || item.aired?.prop?.from?.year?.toString() || "",
-            media_type: 'anime',
-            isJikan: true,
-            rawAnime: item
-          })),
-          page: pageParam,
-          has_next_page: data.pagination?.has_next_page || false
-        };
+          const queryStr = new URLSearchParams(params as any).toString();
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+          const response = await fetch(`https://api.jikan.moe/v4/anime?${queryStr}`, {
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+
+          if (response.ok) {
+            const data = await response.json();
+            const results = data.data || [];
+            if (results.length > 0) {
+              const uniqueAnimes = new Map<string, any>();
+              
+              const cleanTitle = (t: string) => {
+                if (!t) return '';
+                return t.toLowerCase()
+                  .normalize("NFD")
+                  .replace(/[\u0300-\u036f]/g, "")
+                  .replace(/[^a-z0-9]/g, '')
+                  .trim();
+              };
+
+              results.forEach((item: any) => {
+                const mainTitle = item.title_english || item.title || '';
+                const normTitle = cleanTitle(mainTitle);
+                if (!normTitle) return;
+
+                const existing = uniqueAnimes.get(normTitle);
+                if (!existing) {
+                  uniqueAnimes.set(normTitle, item);
+                } else {
+                  const isExistingTv = existing.type === 'TV';
+                  const isCurrentTv = item.type === 'TV';
+                  if (isCurrentTv && !isExistingTv) {
+                    uniqueAnimes.set(normTitle, item);
+                  } else if (isCurrentTv === isExistingTv) {
+                    const existingScore = existing.score || 0;
+                    const currentScore = item.score || 0;
+                    if (currentScore > existingScore) {
+                      uniqueAnimes.set(normTitle, item);
+                    }
+                  }
+                }
+              });
+
+              const dedupedResults = Array.from(uniqueAnimes.values());
+
+              return {
+                results: dedupedResults.map((item: any) => ({
+                  id: item.mal_id ? `jikan-${item.mal_id}` : '',
+                  slug: item.mal_id ? `jikan-${item.mal_id}` : '',
+                  name: item.title_english || item.title || item.title_japanese,
+                  origin_name: item.title || item.title_japanese,
+                  poster_url: item.images?.webp?.large_image_url || item.images?.jpg?.large_image_url || null,
+                  tmdb: { vote_average: item.score || 0 },
+                  year: item.year?.toString() || item.aired?.prop?.from?.year?.toString() || "",
+                  media_type: 'anime',
+                  isJikan: true,
+                  rawAnime: item
+                })),
+                page: pageParam,
+                has_next_page: data.pagination?.has_next_page || false
+              };
+            }
+          }
+        } catch (err) {
+          console.warn('[DiscoverPage] Jikan API unreachable or timed out. Falling back to TMDB Discover for Anime:', err);
+        }
+
+        // Fallback to TMDB Discover for Anime
+        const activeType = 'tv';
+        const params = buildParams(activeType);
+        const res = await tmdbDiscover(activeType, { ...params, page: pageParam });
+
+        if (res?.results) {
+          return {
+            results: res.results.map((item: any) => {
+              const posterFilename = item.poster_path?.split('/').pop();
+              const backdropFilename = item.backdrop_path?.split('/').pop();
+              return {
+                id: `tmdb-${item.id}-${activeType}`,
+                slug: `tmdb-${item.id}-${activeType}`,
+                name: item.title || item.name,
+                origin_name: item.original_title || item.original_name,
+                poster_url: posterFilename ? `https://image.tmdb.org/t/p/w342/${posterFilename}` : null,
+                thumb_url: backdropFilename ? `https://image.tmdb.org/t/p/w780/${backdropFilename}` : null,
+                tmdb: item,
+                year: (item.release_date || item.first_air_date || '').substring(0, 4),
+                media_type: 'anime'
+              };
+            }),
+            page: pageParam,
+            has_next_page: res.page < res.total_pages
+          };
+        }
+        return { results: [], page: pageParam, has_next_page: false };
       } else {
         let activeType: 'movie' | 'tv' = 'movie';
         if (selectedMediaType === 'tv') {

@@ -851,7 +851,7 @@ export const useMovieDetail = (rawSlug: string) => {
       isSelectingServerRef.current = true;
       prevSlugRef.current = slug;
 
-      const firstFastIdx = servers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && !s.server_name.includes("CinemaOS") && !s.server_name.includes("Hollysheesh"));
+      const firstFastIdx = servers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && !s.server_name.includes("CinemaOS") && !s.server_name.includes("Hollysheesh") && !s.server_name.includes("VidNest") && !s._isVidNest);
       const firstValidIdx = servers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error');
       const nextIdx = firstFastIdx !== -1 ? firstFastIdx : (firstValidIdx !== -1 ? firstValidIdx : 0);
 

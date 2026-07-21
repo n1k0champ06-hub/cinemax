@@ -321,9 +321,9 @@ const MovieDetailContent: React.FC<{
   useEffect(() => {
     if (currentServers && currentServers.length > 0) {
       if (selectedServerId < 0 || selectedServerId >= currentServers.length) {
-        let firstFastIdx = currentServers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && !s.server_name.includes("CinemaOS") && !s.server_name.includes("Hollysheesh"));
+        let firstFastIdx = currentServers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && !s.server_name.includes("CinemaOS") && !s.server_name.includes("Hollysheesh") && !s.server_name.includes("VidNest") && !s._isVidNest);
         if (firstFastIdx === -1) {
-          firstFastIdx = currentServers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && !s.server_name.includes("CinemaOS"));
+          firstFastIdx = currentServers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && !s.server_name.includes("CinemaOS") && !s.server_name.includes("VidNest") && !s._isVidNest);
         }
         if (firstFastIdx !== -1) {
           setSelectedServerId(firstFastIdx);
@@ -464,7 +464,7 @@ const MovieDetailContent: React.FC<{
     const newUrl = queryString ? `/?${queryString}` : "/";
 
     if (window.location.search !== (queryString ? `?${queryString}` : "")) {
-      window.history.pushState({}, "", newUrl);
+      window.history.replaceState({}, "", newUrl);
     }
   }, [isPlaying, activeEp, currentSeason]);
 
@@ -601,7 +601,9 @@ const MovieDetailContent: React.FC<{
           s.server_data?.length > 0 && 
           s.status !== 'empty' && 
           s.status !== 'error' && 
-          !s.server_name.toLowerCase().includes("cinemaos")
+          !s.server_name.toLowerCase().includes("cinemaos") &&
+          !s.server_name.toLowerCase().includes("vidnest") &&
+          !s._isVidNest
         );
       }
       if (targetServerIdx === -1) {
@@ -1905,6 +1907,10 @@ export const MovieDetail: React.FC<{
     document.body.classList.add('overflow-hidden');
     return () => {
       document.body.classList.remove('overflow-hidden');
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'));
+        window.dispatchEvent(new Event('scroll'));
+      });
     };
   }, []);
 
