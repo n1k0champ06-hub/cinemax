@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Play,
@@ -119,15 +119,21 @@ const MovieDetailContent: React.FC<{
   onClose: () => void;
   onSelect: (slug: string) => void;
   initialSeason: number;
+  resolvedPoster: string | null;
+  isDesktop: boolean;
+  isLoading: boolean;
 }> = ({
   movieDetailProps,
   slug,
   onClose,
   onSelect,
   initialSeason,
+  resolvedPoster,
+  isDesktop,
+  isLoading,
 }) => {
   const {
-    data, isLoading, isFetching,
+    data, isLoading: isPropsLoading, isFetching,
     actorsData, imdbRating, metacriticScore, trailerYoutubeId, finalTmdbData, imdbApiData,
     tmdbBackdropUrl: cleanBackdrop, tmdbPosterUrl: cleanPoster,
     activeEp, setActiveEp,
@@ -1014,9 +1020,7 @@ const MovieDetailContent: React.FC<{
     return undefined;
   };
 
-  if (!data?.movie) return null;
-
-  const { movie } = data;
+  const movie = data?.movie;
 
   const currentServer = currentServers[selectedServerId] || currentServers[0];
   const fallbackRawEpList = currentServer?.server_data || [];
@@ -1161,13 +1165,7 @@ const MovieDetailContent: React.FC<{
         </button>
       )}
 
-      {!isPlaying && (
-        <div className="absolute top-0 left-0 w-full h-[60vh] sm:h-[75vh] 2xl:h-[80vh] pointer-events-none">
-            <SafeImage src={bgDetailImg} alt="Hero" className="w-full h-full object-cover object-top opacity-50" />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/80 to-transparent" />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#050505] via-transparent to-transparent" />
-        </div>
-      )}
+      {/* Backdrop image is rendered in parent wrapper component to support layoutId morph transition */}
 
       <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-10 pb-20 pt-[20vh] sm:pt-[25vh] md:pt-[35vh] lg:pt-[45vh] relative z-10 flex flex-col gap-6 sm:gap-8 xl:gap-12">
         
@@ -1275,73 +1273,94 @@ const MovieDetailContent: React.FC<{
                 <div className="hidden md:flex flex-col md:flex-row gap-8 lg:gap-12 w-full mb-16 items-start">
                   {/* Left Column: Poster & Actions */}
                   <div className="w-[280px] sm:w-[320px] md:w-[340px] shrink-0 flex flex-col gap-4">
-                    <SafeImage src={posterUrl} alt="Poster" className="w-full aspect-[2/3] object-cover rounded-xl shadow-[0_20px_40px_rgba(0,0,0,0.8)] border border-white/10" />
-                    
-                    {isTv && (
-                      <div className="flex flex-col sm:flex-row gap-3 w-full">
-                        <div className="flex-1">
-                          <CustomSelect
-                            value={currentSeason || 1}
-                            onChange={(val) => handleSeasonSwitch(Number(val))}
-                            options={filteredSeasons.map((s: any) => ({
-                              label: `Mùa ${s.season_number}`,
-                              value: s.season_number
-                            }))}
-                            className="w-full"
-                          />
-                        </div>
-                        <div className="flex-1">
-                          <CustomSelect
-                            value={(activeEp?.name && (getEpisodeNumber(activeEp.name)?.toString() || activeEp.name.replace("Tập ", ""))) || ""}
-                            onChange={(epName: string) => {
-                               const ep = epList.find((e: any) => isSameEpisode(e.episode_number || e.name, epName));
-                               if (ep) handleSelectEpisode(ep, false);
-                            }}
-                            options={epList.map((ep: any) => {
-                               const n = ep.episode_number ? `${ep.episode_number}` : ep.name.replace("Tập ", "");
-                               return {
-                                 label: `Tập ${n}`,
-                                 value: n
-                               }
-                             })}
-                            className="w-full"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    <button 
-                      onClick={handlePlayOrResume} 
-                      className="w-full bg-[#e50914] hover:bg-[#ff1e24] text-white px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors shadow-lg active:scale-95"
+                    <motion.div
+                      layoutId={isDesktop ? `movie-poster-wrapper-${slug}` : undefined}
+                      className="w-full aspect-[2/3] rounded-xl overflow-hidden shadow-[0_20px_40px_rgba(0,0,0,0.8)] border border-white/10 relative bg-white/5"
+                      transition={{ type: "spring", stiffness: 120, damping: 20 }}
                     >
-                      <Play size={18} fill="currentColor" /> {getDesktopPlayButtonText()}
-                    </button>
-
-                    {trailerYoutubeId && (
-                      <button 
-                        onClick={() => setIsShowingTrailer(true)}
-                        className="w-full bg-transparent border border-white/20 hover:border-white text-white px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors"
-                      >
-                        <Youtube size={18} /> Xem Trailer
-                      </button>
-                    )}
+                      {resolvedPoster ? (
+                        <SafeImage src={resolvedPoster} alt="Poster" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="absolute inset-0 bg-white/5 animate-pulse" />
+                      )}
+                    </motion.div>
                     
-                    <div className="flex gap-3">
-                      <button onClick={handleToggleList} className="flex-1 bg-transparent border border-white/10 hover:bg-white/10 text-white px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors text-sm">
-                         {inList ? <Check size={16} /> : <Plus size={16} />} Lưu Lại
-                      </button>
-                      <button 
-                        onClick={handleShare}
-                        className="flex-1 bg-transparent border border-white/10 hover:bg-white/10 text-white px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors text-sm cursor-pointer"
-                      >
-                         <Share2 size={16} /> Chia Sẻ
-                      </button>
-                    </div>
+                    {isLoading ? (
+                      <div className="flex flex-col gap-3 w-full mt-2 animate-pulse">
+                        <div className="h-12 bg-white/10 rounded-xl w-full" />
+                        <div className="h-12 bg-white/5 rounded-xl w-full" />
+                      </div>
+                    ) : (
+                      <>
+                        {isTv && (
+                          <div className="flex flex-col sm:flex-row gap-3 w-full">
+                            <div className="flex-1">
+                              <CustomSelect
+                                value={currentSeason || 1}
+                                onChange={(val) => handleSeasonSwitch(Number(val))}
+                                options={filteredSeasons.map((s: any) => ({
+                                  label: `Mùa ${s.season_number}`,
+                                  value: s.season_number
+                                }))}
+                                className="w-full"
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <CustomSelect
+                                value={(activeEp?.name && (getEpisodeNumber(activeEp.name)?.toString() || activeEp.name.replace("Tập ", ""))) || ""}
+                                onChange={(epName: string) => {
+                                   const ep = epList.find((e: any) => isSameEpisode(e.episode_number || e.name, epName));
+                                   if (ep) handleSelectEpisode(ep, false);
+                                }}
+                                options={epList.map((ep: any) => {
+                                   const n = ep.episode_number ? `${ep.episode_number}` : ep.name.replace("Tập ", "");
+                                   return {
+                                     label: `Tập ${n}`,
+                                     value: n
+                                   }
+                                 })}
+                                className="w-full"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        <button 
+                          onClick={handlePlayOrResume} 
+                          className="w-full bg-[#e50914] hover:bg-[#ff1e24] text-white px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors shadow-lg active:scale-95"
+                        >
+                          <Play size={18} fill="currentColor" /> {getDesktopPlayButtonText()}
+                        </button>
+
+                        {trailerYoutubeId && (
+                          <button 
+                            onClick={() => setIsShowingTrailer(true)}
+                            className="w-full bg-transparent border border-white/20 hover:border-white text-white px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors"
+                          >
+                            <Youtube size={18} /> Xem Trailer
+                          </button>
+                        )}
+                        
+                        <div className="flex gap-3">
+                          <button onClick={handleToggleList} className="flex-1 bg-transparent border border-white/10 hover:bg-white/10 text-white px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors text-sm">
+                             {inList ? <Check size={16} /> : <Plus size={16} />} Lưu Lại
+                          </button>
+                          <button 
+                            onClick={handleShare}
+                            className="flex-1 bg-transparent border border-white/10 hover:bg-white/10 text-white px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors text-sm cursor-pointer"
+                          >
+                             <Share2 size={16} /> Chia Sẻ
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   {/* Right Column: Title, Metadata, Category, Synopsis, Cast */}
                   <div className="flex-1 flex flex-col justify-start text-left w-full">
-                    {logoUrl ? (
+                    {isLoading ? (
+                      <div className="h-14 sm:h-20 bg-gradient-to-r from-white/10 to-transparent rounded-2xl w-3/4 animate-pulse mb-6" />
+                    ) : logoUrl ? (
                       <SafeImage 
                         src={logoUrl} 
                         alt="Logo" 
@@ -1349,114 +1368,138 @@ const MovieDetailContent: React.FC<{
                       />
                     ) : (
                       <h1 className="text-4xl sm:text-5xl lg:text-7xl font-black text-white leading-[1.1] mb-6 drop-shadow-2xl tracking-tighter">
-                        {finalTmdbData?.name || finalTmdbData?.title || movie.name}
+                        {finalTmdbData?.name || finalTmdbData?.title || movie?.name}
                       </h1>
                     )}
                     
-                    {finalTmdbData?.tagline && (
+                    {!isLoading && finalTmdbData?.tagline && (
                       <p className="text-xl text-gray-400 font-medium italic mb-6">"{finalTmdbData.tagline}"</p>
                     )}
                     
-                    <div className="flex flex-wrap items-center gap-y-3 gap-x-5 text-sm font-medium text-gray-400 mb-6 border-y border-white/5 py-3.5 w-full">
-                      <span className="flex items-center gap-1.5 text-gray-300">
-                        <Calendar size={15} className="text-gray-500 shrink-0" /> 
-                        {(() => {
-                          const startYear = finalTmdbData?.first_air_date ? finalTmdbData.first_air_date.substring(0,4) : (finalTmdbData?.release_date ? finalTmdbData.release_date.substring(0,4) : (movie.year || "2024"));
-                          const endYear = finalTmdbData?.last_air_date ? finalTmdbData.last_air_date.substring(0,4) : null;
-                          return (isTv && endYear && startYear !== endYear) ? `${startYear} - ${endYear}` : startYear;
-                        })()}
-                      </span>
-                      
-                      <span className="flex items-center gap-1.5 text-gray-300">
-                        <Film size={15} className="text-gray-500 shrink-0" />
-                        {(movie.type === "single" || movie.type === "phimle") ? "Phim Lẻ" : "Phim Bộ"}
-                      </span>
-
-                      {movie.quality && (
-                        <span className="bg-white/5 border border-white/10 px-2.5 py-0.5 rounded-md text-[10px] font-black tracking-wider text-gray-300 uppercase leading-none">
-                          {movie.quality}
-                        </span>
-                      )}
-
-                      {isTv && finalTmdbData?.number_of_seasons && (
+                    {isLoading ? (
+                      <div className="flex flex-wrap gap-3 items-center mt-2 mb-6 border-y border-white/5 py-3.5 w-full">
+                        <div className="h-6 w-16 bg-white/5 rounded-md animate-pulse" />
+                        <div className="h-6 w-12 bg-white/5 rounded-md animate-pulse" />
+                        <div className="h-6 w-24 bg-white/5 rounded-md animate-pulse" />
+                        <div className="h-6 w-20 bg-white/5 rounded-md animate-pulse" />
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-y-3 gap-x-5 text-sm font-medium text-gray-400 mb-6 border-y border-white/5 py-3.5 w-full">
                         <span className="flex items-center gap-1.5 text-gray-300">
-                          <Tv size={15} className="text-gray-500 shrink-0" />
-                          {finalTmdbData.number_of_seasons} Phần
+                          <Calendar size={15} className="text-gray-500 shrink-0" /> 
+                          {(() => {
+                            const startYear = finalTmdbData?.first_air_date ? finalTmdbData.first_air_date.substring(0,4) : (finalTmdbData?.release_date ? finalTmdbData.release_date.substring(0,4) : (movie?.year || "2024"));
+                            const endYear = finalTmdbData?.last_air_date ? finalTmdbData.last_air_date.substring(0,4) : null;
+                            return (isTv && endYear && startYear !== endYear) ? `${startYear} - ${endYear}` : startYear;
+                          })()}
                         </span>
-                      )}
-                      
-                      {isTv && finalTmdbData?.number_of_episodes && (
+                        
                         <span className="flex items-center gap-1.5 text-gray-300">
-                          <Users size={15} className="text-gray-500 shrink-0" />
-                          {finalTmdbData.number_of_episodes} Tập
+                          <Film size={15} className="text-gray-500 shrink-0" />
+                          {(movie?.type === "single" || movie?.type === "phimle") ? "Phim Lẻ" : "Phim Bộ"}
                         </span>
-                      )}
-                      
-                      {(!isTv && (finalTmdbData?.runtime || movie.time)) && (
-                        <span className="flex items-center gap-1.5 text-gray-300">
-                          <Clock size={15} className="text-gray-500 shrink-0" /> 
-                          {finalTmdbData?.runtime ? `${finalTmdbData.runtime} phút` : movie.time}
-                        </span>
-                      )}
 
-                      {(() => {
-                        const cert = getCertification(finalTmdbData, isTv);
-                        if (!cert) return null;
-                        return (
-                          <span className="bg-red-600/10 border border-red-500/25 px-2.5 py-0.5 rounded text-[11px] font-black text-red-500 select-none">
-                            {cert}
+                        {movie?.quality && (
+                          <span className="bg-white/5 border border-white/10 px-2.5 py-0.5 rounded-md text-[10px] font-black tracking-wider text-gray-300 uppercase leading-none">
+                            {movie.quality}
                           </span>
-                        );
-                      })()}
+                        )}
 
-                      <span className="flex items-center gap-1.5 text-gray-300">
-                        <Star size={15} className="text-yellow-500 fill-yellow-500/10 shrink-0" />
-                        {imdbRating && imdbRating !== "?" ? imdbRating : "8.0"}
-                        {finalTmdbData?.vote_count ? (
-                          <span className="text-xs text-gray-500 font-normal">({finalTmdbData.vote_count} bình chọn)</span>
-                        ) : null}
-                      </span>
+                        {isTv && finalTmdbData?.number_of_seasons && (
+                          <span className="flex items-center gap-1.5 text-gray-300">
+                            <Tv size={15} className="text-gray-500 shrink-0" />
+                            {finalTmdbData.number_of_seasons} Phần
+                          </span>
+                        )}
+                        
+                        {isTv && finalTmdbData?.number_of_episodes && (
+                          <span className="flex items-center gap-1.5 text-gray-300">
+                            <Users size={15} className="text-gray-500 shrink-0" />
+                            {finalTmdbData.number_of_episodes} Tập
+                          </span>
+                        )}
+                        
+                        {(!isTv && (finalTmdbData?.runtime || movie?.time)) && (
+                          <span className="flex items-center gap-1.5 text-gray-300">
+                            <Clock size={15} className="text-gray-500 shrink-0" /> 
+                            {finalTmdbData?.runtime ? `${finalTmdbData.runtime} phút` : movie.time}
+                          </span>
+                        )}
 
-                      {metacriticScore && (
-                        <span className={cn(
-                          "px-2 py-0.5 rounded text-xs font-black select-none tracking-wider",
-                          metacriticScore >= 61 ? "bg-green-600 text-white border border-green-500/20" :
-                          metacriticScore >= 40 ? "bg-yellow-500 text-black border border-yellow-400/20" :
-                          "bg-red-600 text-white border border-red-500/20"
-                        )}>
-                          {metacriticScore} Metascore
+                        {(() => {
+                          const cert = getCertification(finalTmdbData, isTv);
+                          if (!cert) return null;
+                          return (
+                            <span className="bg-red-600/10 border border-red-500/25 px-2.5 py-0.5 rounded text-[11px] font-black text-red-500 select-none">
+                              {cert}
+                            </span>
+                          );
+                        })()}
+
+                        <span className="flex items-center gap-1.5 text-gray-300">
+                          <Star size={15} className="text-yellow-500 fill-yellow-500/10 shrink-0" />
+                          {imdbRating && imdbRating !== "?" ? imdbRating : "8.0"}
+                          {finalTmdbData?.vote_count ? (
+                            <span className="text-xs text-gray-500 font-normal">({finalTmdbData.vote_count} bình chọn)</span>
+                          ) : null}
                         </span>
-                      )}
-                      
-                      {(finalTmdbData?.status || movie.status) && (
-                        <span className="bg-white/5 border border-white/15 px-3 py-1 rounded-xl text-xs font-bold text-gray-200 select-none ml-auto whitespace-nowrap">
-                          {finalTmdbData?.status === "Ended" ? "Đã ra mắt trọn bộ" : 
-                           finalTmdbData?.status === "Returning Series" ? "Đang cập nhật" : 
-                           (movie.status === "completed" ? "Đã ra mắt trọn bộ" : 
-                            movie.status === "ongoing" ? "Đang cập nhật" : 
-                            (finalTmdbData?.status || movie.status))}
-                        </span>
-                      )}
-                    </div>
+
+                        {metacriticScore && (
+                          <span className={cn(
+                            "px-2 py-0.5 rounded text-xs font-black select-none tracking-wider",
+                            metacriticScore >= 61 ? "bg-green-600 text-white border border-green-500/20" :
+                            metacriticScore >= 40 ? "bg-yellow-500 text-black border border-yellow-400/20" :
+                            "bg-red-600 text-white border border-red-500/20"
+                          )}>
+                            {metacriticScore} Metascore
+                          </span>
+                        )}
+                        
+                        {(finalTmdbData?.status || movie?.status) && (
+                          <span className="bg-white/5 border border-white/15 px-3 py-1 rounded-xl text-xs font-bold text-gray-200 select-none ml-auto whitespace-nowrap">
+                            {finalTmdbData?.status === "Ended" ? "Đã ra mắt trọn bộ" : 
+                             finalTmdbData?.status === "Returning Series" ? "Đang cập nhật" : 
+                             (movie?.status === "completed" ? "Đã ra mắt trọn bộ" : 
+                              movie?.status === "ongoing" ? "Đang cập nhật" : 
+                              (finalTmdbData?.status || movie?.status))}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     
-                    <div className="flex flex-wrap gap-2 mb-8">
-                      {(() => {
-                        const categories = Array.isArray(finalTmdbData?.genres) ? finalTmdbData.genres : (Array.isArray(movie.category) ? movie.category : []);
-                        return categories.slice(0, 4).map((c: any) => (
-                        <span key={c.name} className="bg-[#1a1a1a] border border-white/10 px-4 py-1.5 rounded-md text-xs font-bold text-gray-300">
-                          {c.name === "Hanh Dong" ? "Hành Động" : 
-                           c.name === "Tinh Cam" ? "Tình Cảm" : 
-                           c.name === "Hai Huoc" ? "Hài Hước" : 
-                           c.name === "Chinh Kich" ? "Chính Kịch" :
-                           c.name === "Hinh Su" ? "Hình Sự" : 
-                           c.name === "Vien Tuong" ? "Viễn Tưởng" : c.name}
-                        </span>
-                      ))})() || null}
-                    </div>
+                    {isLoading ? (
+                      <div className="flex flex-wrap gap-2 mb-8 animate-pulse">
+                        <div className="h-6 w-16 bg-white/5 rounded-md" />
+                        <div className="h-6 w-16 bg-white/5 rounded-md" />
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2 mb-8">
+                        {(() => {
+                          const categories = Array.isArray(finalTmdbData?.genres) ? finalTmdbData.genres : (Array.isArray(movie?.category) ? movie.category : []);
+                          return categories.slice(0, 4).map((c: any) => (
+                          <span key={c.name} className="bg-[#1a1a1a] border border-white/10 px-4 py-1.5 rounded-md text-xs font-bold text-gray-300">
+                            {c.name === "Hanh Dong" ? "Hành Động" : 
+                             c.name === "Tinh Cam" ? "Tình Cảm" : 
+                             c.name === "Hai Huoc" ? "Hài Hước" : 
+                             c.name === "Chinh Kich" ? "Chính Kịch" :
+                             c.name === "Hinh Su" ? "Hình Sự" : 
+                             c.name === "Vien Tuong" ? "Viễn Tưởng" : c.name}
+                          </span>
+                        ))})() || null}
+                      </div>
+                    )}
 
                     <div className="border border-white/10 rounded-2xl p-6 md:p-8 bg-black/40 backdrop-blur-sm mb-8 w-full max-w-4xl">
                        <h3 className="text-xl font-bold text-white mb-4">Nội Dung</h3>
-                       <p className="text-base sm:text-lg text-gray-400 leading-relaxed font-semibold text-justify" dangerouslySetInnerHTML={{ __html: finalTmdbData?.overview || movie.content || "Chúng tôi đang cập nhật nội dung chi tiết cho bộ phim này. Vui lòng quay lại sau." }} />
+                       {isLoading ? (
+                         <div className="flex flex-col gap-3 mt-4 animate-pulse">
+                           <div className="h-5 bg-white/5 rounded-md w-full" />
+                           <div className="h-5 bg-white/5 rounded-md w-11/12" />
+                           <div className="h-5 bg-white/5 rounded-md w-4/5" />
+                         </div>
+                       ) : (
+                         <p className="text-base sm:text-lg text-gray-400 leading-relaxed font-semibold text-justify" dangerouslySetInnerHTML={{ __html: finalTmdbData?.overview || movie?.content || "Chúng tôi đang cập nhật nội dung chi tiết cho bộ phim này. Vui lòng quay lại sau." }} />
+                       )}
                     </div>
 
                     {finalTmdbData && (finalTmdbData.budget > 0 || finalTmdbData.revenue > 0) && (
@@ -1530,12 +1573,24 @@ const MovieDetailContent: React.FC<{
                 <div className="block md:hidden w-full flex flex-col gap-6">
                   {/* Poster - Centered with beautiful border and extreme shadow */}
                   <div className="w-[180px] sm:w-[220px] aspect-[2/3] mx-auto shrink-0 z-10 relative">
-                    <SafeImage src={posterUrl} alt="Poster" className="w-full h-full object-cover rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.9)] border border-white/10" />
+                    <motion.div
+                      layoutId={!isDesktop ? `movie-poster-wrapper-${slug}` : undefined}
+                      className="w-full h-full rounded-xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.9)] border border-white/10 relative bg-white/5"
+                      transition={{ type: "spring", stiffness: 120, damping: 20 }}
+                    >
+                      {resolvedPoster ? (
+                        <SafeImage src={resolvedPoster} alt="Poster" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="absolute inset-0 bg-white/5 animate-pulse" />
+                      )}
+                    </motion.div>
                   </div>
 
                   {/* Title & Tagline & Logo */}
                   <div className="flex flex-col items-center text-center px-4 w-full gap-2">
-                    {logoUrl ? (
+                    {isLoading ? (
+                      <div className="h-10 bg-gradient-to-r from-white/10 via-white/10 to-transparent rounded-xl w-4/5 animate-pulse mb-1" />
+                    ) : logoUrl ? (
                       <SafeImage 
                         src={logoUrl} 
                         alt="Logo" 
@@ -1543,118 +1598,129 @@ const MovieDetailContent: React.FC<{
                       />
                     ) : (
                       <h1 className="text-2xl sm:text-3xl font-black text-center text-white leading-tight drop-shadow-2xl tracking-tight">
-                        {finalTmdbData?.name || finalTmdbData?.title || movie.name}
+                        {finalTmdbData?.name || finalTmdbData?.title || movie?.name}
                       </h1>
                     )}
 
-                    {finalTmdbData?.tagline && (
+                    {!isLoading && finalTmdbData?.tagline && (
                       <p className="text-xs sm:text-sm text-gray-400 font-medium italic mt-1 max-w-md">"{finalTmdbData.tagline}"</p>
                     )}
                   </div>
 
                   {/* Badges/Metadata Pill layout - Sleek, centered pills */}
-                  <div className="flex flex-wrap justify-center items-center gap-y-2 gap-x-3.5 px-4 text-xs font-semibold text-gray-400 w-full">
-                    {/* Star */}
-                    <span className="flex items-center gap-1">
-                      <Star size={13} className="text-yellow-500 fill-yellow-500/10 shrink-0" />
-                      {imdbRating && imdbRating !== "?" ? imdbRating : "8.0"}
-                    </span>
-
-                    {metacriticScore && (
-                      <span className={cn(
-                        "px-1.5 py-0.5 rounded text-[10px] font-black select-none tracking-wider",
-                        metacriticScore >= 61 ? "bg-green-600 text-white border border-green-500/20" :
-                        metacriticScore >= 40 ? "bg-yellow-500 text-black border border-yellow-400/20" :
-                        "bg-red-600 text-white border border-red-500/20"
-                      )}>
-                        {metacriticScore} MC
+                  {isLoading ? (
+                    <div className="flex gap-2 justify-center w-full px-4 animate-pulse">
+                      <div className="h-5 w-12 bg-white/5 rounded" />
+                      <div className="h-5 w-16 bg-white/5 rounded" />
+                      <div className="h-5 w-14 bg-white/5 rounded" />
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap justify-center items-center gap-y-2 gap-x-3.5 px-4 text-xs font-semibold text-gray-400 w-full">
+                      {/* Star */}
+                      <span className="flex items-center gap-1">
+                        <Star size={13} className="text-yellow-500 fill-yellow-500/10 shrink-0" />
+                        {imdbRating && imdbRating !== "?" ? imdbRating : "8.0"}
                       </span>
-                    )}
-                    
-                    {/* Year */}
-                    <span className="flex items-center gap-1">
-                      <Calendar size={13} className="text-gray-500 shrink-0" />
-                      {(() => {
-                        const startYear = finalTmdbData?.first_air_date ? finalTmdbData.first_air_date.substring(0,4) : (finalTmdbData?.release_date ? finalTmdbData.release_date.substring(0,4) : (movie.year || "2024"));
-                        const endYear = finalTmdbData?.last_air_date ? finalTmdbData.last_air_date.substring(0,4) : null;
-                        return (isTv && endYear && startYear !== endYear) ? `${startYear} - ${endYear}` : startYear;
-                      })()}
-                    </span>
 
-                    {/* Movie/Series type */}
-                    <span className="flex items-center gap-1">
-                      <Film size={13} className="text-gray-500 shrink-0" />
-                      {(movie.type === "single" || movie.type === "phimle") ? "Phim Lẻ" : "Phim Bộ"}
-                    </span>
-
-                    {(() => {
-                      const cert = getCertification(finalTmdbData, isTv);
-                      if (!cert) return null;
-                      return (
-                        <span className="bg-red-600/10 border border-red-500/25 px-1.5 py-0.5 rounded text-[10px] font-black text-red-500 select-none">
-                          {cert}
+                      {metacriticScore && (
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded text-[10px] font-black select-none tracking-wider",
+                          metacriticScore >= 61 ? "bg-green-600 text-white border border-green-500/20" :
+                          metacriticScore >= 40 ? "bg-yellow-500 text-black border border-yellow-400/20" :
+                          "bg-red-600 text-white border border-red-500/25"
+                        )}>
+                          {metacriticScore} MC
                         </span>
-                      );
-                    })()}
-
-                    {/* Tv Seasons */}
-                    {isTv && finalTmdbData?.number_of_seasons && (
+                      )}
+                      
+                      {/* Year */}
                       <span className="flex items-center gap-1">
-                        <Tv size={13} className="text-gray-500 shrink-0" />
-                        {finalTmdbData.number_of_seasons} Phần
+                        <Calendar size={13} className="text-gray-500 shrink-0" />
+                        {(() => {
+                          const startYear = finalTmdbData?.first_air_date ? finalTmdbData.first_air_date.substring(0,4) : (finalTmdbData?.release_date ? finalTmdbData.release_date.substring(0,4) : (movie?.year || "2024"));
+                          const endYear = finalTmdbData?.last_air_date ? finalTmdbData.last_air_date.substring(0,4) : null;
+                          return (isTv && endYear && startYear !== endYear) ? `${startYear} - ${endYear}` : startYear;
+                        })()}
                       </span>
-                    )}
 
-                    {/* Tv Episodes */}
-                    {isTv && finalTmdbData?.number_of_episodes && (
+                      {/* Movie/Series type */}
                       <span className="flex items-center gap-1">
-                        <Users size={13} className="text-gray-500 shrink-0" />
-                        {finalTmdbData.number_of_episodes} Tập
+                        <Film size={13} className="text-gray-500 shrink-0" />
+                        {(movie?.type === "single" || movie?.type === "phimle") ? "Phim Lẻ" : "Phim Bộ"}
                       </span>
-                    )}
 
-                    {/* Runtime */}
-                    {(!isTv && (finalTmdbData?.runtime || movie.time)) && (
-                      <span className="flex items-center gap-1">
-                        <Clock size={13} className="text-gray-500 shrink-0" />
-                        {finalTmdbData?.runtime ? `${finalTmdbData.runtime} phút` : movie.time}
-                      </span>
-                    )}
+                      {(() => {
+                        const cert = getCertification(finalTmdbData, isTv);
+                        if (!cert) return null;
+                        return (
+                          <span className="bg-red-600/10 border border-red-500/25 px-1.5 py-0.5 rounded text-[10px] font-black text-red-500 select-none">
+                            {cert}
+                          </span>
+                        );
+                      })()}
 
-                    {/* Quality */}
-                    {movie.quality && (
-                      <span className="bg-white/5 border border-white/10 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold text-gray-300 leading-none">
-                        {movie.quality}
-                      </span>
-                    )}
+                      {/* Tv Seasons */}
+                      {isTv && finalTmdbData?.number_of_seasons && (
+                        <span className="flex items-center gap-1">
+                          <Tv size={13} className="text-gray-500 shrink-0" />
+                          {finalTmdbData.number_of_seasons} Phần
+                        </span>
+                      )}
 
-                    {/* Status */}
-                    {(finalTmdbData?.status || movie.status) && (
-                      <span className="bg-white/5 border border-white/15 px-1.5 py-0.5 rounded text-[10px] font-bold text-gray-300 leading-none whitespace-nowrap">
-                        {finalTmdbData?.status === "Ended" ? "Trọn bộ" : 
-                         finalTmdbData?.status === "Returning Series" ? "Đang chiếu" : 
-                         (movie.status === "completed" ? "Trọn bộ" : 
-                          movie.status === "ongoing" ? "Đang chiếu" : 
-                          (finalTmdbData?.status || movie.status))}
-                      </span>
-                    )}
-                  </div>
+                      {/* Tv Episodes */}
+                      {isTv && finalTmdbData?.number_of_episodes && (
+                        <span className="flex items-center gap-1">
+                          <Users size={13} className="text-gray-500 shrink-0" />
+                          {finalTmdbData.number_of_episodes} Tập
+                        </span>
+                      )}
+
+                      {/* Runtime */}
+                      {(!isTv && (finalTmdbData?.runtime || movie?.time)) && (
+                        <span className="flex items-center gap-1">
+                          <Clock size={13} className="text-gray-500 shrink-0" />
+                          {finalTmdbData?.runtime ? `${finalTmdbData.runtime} phút` : movie.time}
+                        </span>
+                      )}
+
+                      {/* Quality */}
+                      {movie?.quality && (
+                        <span className="bg-white/5 border border-white/10 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold text-gray-300 leading-none">
+                          {movie.quality}
+                        </span>
+                      )}
+
+                      {/* Status */}
+                      {(finalTmdbData?.status || movie?.status) && (
+                        <span className="bg-white/5 border border-white/15 px-1.5 py-0.5 rounded text-[10px] font-bold text-gray-300 leading-none whitespace-nowrap">
+                          {finalTmdbData?.status === "Ended" ? "Trọn bộ" : 
+                           finalTmdbData?.status === "Returning Series" ? "Đang chiếu" : 
+                           (movie?.status === "completed" ? "Trọn bộ" : 
+                            movie?.status === "ongoing" ? "Đang chiếu" : 
+                            (finalTmdbData?.status || movie?.status))}
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   {/* Action Buttons: 1. Xem ngay, 2. Xem Trailer, 3. Row of: Lưu Lại & ••• */}
                   <div className="flex flex-col gap-3 px-2 w-full mt-2">
-                    {/* Button 1: Xem ngay */}
-                    <button 
-                      onClick={() => { 
-                        if (isTv && !savedProgress) {
-                          setShowMobileEpDropdown(!showMobileEpDropdown);
-                        } else {
-                          handlePlayOrResume();
-                        }
-                      }} 
-                      className="w-full bg-[#e50914] hover:bg-[#ff1e24] text-white px-4 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95 text-sm"
-                    >
-                      <Play size={16} fill="currentColor" /> {getPlayButtonText()}
-                    </button>
+                    {isLoading ? (
+                      <div className="h-12 w-full bg-white/10 rounded-xl animate-pulse" />
+                    ) : (
+                      <button 
+                        onClick={() => { 
+                          if (isTv && !savedProgress) {
+                            setShowMobileEpDropdown(!showMobileEpDropdown);
+                          } else {
+                            handlePlayOrResume();
+                          }
+                        }} 
+                        className="w-full bg-[#e50914] hover:bg-[#ff1e24] text-white px-4 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95 text-sm"
+                      >
+                        <Play size={16} fill="currentColor" /> {getPlayButtonText()}
+                      </button>
+                    )}
 
                     {/* Season / Episode Dropdown for TV Series */}
                     {isTv && showMobileEpDropdown && (
@@ -2105,20 +2171,13 @@ const MovieDetailContent: React.FC<{
 
 const MovieDetailShimmer = () => {
   return (
-    <div className="absolute inset-0 z-[150] bg-[#050505] flex flex-col justify-start items-center overflow-y-auto custom-scrollbar">
-      {/* Banner Backdrop Shimmer */}
-      <div className="absolute top-0 left-0 w-full h-[60vh] sm:h-[75vh] 2xl:h-[80vh] pointer-events-none overflow-hidden">
-        <div className="w-full h-full bg-[#111] animate-pulse opacity-40" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/80 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#050505] via-transparent to-transparent" />
-      </div>
-
+    <div className="absolute inset-0 z-[150] bg-transparent flex flex-col justify-start items-center overflow-y-auto custom-scrollbar">
       <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-10 pb-20 pt-[20vh] sm:pt-[25vh] md:pt-[35vh] lg:pt-[45vh] relative z-10 flex flex-col gap-6 sm:gap-8 xl:gap-12">
         {/* DESKTOP ONLY VIEW (Hidden on Mobile) */}
         <div className="hidden md:flex flex-col md:flex-row gap-8 lg:gap-12 w-full mb-16 items-start">
           {/* Left Column: Poster Skeleton */}
           <div className="w-[280px] sm:w-[320px] md:w-[340px] shrink-0 flex flex-col gap-4">
-            <div className="w-full aspect-[2/3] bg-[#111] border border-white/5 rounded-xl animate-pulse relative overflow-hidden">
+            <div className="w-full aspect-[2/3] bg-white/5 border border-white/5 rounded-xl animate-pulse relative overflow-hidden">
               <motion.div
                 className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/[0.05] to-transparent skew-x-12"
                 animate={{ translateX: ["-150%", "250%"] }}
@@ -2161,7 +2220,7 @@ const MovieDetailShimmer = () => {
         {/* MOBILE VIEW (Hidden on Desktop) */}
         <div className="flex md:hidden flex-col gap-6 w-full mb-8">
           {/* Mobile Poster Shimmer */}
-          <div className="w-[150px] aspect-[2/3] bg-[#111] border border-white/5 rounded-xl animate-pulse mx-auto relative overflow-hidden shadow-2xl">
+          <div className="w-[150px] aspect-[2/3] bg-white/5 border border-white/5 rounded-xl animate-pulse mx-auto relative overflow-hidden shadow-2xl">
             <motion.div
               className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/[0.05] to-transparent skew-x-12"
               animate={{ translateX: ["-150%", "250%"] }}
@@ -2213,31 +2272,71 @@ export const MovieDetail: React.FC<{
   const initialSeason = _urlSeasonFromSlug || _urlSeasonFromParams || 1;
 
   const movieDetailProps = useMovieDetail(slug, initialSeason);
-  const { isLoading, data } = movieDetailProps;
+  const { isLoading, data, isPlaying, finalTmdbData, tmdbBackdropUrl: cleanBackdrop } = movieDetailProps;
+
+  const queryClient = useQueryClient();
+  const cachedBackdrop = useMemo(() => {
+    const detailCache: any = queryClient.getQueryData(["movie-detail", slug]);
+    if (detailCache?.movie?.thumb_url || detailCache?.movie?.poster_url) {
+      const fbUrl = detailCache.movie.thumb_url || detailCache.movie.poster_url;
+      return typeof fbUrl === "string" && fbUrl.startsWith("http") ? fbUrl : `https://phimimg.com/${fbUrl}`;
+    }
+    const tmdbId = slug.split("-")[1];
+    const isTv = slug.includes("-tv");
+    if (tmdbId) {
+      const tmdbCache: any = queryClient.getQueryData(["tmdb", "details_en", isTv ? "tv" : "movie", tmdbId])
+        || queryClient.getQueryData(["tmdb", "details", isTv ? "tv" : "movie", tmdbId]);
+      if (tmdbCache?.backdrop_path) {
+        return `https://image.tmdb.org/t/p/original/${tmdbCache.backdrop_path.split('/').pop()}`;
+      }
+      if (tmdbCache?.poster_path) {
+        return `https://image.tmdb.org/t/p/w780/${tmdbCache.poster_path.split('/').pop()}`;
+      }
+    }
+    return null;
+  }, [slug, queryClient]);
+
+  const resolvedBg = useMemo(() => {
+    if (data?.movie) {
+      const fbUrl = data.movie.thumb_url || data.movie.poster_url;
+      const tmdbBackdropUrl = cleanBackdrop || (finalTmdbData?.backdrop_path ? (finalTmdbData.backdrop_path?.startsWith('http') ? finalTmdbData.backdrop_path : `https://image.tmdb.org/t/p/original/${finalTmdbData.backdrop_path?.split('/').pop()}`) : null);
+      const rawBg = tmdbBackdropUrl || (typeof fbUrl === "string" && fbUrl.startsWith("http") ? fbUrl : `https://phimimg.com/${fbUrl}`);
+      return proxyImage(rawBg);
+    }
+    return cachedBackdrop ? proxyImage(cachedBackdrop) : null;
+  }, [data, cleanBackdrop, finalTmdbData, cachedBackdrop]);
 
   useEffect(() => {
-    const scrollY = window.scrollY;
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${scrollY}px`;
-    document.body.style.width = '100%';
-    document.body.style.overflowY = 'scroll';
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     return () => {
-      document.body.style.position = '';
-      document.body.style.top = '';
-      document.body.style.width = '';
-      document.body.style.overflowY = '';
-      window.scrollTo(0, scrollY);
+      document.body.style.overflow = originalOverflow;
     };
   }, [slug]);
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.98 }}
-      transition={{ duration: 0.3 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.25, ease: "easeInOut" }}
       className="fixed inset-0 z-[150] bg-[#050505] overflow-y-auto custom-scrollbar"
     >
+      {/* Backdrop Image - Rendered ALWAYS at the root, even when loading, to support layoutId morph transition */}
+      {!isPlaying && resolvedBg && (
+        <div className="absolute top-0 left-0 w-full h-[60vh] sm:h-[75vh] 2xl:h-[80vh] pointer-events-none z-0">
+          <motion.div
+            layoutId={`movie-image-wrapper-${slug}`}
+            className="absolute inset-0 w-full h-full"
+            transition={{ type: "spring", stiffness: 120, damping: 20 }}
+          >
+            <SafeImage src={resolvedBg} alt="Hero" className="w-full h-full object-cover object-top opacity-50" />
+          </motion.div>
+          <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/80 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#050505] via-transparent to-transparent" />
+        </div>
+      )}
+
       <AnimatePresence mode="wait">
         {isLoading || !data?.movie ? (
           <motion.div

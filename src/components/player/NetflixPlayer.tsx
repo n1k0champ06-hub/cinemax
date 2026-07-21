@@ -1884,13 +1884,28 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {isEmbed && (
+              <button 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  setPanelOpen(prev => prev === 'sub' ? 'none' : 'sub'); 
+                }} 
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 bg-white/[0.06] hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/90 cursor-pointer transition-colors ${panelOpen === 'sub' ? 'text-[#E50914] bg-white/10' : ''}`}
+              >
+                <span className="font-bold text-[9px] leading-none px-1 py-[1.5px] border border-current/80 rounded-[3px] select-none inline-flex items-center justify-center font-sans tracking-wide shrink-0">
+                  CC
+                </span>
+                <span>Phụ đề</span>
+              </button>
+            )}
+
             {((servers && servers.length > 0) || (streams && streams.length > 0)) && (
               <button 
                 onClick={(e) => { 
                   e.stopPropagation(); 
                   setPanelOpen(prev => prev === 'settings' ? 'none' : 'settings'); 
                 }} 
-                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 bg-white/[0.06] hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/90 cursor-pointer transition-colors"
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 bg-white/[0.06] hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/90 cursor-pointer transition-colors ${panelOpen === 'settings' ? 'text-[#E50914] bg-white/10' : ''}`}
               >
                 <Settings size={14} className="text-white/70" />
                 <span>Nguồn phát</span>
@@ -1902,7 +1917,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
               className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 bg-white/[0.06] hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/90 cursor-pointer transition-colors"
             >
               <ArrowLeft size={14} />
-              <span>Thoát</span>
+              <span>Trở lại</span>
             </button>
           </div>
         </div>
