@@ -544,12 +544,12 @@ const MovieDetailContent: React.FC<{
               link_m3u8: ""
           }));
           if (hollysheeshServerData.length > 0) {
-              list = [{
+              list = [...list, {
                   server_name: "VIP Server (Hollysheesh)",
                   server_data: hollysheeshServerData,
                   status: 'ok',
                   _isHollysheesh: true
-              }, ...list];
+              }];
           }
 
           // --- VidNest (VIP Server) + Sub Việt ---
@@ -587,13 +587,13 @@ const MovieDetailContent: React.FC<{
         },
       ];
       return [
+        ...servers,
         {
           server_name: "VIP Server (Hollysheesh)",
           server_data: movieEpPlaceholder,
           status: 'ok',
           _isHollysheesh: true
         },
-        ...servers,
         {
           server_name: "Community Server (CinemaOS)",
           server_data: movieEpPlaceholder.map(ep => ({
@@ -630,7 +630,7 @@ const MovieDetailContent: React.FC<{
   useEffect(() => {
     if (currentServers && currentServers.length > 0) {
       if (selectedServerId < 0 || selectedServerId >= currentServers.length) {
-        let firstFastIdx = currentServers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && s.server_name.includes("Hollysheesh"));
+        let firstFastIdx = currentServers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && !s.server_name.includes("CinemaOS") && !s.server_name.includes("Hollysheesh"));
         if (firstFastIdx === -1) {
           firstFastIdx = currentServers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && !s.server_name.includes("CinemaOS"));
         }

@@ -973,7 +973,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                           )}
 
                           <button onClick={openPanel('settings')}
-                            className={`p-1.5 rounded-md transition-colors cursor-pointer ${settingsPanelOpen ? 'text-[#E50914] bg-white/10' : 'text-white/80 hover:text-white hover:bg-white/10'}`}
+                            className={`p-1.5 rounded-md transition-colors cursor-pointer ${(panelOpen === 'settings' || panelOpen === 'quality') ? 'text-[#E50914] bg-white/10' : 'text-white/80 hover:text-white hover:bg-white/10'}`}
                             title="Nguồn phát & Cài đặt">
                             <Settings size={16} />
                           </button>
@@ -1054,7 +1054,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                         )}
 
                         <button onClick={openPanel('settings')}
-                          className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0 ${settingsPanelOpen ? 'text-[#E50914] bg-white/10' : 'text-white/80 hover:text-white'}`}
+                          className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0 ${(panelOpen === 'settings' || panelOpen === 'quality') ? 'text-[#E50914] bg-white/10' : 'text-white/80 hover:text-white'}`}
                           title="Nguồn phát">
                           <Server size={16} />
                           <span>Nguồn phát</span>
@@ -1162,7 +1162,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
                           {/* Settings / Stream Sources button */}
                           <button onClick={openPanel('settings')}
-                            className={`p-1.5 rounded-md hover:bg-white/10 transition-all cursor-pointer ${settingsPanelOpen ? 'text-[#E50914]' : 'text-white/80 hover:text-white'}`}
+                            className={`p-1.5 rounded-md hover:bg-white/10 transition-all cursor-pointer ${(panelOpen === 'settings' || panelOpen === 'quality') ? 'text-[#E50914]' : 'text-white/80 hover:text-white'}`}
                             title="Cài đặt & Nguồn phát">
                             <Settings size={18} />
                           </button>

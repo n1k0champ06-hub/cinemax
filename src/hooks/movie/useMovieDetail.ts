@@ -581,14 +581,14 @@ export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
            });
        }
 
-       if (hollysheeshServerData.length > 0) {
-           processedServers.unshift({
-               server_name: "VIP Server (Hollysheesh)",
-               server_data: hollysheeshServerData,
-               status: 'ok',
-               _isHollysheesh: true
-           });
-       }
+        if (hollysheeshServerData.length > 0) {
+            processedServers.push({
+                server_name: "VIP Server (Hollysheesh)",
+                server_data: hollysheeshServerData,
+                status: 'ok',
+                _isHollysheesh: true
+            });
+        }
     }
 
     return processedServers;
@@ -627,7 +627,7 @@ export const useMovieDetail = (rawSlug: string, currentSeason: number = 1) => {
       isSelectingServerRef.current = true;
       prevSlugRef.current = slug;
 
-      const firstFastIdx = servers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && !s.server_name.includes("CinemaOS"));
+      const firstFastIdx = servers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error' && !s.server_name.includes("CinemaOS") && !s.server_name.includes("Hollysheesh"));
       const firstValidIdx = servers.findIndex((s: any) => s.status !== 'empty' && s.status !== 'error');
       const nextIdx = firstFastIdx !== -1 ? firstFastIdx : (firstValidIdx !== -1 ? firstValidIdx : 0);
 
