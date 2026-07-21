@@ -207,7 +207,7 @@ export const Hero = ({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.8, ease: "easeInOut" }}
           className="absolute inset-0 h-full w-full z-0 overflow-hidden bg-black"
-          style={{ willChange: 'opacity', transform: 'translateZ(0)' }}
+          style={{ willChange: 'opacity' }}
         >
           <SafeImage src={bgImage || ''} alt={titleString} className="w-full h-full object-cover opacity-100 lg:opacity-90 pointer-events-none select-none" priority={true} />
         </motion.div>
