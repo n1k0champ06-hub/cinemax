@@ -193,10 +193,6 @@ export const NavBar = ({
                    e.preventDefault();
                    tab.action();
                  }}
-                 onTouchEnd={(e) => {
-                   e.preventDefault();
-                   tab.action();
-                 }}
                  className="flex-1 flex flex-col justify-center items-center h-full relative cursor-pointer touch-manipulation select-none active:scale-95 transition-transform"
                >
                  <motion.div
