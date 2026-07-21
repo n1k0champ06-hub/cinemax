@@ -198,15 +198,7 @@ export const MovieCard = React.memo(({ movie, onSelect, isTop10, idx, progressDa
       className={cn("flex-shrink-0 cursor-pointer relative transition-shadow duration-300 group rounded-[16px] card-spring-hover", className || (aspectRatio === 'poster' ? "w-[150px] sm:w-[180px] md:w-[200px] lg:w-[220px]" : "w-[240px] sm:w-[280px] md:w-[310px] lg:w-[330px]"))}
     >
       <div className={cn("w-full relative bg-[#050505] rounded-[16px] overflow-hidden border border-white/5 group-hover:border-white/15 transition-all shadow-md", aspectRatio === 'poster' ? "aspect-[2/3]" : "aspect-[16/9]")}>
-        <motion.div
-          layoutId={aspectRatio === 'poster'
-            ? `movie-poster-wrapper-${movie.slug || movie.id}`
-            : `movie-image-wrapper-${movie.slug || movie.id}`}
-          className="absolute inset-0 w-full h-full"
-          transition={{ type: "spring", stiffness: 120, damping: 20 }}
-        >
-          <SafeImage src={finalThumb} alt={resolvedDisplayName} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
-        </motion.div>
+        <SafeImage src={finalThumb} alt={resolvedDisplayName} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
         
         {/* Subtle vignette layer */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />

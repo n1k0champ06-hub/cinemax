@@ -784,15 +784,23 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       clickTimerRef.current = setTimeout(() => {
         if (isMobile) {
           // On Mobile, single-tap ONLY toggles UI controls visibility, NEVER pauses/plays video!
-          setShowControls(prev => !prev);
+          setShowControls(prev => {
+            const next = !prev;
+            if (next) {
+              resetControls();
+            } else {
+              if (timerRef.current) clearTimeout(timerRef.current);
+            }
+            return next;
+          });
         } else {
           // On Desktop PC, single-click toggles play/pause
           togglePlay();
+          resetControls();
         }
         clickTimerRef.current = null;
       }, 250);
     }
-    resetControls();
   };
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
@@ -836,7 +844,6 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
             preload="auto"
             onClick={handleVideoClick}
             onMouseMove={resetControls}
-            onTouchStart={resetControls}
           />
         )}
 
