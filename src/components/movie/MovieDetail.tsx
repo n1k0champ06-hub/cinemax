@@ -2272,7 +2272,7 @@ export const MovieDetail: React.FC<{
   const initialSeason = _urlSeasonFromSlug || _urlSeasonFromParams || 1;
 
   const movieDetailProps = useMovieDetail(slug, initialSeason);
-  const { isLoading, data, isPlaying, finalTmdbData, tmdbBackdropUrl: cleanBackdrop } = movieDetailProps;
+  const { isLoading, data, isPlaying, finalTmdbData, tmdbBackdropUrl: cleanBackdrop, tmdbPosterUrl: cleanPoster } = movieDetailProps;
 
   const queryClient = useQueryClient();
   const cachedBackdrop = useMemo(() => {
@@ -2306,6 +2306,39 @@ export const MovieDetail: React.FC<{
     return cachedBackdrop ? proxyImage(cachedBackdrop) : null;
   }, [data, cleanBackdrop, finalTmdbData, cachedBackdrop]);
 
+  const cachedPoster = useMemo(() => {
+    const detailCache: any = queryClient.getQueryData(["movie-detail", slug]);
+    if (detailCache?.movie?.poster_url) {
+      const fbUrl = detailCache.movie.poster_url;
+      return typeof fbUrl === "string" && fbUrl.startsWith("http") ? fbUrl : `https://phimimg.com/${fbUrl}`;
+    }
+    const tmdbId = slug.split("-")[1];
+    const isTv = slug.includes("-tv");
+    if (tmdbId) {
+      const tmdbCache: any = queryClient.getQueryData(["tmdb", "details_en", isTv ? "tv" : "movie", tmdbId])
+        || queryClient.getQueryData(["tmdb", "details", isTv ? "tv" : "movie", tmdbId]);
+      if (tmdbCache?.poster_path) {
+        return `https://image.tmdb.org/t/p/w780/${tmdbCache.poster_path.split('/').pop()}`;
+      }
+    }
+    return null;
+  }, [slug, queryClient]);
+
+  const resolvedPoster = useMemo(() => {
+    if (data?.movie) {
+      const rawPoster = cleanPoster || (data.movie.poster_url && typeof data.movie.poster_url === 'string' ? (data.movie.poster_url.startsWith("http") ? data.movie.poster_url : `https://phimimg.com/${data.movie.poster_url}`) : null);
+      return proxyImage(rawPoster);
+    }
+    return cachedPoster ? proxyImage(cachedPoster) : null;
+  }, [data, cleanPoster, cachedPoster]);
+
+  const [isDesktop, setIsDesktop] = useState(typeof window !== "undefined" ? window.innerWidth >= 768 : true);
+  useEffect(() => {
+    const handleResize = () => setIsDesktop(window.innerWidth >= 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   useEffect(() => {
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -2337,37 +2370,16 @@ export const MovieDetail: React.FC<{
         </div>
       )}
 
-      <AnimatePresence mode="wait">
-        {isLoading || !data?.movie ? (
-          <motion.div
-            key="loading"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="absolute inset-0"
-          >
-            <MovieDetailShimmer />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="loaded-content"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            transition={{ duration: 0.4, ease: "easeOut" }}
-            className="w-full h-full flex flex-col"
-          >
-            <MovieDetailContent
-              movieDetailProps={movieDetailProps}
-              slug={slug}
-              onClose={onClose}
-              onSelect={onSelect}
-              initialSeason={initialSeason}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <MovieDetailContent
+        movieDetailProps={movieDetailProps}
+        slug={slug}
+        onClose={onClose}
+        onSelect={onSelect}
+        initialSeason={initialSeason}
+        resolvedPoster={resolvedPoster}
+        isDesktop={isDesktop}
+        isLoading={isLoading || !data?.movie}
+      />
     </motion.div>
   );
 };

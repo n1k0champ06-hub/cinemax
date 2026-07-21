@@ -1385,7 +1385,10 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto">
+              <div className={cn(
+                "flex-1 min-h-0",
+                (panelOpen === 'settings' || panelOpen === 'sub') ? "flex flex-col overflow-hidden" : "overflow-y-auto"
+              )}>
                 {panelOpen === 'settings' && (
                   <>
 
@@ -1417,7 +1420,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                     )}
 
                     {((servers && servers.length > 0) || (streams && streams.length > 0)) && (
-                      <div className="flex flex-col flex-1 p-5 overflow-hidden">
+                      <div className="flex flex-col flex-1 p-5 min-h-0 overflow-hidden">
                         <p className="text-[11px] leading-relaxed text-gray-400 mb-4 bg-white/[0.02] p-2.5 rounded-lg border border-white/[0.04] italic">
                           Thay đổi nguồn phát nếu xảy ra lỗi phim. Đối với nguồn phát cộng đồng và embed sẽ có quảng cáo, vui lòng dùng Adblock hoặc Cốc Cốc để có trải nghiệm mượt mà.
                         </p>
@@ -1467,7 +1470,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                               </div>
 
                               {/* Source List */}
-                              <div className="source-list overflow-y-auto space-y-2 pr-1 custom-scrollbar max-h-[340px]">
+                              <div className="source-list flex-1 overflow-y-auto min-h-0 space-y-2 pr-1 custom-scrollbar">
                                 {activeList.map((s, idx) => {
                                   const isActive = activeStream?.providerLabel === s.providerLabel && activeStream?.url === s.url;
                                   return (
