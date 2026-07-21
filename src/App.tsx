@@ -94,8 +94,7 @@ export default function App() {
       }
       return initialTab;
     }
-    const isDesktop = typeof window !== "undefined" && window.innerWidth >= 768;
-    return isDesktop ? "home" : "swipe";
+    return "home";
   });
 
   // Redirect swipe page to home on PC/Desktop
