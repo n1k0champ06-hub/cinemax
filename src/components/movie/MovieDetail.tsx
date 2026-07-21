@@ -113,28 +113,19 @@ const formatCurrency = (amount: number | null | undefined): string => {
 
 const EMPTY_SUBTITLES: any[] = [];
 
-export const MovieDetail: React.FC<{
+const MovieDetailContent: React.FC<{
+  movieDetailProps: any;
   slug: string;
   onClose: () => void;
   onSelect: (slug: string) => void;
+  initialSeason: number;
 }> = ({
+  movieDetailProps,
   slug,
   onClose,
   onSelect,
+  initialSeason,
 }) => {
-  // Extract season early from slug or URL params before calling hook
-  const _isTmdbSlugEarly = slug.startsWith('tmdb-');
-  const _slugPartsEarly = _isTmdbSlugEarly ? slug.split('-') : [];
-  const _urlSeasonFromSlug = _slugPartsEarly.length > 3 ? parseInt(_slugPartsEarly[3]) : null;
-  const _urlSeasonFromParams = (() => {
-    try {
-      const p = new URLSearchParams(window.location.search);
-      const s = p.get('season');
-      return s ? Number(s) : null;
-    } catch { return null; }
-  })();
-  const initialSeason = _urlSeasonFromSlug || _urlSeasonFromParams || 1;
-
   const {
     data, isLoading, isFetching,
     actorsData, imdbRating, metacriticScore, trailerYoutubeId, finalTmdbData, imdbApiData,
@@ -143,7 +134,7 @@ export const MovieDetail: React.FC<{
     isPlaying, setIsPlaying,
     inList, handleToggleList,
     servers, selectedServerId, setSelectedServerId
-  } = useMovieDetail(slug, initialSeason);
+  } = movieDetailProps;
 
   // Determine media type from slug or TMDB data
   const filteredSeasons = finalTmdbData?.seasons ? finalTmdbData.seasons.filter((s: any) => s.season_number > 0) : [];
@@ -178,23 +169,7 @@ export const MovieDetail: React.FC<{
   const [copied, setCopied] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
 
-  // Lock body scroll khi modal mở — dùng position:fixed thay vì overflow:hidden
-  // để tránh layout recalculation gây jank trên mobile
-  useEffect(() => {
-    const scrollY = window.scrollY;
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${scrollY}px`;
-    document.body.style.width = '100%';
-    document.body.style.overflowY = 'scroll'; // giữ scrollbar width ổn định (desktop)
-    return () => {
-      document.body.style.position = '';
-      document.body.style.top = '';
-      document.body.style.width = '';
-      document.body.style.overflowY = '';
-      window.scrollTo(0, scrollY);
-    };
-  }, []);
-
+  // Scroll lock is handled in parent wrapper component
   const handleShare = async () => {
     try {
       if (typeof navigator.share === "function") {
@@ -1039,30 +1014,7 @@ export const MovieDetail: React.FC<{
     return undefined;
   };
 
-  if (isLoading)
-    return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[150] bg-[#050505] flex flex-col justify-center items-center"
-      >
-        <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
-      </motion.div>
-    );
-
-  // Tránh màn đen: nếu data chưa có nhưng đang fetch, show spinner thay vì unmount
-  if (!data?.movie)
-    return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[150] bg-[#050505] flex flex-col justify-center items-center"
-      >
-        <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
-      </motion.div>
-    );
+  if (!data?.movie) return null;
 
   const { movie } = data;
 
@@ -1199,13 +1151,7 @@ export const MovieDetail: React.FC<{
   const cleanMovieName = isTv ? `${cleanTitleForSeasonSearch(movie.name)} (Phần ${currentSeason})` : movie.name;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.98 }}
-      transition={{ duration: 0.3 }}
-      className="fixed inset-0 z-[150] bg-[#050505] overflow-y-auto custom-scrollbar"
-    >
+    <>
       {!showCollectionPage && !isPlaying && (
         <button
           onClick={onClose}
@@ -2153,6 +2099,177 @@ export const MovieDetail: React.FC<{
         streamType={activeStream?.type}
         quality={activeStream?.quality}
       />
+    </>
+  );
+};
+
+const MovieDetailShimmer = () => {
+  return (
+    <div className="absolute inset-0 z-[150] bg-[#050505] flex flex-col justify-start items-center overflow-y-auto custom-scrollbar">
+      {/* Banner Backdrop Shimmer */}
+      <div className="absolute top-0 left-0 w-full h-[60vh] sm:h-[75vh] 2xl:h-[80vh] pointer-events-none overflow-hidden">
+        <div className="w-full h-full bg-[#111] animate-pulse opacity-40" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/80 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#050505] via-transparent to-transparent" />
+      </div>
+
+      <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-10 pb-20 pt-[20vh] sm:pt-[25vh] md:pt-[35vh] lg:pt-[45vh] relative z-10 flex flex-col gap-6 sm:gap-8 xl:gap-12">
+        {/* DESKTOP ONLY VIEW (Hidden on Mobile) */}
+        <div className="hidden md:flex flex-col md:flex-row gap-8 lg:gap-12 w-full mb-16 items-start">
+          {/* Left Column: Poster Skeleton */}
+          <div className="w-[280px] sm:w-[320px] md:w-[340px] shrink-0 flex flex-col gap-4">
+            <div className="w-full aspect-[2/3] bg-[#111] border border-white/5 rounded-xl animate-pulse relative overflow-hidden">
+              <motion.div
+                className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/[0.05] to-transparent skew-x-12"
+                animate={{ translateX: ["-150%", "250%"] }}
+                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+              />
+            </div>
+            {/* Season select placeholder */}
+            <div className="h-12 bg-white/5 rounded-xl animate-pulse w-full border border-white/5" />
+          </div>
+
+          {/* Right Column: Info Skeletons */}
+          <div className="flex-1 flex flex-col gap-6 w-full">
+            {/* Title */}
+            <div className="h-12 sm:h-16 bg-gradient-to-r from-white/10 to-transparent rounded-2xl w-3/4 animate-pulse" />
+            
+            {/* Meta badges */}
+            <div className="flex flex-wrap gap-3 items-center mt-2">
+              <div className="h-6 w-16 bg-white/5 rounded-md animate-pulse" />
+              <div className="h-6 w-12 bg-white/5 rounded-md animate-pulse" />
+              <div className="h-6 w-24 bg-white/5 rounded-md animate-pulse" />
+              <div className="h-6 w-20 bg-white/5 rounded-md animate-pulse" />
+            </div>
+
+            {/* Description lines */}
+            <div className="flex flex-col gap-3 mt-4">
+              <div className="h-5 bg-white/5 rounded-md w-full animate-pulse" />
+              <div className="h-5 bg-white/5 rounded-md w-11/12 animate-pulse" />
+              <div className="h-5 bg-white/5 rounded-md w-4/5 animate-pulse" />
+            </div>
+
+            {/* Buttons / Actions */}
+            <div className="flex flex-wrap gap-4 mt-6">
+              <div className="h-12 w-40 bg-white/10 rounded-full animate-pulse" />
+              <div className="h-12 w-12 bg-white/5 rounded-full animate-pulse" />
+              <div className="h-12 w-12 bg-white/5 rounded-full animate-pulse" />
+            </div>
+          </div>
+        </div>
+
+        {/* MOBILE VIEW (Hidden on Desktop) */}
+        <div className="flex md:hidden flex-col gap-6 w-full mb-8">
+          {/* Mobile Poster Shimmer */}
+          <div className="w-[150px] aspect-[2/3] bg-[#111] border border-white/5 rounded-xl animate-pulse mx-auto relative overflow-hidden shadow-2xl">
+            <motion.div
+              className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/[0.05] to-transparent skew-x-12"
+              animate={{ translateX: ["-150%", "250%"] }}
+              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+            />
+          </div>
+
+          {/* Mobile Title & Meta */}
+          <div className="flex flex-col gap-4 text-center items-center">
+            <div className="h-10 bg-gradient-to-r from-white/10 via-white/10 to-transparent rounded-xl w-4/5 animate-pulse" />
+            
+            <div className="flex gap-2 justify-center">
+              <div className="h-5 w-12 bg-white/5 rounded animate-pulse" />
+              <div className="h-5 w-16 bg-white/5 rounded animate-pulse" />
+              <div className="h-5 w-14 bg-white/5 rounded animate-pulse" />
+            </div>
+          </div>
+
+          {/* Description lines */}
+          <div className="flex flex-col gap-2 px-2">
+            <div className="h-4 bg-white/5 rounded w-full animate-pulse" />
+            <div className="h-4 bg-white/5 rounded w-full animate-pulse" />
+            <div className="h-4 bg-white/5 rounded w-3/4 animate-pulse" />
+          </div>
+
+          {/* Action Button */}
+          <div className="h-14 w-full bg-white/10 rounded-xl animate-pulse mt-4" />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export const MovieDetail: React.FC<{
+  slug: string;
+  onClose: () => void;
+  onSelect: (slug: string) => void;
+}> = ({ slug, onClose, onSelect }) => {
+  const _isTmdbSlugEarly = slug.startsWith('tmdb-');
+  const _slugPartsEarly = _isTmdbSlugEarly ? slug.split('-') : [];
+  const _urlSeasonFromSlug = _slugPartsEarly.length > 3 ? parseInt(_slugPartsEarly[3]) : null;
+  const _urlSeasonFromParams = (() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const s = p.get('season');
+      return s ? Number(s) : null;
+    } catch { return null; }
+  })();
+  const initialSeason = _urlSeasonFromSlug || _urlSeasonFromParams || 1;
+
+  const movieDetailProps = useMovieDetail(slug, initialSeason);
+  const { isLoading, data } = movieDetailProps;
+
+  useEffect(() => {
+    const scrollY = window.scrollY;
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = '100%';
+    document.body.style.overflowY = 'scroll';
+    return () => {
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
+      document.body.style.overflowY = '';
+      window.scrollTo(0, scrollY);
+    };
+  }, [slug]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.98 }}
+      transition={{ duration: 0.3 }}
+      className="fixed inset-0 z-[150] bg-[#050505] overflow-y-auto custom-scrollbar"
+    >
+      <AnimatePresence mode="wait">
+        {isLoading || !data?.movie ? (
+          <motion.div
+            key="loading"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="absolute inset-0"
+          >
+            <MovieDetailShimmer />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="loaded-content"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+            className="w-full h-full flex flex-col"
+          >
+            <MovieDetailContent
+              movieDetailProps={movieDetailProps}
+              slug={slug}
+              onClose={onClose}
+              onSelect={onSelect}
+              initialSeason={initialSeason}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };
+

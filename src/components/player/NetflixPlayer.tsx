@@ -585,7 +585,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       if (panelOpen === 'none') setShowControls(false);
-    }, 2000);
+    }, 4500);
   }, [panelOpen]);
 
   useEffect(() => { resetControls(); return () => { if (timerRef.current) clearTimeout(timerRef.current); }; }, [resetControls]);
@@ -1302,9 +1302,9 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Settings / Quality / Speed Panel */}
+      {/* Settings / Quality / Speed / Subtitle Panel */}
       <AnimatePresence>
-        {settingsPanelOpen && panelOpen !== 'sub' && (
+        {settingsPanelOpen && (panelOpen !== 'sub' || !isMobile) && (
           <>
             <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration: 0.12 }}
               className="fixed inset-0 z-50 bg-black/50" onClick={closePanel} />
@@ -1320,13 +1320,14 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                   : cn(
                       "absolute bottom-16 rounded-2xl shadow-2xl transition-all duration-200",
                       panelOpen === 'speed' && "right-32 sm:right-48 w-60 sm:w-68 max-h-[48vh]",
+                      panelOpen === 'sub' && "right-12 sm:right-28 w-[360px] sm:w-[420px] max-h-[55vh]",
                       panelOpen === 'settings' && "right-4 sm:right-10 w-[320px] sm:w-[380px] max-h-[55vh]"
                     )
               )}
               onClick={e => e.stopPropagation()}>
 
               <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06] shrink-0 sticky top-0 z-20 bg-[#0a0a0c]/98 backdrop-blur-md">
-                {panelOpen !== 'settings' && (
+                {panelOpen !== 'settings' && panelOpen !== 'sub' && (
                   <button onClick={() => setPanelOpen('settings')} className="p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer">
                     <ArrowLeft size={16} className="text-white/70" />
                   </button>
@@ -1335,6 +1336,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                   {panelOpen === 'settings' && 'Nguồn phát'}
                   {panelOpen === 'quality'  && 'Chất lượng'}
                   {panelOpen === 'speed'    && 'Tốc độ phát'}
+                  {panelOpen === 'sub'      && 'Âm thanh & Phụ đề'}
                 </h3>
                 <button onClick={closePanel} className="p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer">
                   <X size={16} className="text-white/60" />
@@ -1452,6 +1454,138 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                       </div>
                     )}
                   </>
+                )}
+
+                {panelOpen === 'sub' && (
+                  <div className="flex flex-col h-full min-h-0 overflow-hidden">
+                    {/* 2-Column Split Body */}
+                    <div className="grid grid-cols-2 gap-4 p-5 overflow-hidden min-h-0">
+                      {/* Left Column: Âm thanh */}
+                      <div className="flex flex-col min-h-0 overflow-hidden border-r border-white/5 pr-4">
+                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 shrink-0">Âm thanh</h4>
+                        <div className="space-y-2 overflow-y-auto custom-scrollbar pr-1 flex-1 max-h-[25vh]">
+                          {(() => {
+                            const formatAudioName = (s: any, idx: number) => {
+                              if (!s) return 'Ngôn ngữ gốc [Gốc]';
+                              const label = (s.providerLabel || s.label || s.name || s.provider || '').toLowerCase();
+                              const lang = (s.lang || '').toLowerCase();
+                              
+                              // 1. CHỈ KHI luồng HLS/nguồn có chứa từ khóa thuyết minh / lồng tiếng thì mới được hiện Tiếng Việt
+                              const isVietDub = label.includes('thuyết minh') || label.includes('thuyet minh') ||
+                                                label.includes('lồng tiếng') || label.includes('long tieng') ||
+                                                label.includes('lồng tiếng việt') || label.includes('thuyết minh việt');
+
+                              if (isVietDub) {
+                                if (label.includes('thuyết minh') || label.includes('thuyet minh')) return 'Tiếng Việt [Thuyết minh]';
+                                if (label.includes('lồng tiếng') || label.includes('long tieng')) return 'Tiếng Việt [Lồng tiếng]';
+                                return 'Tiếng Việt';
+                              }
+
+                              // 2. Nếu là nguồn phim sản xuất tại Việt Nam:
+                              if (label.includes('phim việt') || label.includes('phim viet')) return 'Tiếng Việt [Gốc]';
+
+                              // 3. Phim Nhật (Anime), Hàn, Anh, Mỹ:
+                              if (lang === 'ja' || label.includes('japanese') || label.includes('anime')) {
+                                return idx === 0 ? 'Tiếng Nhật [Gốc]' : `Tiếng Nhật (Server ${idx + 1})`;
+                              }
+                              if (lang === 'ko' || label.includes('korean')) {
+                                return idx === 0 ? 'Tiếng Hàn [Gốc]' : `Tiếng Hàn (Server ${idx + 1})`;
+                              }
+                              if (lang === 'en' || label.includes('english')) {
+                                return idx === 0 ? 'Tiếng Anh [Gốc]' : `Tiếng Anh (Server ${idx + 1})`;
+                              }
+
+                              // 4. Mặc định là Ngôn ngữ gốc [Gốc]
+                              return idx === 0 ? 'Ngôn ngữ gốc [Gốc]' : `Ngôn ngữ gốc (Server ${idx + 1})`;
+                            };
+
+                            // CHỈ lọc các nguồn phim HLS (loại bỏ các nguồn embed iframe 3rd party không can thiệp được)
+                            const hlsStreamsOnly = (streams && streams.length > 0)
+                              ? streams.filter((s: any) => s.type !== 'embed' && s.type !== 'iframe')
+                              : [];
+
+                            const rawList = (hlsStreamsOnly.length > 0)
+                              ? hlsStreamsOnly.map((s: any, idx: number) => ({
+                                  ...s,
+                                  displayName: formatAudioName(s, idx)
+                                }))
+                              : [
+                                  { displayName: 'Ngôn ngữ gốc [Gốc]', url: url },
+                                ];
+
+                            const seenNames = new Set<string>();
+                            const audioList = rawList.filter((item: any) => {
+                              if (seenNames.has(item.displayName)) return false;
+                              seenNames.add(item.displayName);
+                              return true;
+                            });
+
+                            return audioList.map((s: any, idx: number) => {
+                              const isActive = activeStream
+                                ? (activeStream.providerLabel === s.providerLabel && activeStream.url === s.url)
+                                : idx === 0;
+
+                              return (
+                                <button key={idx} onClick={() => s.url && onStreamSelect?.(s)}
+                                  className={`flex items-center gap-2.5 text-left w-full cursor-pointer py-1.5 px-2 rounded-lg transition-all group ${isActive ? 'bg-white/10 border border-white/20' : 'hover:bg-white/5'}`}>
+                                  <Check size={14} className={isActive ? "text-[#E50914] opacity-100" : "opacity-0"} />
+                                  <span className={`text-xs truncate ${isActive ? 'text-white font-bold' : 'text-white/70 group-hover:text-white'}`}>
+                                    {s.displayName}
+                                  </span>
+                                </button>
+                              );
+                            });
+                          })()}
+                        </div>
+                      </div>
+
+                      {/* Right Column: Phụ đề */}
+                      <div className="flex flex-col min-h-0 overflow-hidden pl-2">
+                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 shrink-0">Phụ đề</h4>
+                        <div className="space-y-2 overflow-y-auto custom-scrollbar pr-1 flex-1 max-h-[25vh]">
+                          {combinedSubs.map(s => {
+                            const isActive = selectedSub === s.id;
+                            return (
+                              <button key={String(s.id)} onClick={() => handleSubChange(s.id)}
+                                className={`flex items-center gap-2.5 text-left w-full cursor-pointer py-1.5 px-2 rounded-lg transition-all group ${isActive ? 'bg-white/10 border border-white/20' : 'hover:bg-white/5'}`}>
+                                <Check size={14} className={isActive ? "text-[#E50914] opacity-100" : "opacity-0"} />
+                                <span className={`text-xs ${isActive ? 'text-white font-bold' : 'text-white/70 group-hover:text-white'}`}>
+                                  {s.name}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Subtitle Offset adjusting (Bù trừ phụ đề) */}
+                    {selectedSub !== 'off' && subEnabled && (
+                      <div className="px-5 py-3 border-t border-white/[0.06] bg-[#0c0d11]">
+                        <p className="text-[11px] text-white/40 mb-1.5 font-medium">Bù trừ phụ đề</p>
+                        <div className="flex items-center justify-between gap-2.5 bg-white/[0.03] p-1.5 rounded-xl border border-white/[0.05]">
+                          <button 
+                            onClick={() => setSubOffset(p => p - 250)} 
+                            className="px-2.5 py-1.5 bg-white/[0.06] hover:bg-white/12 active:scale-95 rounded-lg text-xs font-bold text-white shrink-0 cursor-pointer transition-all border border-white/5"
+                          >
+                            −0.25s
+                          </button>
+                          <span className={`flex-1 text-center text-xs font-mono font-bold px-1 truncate ${subOffset === 0 ? 'text-white/30' : 'text-emerald-400'}`}>
+                            {subOffset >= 0 ? '+' : ''}{(subOffset / 1000).toFixed(2)}s
+                          </span>
+                          <button 
+                            onClick={() => setSubOffset(p => p + 250)} 
+                            className="px-2.5 py-1.5 bg-white/[0.06] hover:bg-white/12 active:scale-95 rounded-lg text-xs font-bold text-white shrink-0 cursor-pointer transition-all border border-white/5"
+                          >
+                            +0.25s
+                          </button>
+                        </div>
+                        {subOffset !== 0 && (
+                          <button onClick={() => setSubOffset(0)} className="mt-1.5 w-full text-[10px] text-white/30 hover:text-white/60 transition-colors cursor-pointer text-center">Reset delay</button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {panelOpen === 'quality' && qualities.map(q => (
