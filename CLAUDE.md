@@ -1,6 +1,7 @@
 # CLAUDE.md — Cinemax Agent Directives
 
 > Tài liệu kỹ thuật cho AI agent. Đọc kỹ trước khi sửa code hoặc deploy.
+> **LUÔN đọc section `## ❌ Anti-Patterns` và `## 🗃️ Module Ownership` trước khi chạm vào bất kỳ file nào.**
 
 ---
 
@@ -235,12 +236,70 @@ International:
 
 ---
 
+## ❌ Anti-Patterns — Đừng làm những thứ này
+
+> Agent hay tự phát minh lại wheel hoặc làm theo cách sai. Danh sách này là "bẫy" đã từng xảy ra.
+
+### DOM & React
+- ❌ `document.body.style.overflow = 'hidden'` → ✅ `document.body.classList.add('overflow-hidden')`
+  - *Lý do: inline style capture/restore tạo race condition với animation exit*
+- ❌ `useEffect` với pattern `const orig = X; set X; return () => X = orig` cho mutable DOM → dễ capture sai giá trị
+- ❌ Dùng `state` cho giá trị không cần re-render (video currentTime, timers) → dùng `ref`
+- ❌ `useEffect(() => {...}, [slug])` khi chỉ cần chạy 1 lần lúc mount → dependency array sai
+
+### Architecture
+- ❌ Thêm stream/source logic vào component files (MovieDetail, NetflixPlayer) → ✅ thuộc `src/api/streamProviders/viProviders.ts`
+- ❌ Thêm route mới vào `cloudflare-worker.js` mà không update `wrangler.json` nếu cần binding
+- ❌ Gọi trực tiếp `graphql.anilist.co` → ✅ dùng AniMapper REST qua `/api/anilist`
+- ❌ Tạo file `.ts` mới trong `scripts/` → dùng `.cjs` (CommonJS) vì Node scripts không có bundler
+
+### Agent Workflow
+- ❌ Dùng `grep_search` để navigate codebase → ✅ dùng `search_graph` / `trace_path` từ codebase-memory-mcp
+- ❌ Đọc toàn bộ file > 500 lines → đọc từng section theo mục tiêu, dùng `get_code_snippet` MCP
+- ❌ Commit mà chưa chạy `npm run lint` (tsc --noEmit)
+
+---
+
+## 🗃️ Module Ownership — File nào làm gì
+
+Khi nhận task, map task → module trước, chỉ đọc file liên quan:
+
+| Domain | File chính | File phụ |
+|--------|------------|----------|
+| Stream sources (VI) | `src/api/streamProviders/viProviders.ts` | `src/hooks/useStreamAggregator.ts` |
+| Stream scoring algorithm | `src/api/streamProviders/types.ts` | — |
+| Player UI & controls | `src/components/player/NetflixPlayer.tsx` | `PlayerSelect.tsx`, `StreamPicker.tsx` |
+| Subtitle display | `src/components/player/SubtitleOverlay.tsx` | `src/api/subtitleApi.ts` |
+| Movie metadata (TMDB+IMDb) | `src/hooks/movie/useMovieDetail.ts` | `src/api/phimApi.ts` |
+| Movie detail page | `src/components/movie/MovieDetail.tsx` | `TvSeasons.tsx`, `MovieCollection.tsx` |
+| Backend proxy routes | `cloudflare-worker.js` (monolith có comment blocks) | `wrangler.json` |
+| Render bridge API | `hollysheesh-bridge/server.cjs` | — |
+| MongoDB seeder | `hollysheesh-bridge/seed.cjs` | — |
+| Routing & page layout | `src/App.tsx` | `src/components/layout/` |
+| Home page rows | `src/components/movie/MovieRows.tsx` | `src/components/Hero.tsx` |
+
+**Quy tắc:** Nếu task liên quan đến A mà phải sửa file của B → **dừng lại, hỏi trước**.
+
+---
+
+## 🔗 Agent Sub-Context
+
+Context chuyên biệt cho từng domain — đọc file này thay vì đọc toàn bộ code:
+
+| Domain | Context File | Khi nào đọc |
+|--------|-------------|-------------|
+| Player & Video | [`src/components/player/AGENTS.md`](file:///c:/Users/cykab/Downloads/cinemax/src/components/player/AGENTS.md) | Sửa player, subtitle, stream picker |
+| Stream Providers | [`src/api/streamProviders/AGENTS.md`](file:///c:/Users/cykab/Downloads/cinemax/src/api/streamProviders/AGENTS.md) | Sửa nguồn phát, scoring, thêm provider |
+
+---
+
 ## 🐛 Known Issues & Fixes
 
-| Issue | Root Cause | Fix |
-|---|---|---|
-| HOLLYSHEESH không hiện | MongoDB trống (chưa seed) | `node hollysheesh-bridge/seed.cjs 50` |
-| KKPhim/OPhim loading mãi | kkphimplayer7.com block Cloudflare IPs | Route qua Render `/proxy/m3u8` trong `buildProxiedM3u8Url()` |
-| Phải reload mới đủ nguồn | `serversLength` trong `queryKey` → re-fetch | Đã bỏ `serversLength` khỏi `queryKey` |
-| Render cold start ~50s | Free tier sleep sau 15 phút | Cloudflare cron keep-alive mỗi 10 phút |
-| wrangler deploy xóa Dashboard vars | Vars set trên Dashboard không có trong `wrangler.json` | Luôn add vars mới vào `wrangler.json` trước khi deploy |
+| Issue | Root Cause | Fix | Anti-Pattern tránh lặp |
+|---|---|---|---|
+| HOLLYSHEESH không hiện | MongoDB trống (chưa seed) | `node hollysheesh-bridge/seed.cjs 50` | Đừng hardcode stream URL vào code |
+| KKPhim/OPhim loading mãi | kkphimplayer7.com block Cloudflare IPs | Route qua Render `/proxy/m3u8` trong `buildProxiedM3u8Url()` | Đừng bỏ qua VI CDN routing logic |
+| Phải reload mới đủ nguồn | `serversLength` trong `queryKey` → re-fetch | Đã bỏ `serversLength` khỏi `queryKey` | Đừng thêm length/count vào queryKey |
+| Render cold start ~50s | Free tier sleep sau 15 phút | Cloudflare cron keep-alive mỗi 10 phút | — |
+| wrangler deploy xóa Dashboard vars | Vars set trên Dashboard không có trong `wrangler.json` | Luôn add vars mới vào `wrangler.json` trước khi deploy | Đừng set secret chỉ trên Dashboard |
+| Body scroll bị lock sau back | `body.style.overflow` capture race condition | `classList.add/remove('overflow-hidden')` | Xem Anti-Patterns → DOM |
