@@ -17,7 +17,7 @@
     }
   ],
   "start_url": "/?tab=swipe",
-  "background_color": "#050505",
+  "background_color": "#000000",
   "theme_color": "#E50914",
   "display": "standalone",
   "orientation": "portrait"
