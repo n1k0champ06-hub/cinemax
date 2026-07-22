@@ -1045,6 +1045,9 @@ const MovieDetailContent: React.FC<{
                     const stillPath = getEpStillPath(epNameStr, tmdbEp?.still_path || ep.still_path);
                     const isSelected = currentSeason === activeEpSeason && (activeEp === ep || (activeEp?.name && isSameEpisode(ep.episode_number || ep.name, activeEp.name)));
                     const displayEpName = ep.episode_number ? `Tập ${ep.episode_number}` : (String(ep.name).startsWith("Tập") ? ep.name : `Tập ${ep.name}`);
+                    const displayEpTitle = tmdbEp?.name && !isGenericEpisodeName(tmdbEp.name, tmdbEp.episode_number)
+                      ? tmdbEp.name
+                      : (ep.name && !isGenericEpisodeName(ep.name, ep.episode_number) && !String(ep.name).startsWith("Tập") ? ep.name : '');
 
                     return (
                       <button
@@ -1078,7 +1081,7 @@ const MovieDetailContent: React.FC<{
                           </div>
                         </div>
                         <span className={cn("text-xs font-bold truncate", isSelected ? "text-[#e50914]" : "text-white")}>
-                          {displayEpName} {tmdbEp?.name ? `— ${tmdbEp.name}` : ''}
+                          {displayEpName}{displayEpTitle ? ` — ${displayEpTitle}` : ''}
                         </span>
                       </button>
                     );
