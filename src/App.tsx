@@ -41,6 +41,7 @@ const MusicPage = lazy(() => importMusicPage().then(m => ({ default: m.MusicPage
 const UserGuideModal = lazy(() => import("./components/layout/UserGuideModal").then(m => ({ default: m.UserGuideModal })));
 const ReportNotification = lazy(() => import("./components/layout/ReportNotification").then(m => ({ default: m.ReportNotification })));
 const GodModeConsole = lazy(() => import("./components/debug/GodModeConsole").then(m => ({ default: m.GodModeConsole })));
+const MobileDiagnosticHUD = lazy(() => import("./components/debug/MobileDiagnosticHUD").then(m => ({ default: m.MobileDiagnosticHUD })));
 const MobileSimulator = lazy(() => import("./components/debug/MobileSimulator").then(m => ({ default: m.MobileSimulator })));
 const ScraperDashboard = lazy(() => import("./components/admin/ScraperDashboard"));
 const PWAInstallModal = lazy(() => import("./components/layout/PWAInstallModal").then(m => ({ default: m.PWAInstallModal })));
@@ -745,6 +746,7 @@ export default function App() {
 
         <Footer />
         <GodModeConsole />
+        <MobileDiagnosticHUD />
         <MobileSimulator />
         <ReportNotification />
         <PWAInstallModal />

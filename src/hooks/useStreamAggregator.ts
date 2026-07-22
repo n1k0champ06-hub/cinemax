@@ -129,11 +129,19 @@ export function useStreamAggregator({
   }), [query.tmdbId, query.imdbId, query.type, query.season, query.episode, query.viSlug, query.title, query.titleVi, query.year, activeEpName, retryCount, query.hianimeEpisodeId, activeEpisodeObj?.hianime_episode_id]);
 
   const prevRef = useRef<{ queryKey: string; enabled: boolean }>({ queryKey: '', enabled: false });
+  const episodeIdentityKey = useMemo(() => `${query.tmdbId || ''}:${query.type || ''}:${query.season || 1}:${query.episode || 1}:${activeEpName}`, [query.tmdbId, query.type, query.season, query.episode, activeEpName]);
+  const prevEpKeyRef = useRef<string>('');
 
   useEffect(() => {
     prevRef.current = { queryKey, enabled };
 
     if (!enabled) return;
+
+    // Reset selection ONLY when episode identity changes (e.g. user switched episode or movie)
+    if (prevEpKeyRef.current && prevEpKeyRef.current !== episodeIdentityKey) {
+      setSelectedStream(null);
+    }
+    prevEpKeyRef.current = episodeIdentityKey;
 
     // 1. Check local memory cache
     const cached = STREAM_CACHE.get(queryKey);
@@ -152,9 +160,6 @@ export function useStreamAggregator({
       'background: #3B82F6; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;',
       { query, activeEp: activeEpName || '1' }
     );
-
-    // Reset selection when query changes
-    setSelectedStream(null);
 
     // Cancel previous run
     if (abortRef.current) abortRef.current.abort();

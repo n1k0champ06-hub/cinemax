@@ -550,7 +550,7 @@ const MovieDetailContent: React.FC<{
 
   // Sync selectedServerId when activeStream changes (e.g. user selects a source inside the player)
   useEffect(() => {
-    if (!activeStream || !currentServers || currentServers.length === 0) return;
+    if (isPlaying || !activeStream || !currentServers || currentServers.length === 0) return;
 
     const provider = activeStream.provider?.toLowerCase() || '';
     const label = activeStream.providerLabel?.toLowerCase() || '';
