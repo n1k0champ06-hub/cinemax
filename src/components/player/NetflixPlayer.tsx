@@ -1132,6 +1132,14 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                         </span>
 
                         <div className="flex items-center gap-1">
+                          {isTv && episodes.length > 0 && (
+                            <button onClick={openPanel('episodes')}
+                              className={`p-1.5 rounded-md transition-colors cursor-pointer ${panelOpen === 'episodes' ? 'text-[#E50914] bg-white/10' : 'text-white/80 hover:text-white hover:bg-white/10'}`}
+                              title="Các tập phim">
+                              <Layers size={16} />
+                            </button>
+                          )}
+
                           {!isEmbed && (
                             <button onClick={() => setPanelOpen('sub')}
                               className={`p-1.5 rounded-md transition-colors cursor-pointer ${panelOpen === 'sub' ? 'text-[#E50914] bg-white/10' : 'text-white/80 hover:text-white hover:bg-white/10'}`}

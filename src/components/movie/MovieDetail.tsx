@@ -18,7 +18,8 @@ import {
   Clock,
   Star,
   Film,
-  AlertTriangle
+  AlertTriangle,
+  Layers
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { SafeImage } from "../ui/ImageShimmer";
@@ -921,7 +922,7 @@ const MovieDetailContent: React.FC<{
               damping: 28, 
               mass: 0.85 
             }}
-            className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-2xl flex flex-col p-3 sm:p-6 md:p-8"
+            className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-2xl flex flex-col p-3 sm:p-6 md:p-8 overflow-y-auto custom-scrollbar"
           >
             <div className="flex justify-between items-center z-[210] relative max-w-[1600px] w-full mx-auto mb-3 sm:mb-4 shrink-0">
               <button
@@ -943,8 +944,8 @@ const MovieDetailContent: React.FC<{
               </button>
             </div>
 
-            <div className="w-full max-w-[1600px] mx-auto flex-1 flex items-center justify-center min-h-0 relative">
-              <div className="w-full aspect-video max-h-[88vh] rounded-2xl overflow-hidden bg-black shadow-2xl relative border border-white/10">
+            <div className="w-full max-w-[1600px] mx-auto flex flex-col items-center justify-center relative shrink-0 mb-6">
+              <div className="w-full aspect-video max-h-[85vh] rounded-2xl overflow-hidden bg-black shadow-2xl relative border border-white/10">
                 <NetflixPlayer
                   key={`player-${slug}`}
                   url={isCinemaOS ? undefined : (activeStream?.type === 'hls' ? activeStream.url : undefined)}
@@ -1006,6 +1007,85 @@ const MovieDetailContent: React.FC<{
                 />
               </div>
             </div>
+
+            {/* Episode List Section inside Player Modal Overlay */}
+            {(isTv || baseEpList.length > 0) && (
+              <div className="w-full max-w-[1600px] mx-auto pt-4 border-t border-white/10 flex flex-col gap-3 pb-10 shrink-0">
+                <div className="flex items-center justify-between gap-4">
+                  <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                    <Layers size={18} className="text-[#e50914]" />
+                    <span>Danh Sách Tập</span>
+                  </h3>
+                  {isTv && filteredSeasons && filteredSeasons.length > 1 && (
+                    <div className="flex gap-2 overflow-x-auto scrollbar-hide shrink-0">
+                      {filteredSeasons.map((s: any) => (
+                        <button
+                          key={s.id}
+                          onClick={() => handleSeasonSwitch(s.season_number)}
+                          className={cn(
+                            "px-3 py-1 rounded-full text-xs font-bold transition-all border cursor-pointer",
+                            currentSeason === s.season_number
+                              ? "bg-[#e50914] border-[#e50914] text-white shadow-md"
+                              : "bg-white/5 border-white/10 text-gray-400 hover:text-white"
+                          )}
+                        >
+                          Mùa {s.season_number}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-3 overflow-x-auto pb-3 custom-scrollbar snap-x w-full">
+                  {epList.map((ep: any, i: number) => {
+                    const tmdbEp = isTv && seasonData?.episodes
+                      ? seasonData.episodes.find((t: any) => isSameEpisode(t.episode_number || t.name, ep.name || ep.episode_number))
+                      : null;
+                    const epNameStr = ep.episode_number ? `${ep.episode_number}` : ep.name;
+                    const stillPath = getEpStillPath(epNameStr, tmdbEp?.still_path || ep.still_path);
+                    const isSelected = currentSeason === activeEpSeason && (activeEp === ep || (activeEp?.name && isSameEpisode(ep.episode_number || ep.name, activeEp.name)));
+                    const displayEpName = ep.episode_number ? `Tập ${ep.episode_number}` : (String(ep.name).startsWith("Tập") ? ep.name : `Tập ${ep.name}`);
+
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => handleSelectEpisode(ep, true)}
+                        className={cn(
+                          "w-44 sm:w-56 shrink-0 flex flex-col gap-2 p-2 rounded-xl text-left transition-all border snap-start group cursor-pointer",
+                          isSelected
+                            ? "bg-white/10 border-[#e50914] shadow-[0_0_15px_rgba(229,9,20,0.3)]"
+                            : "bg-white/5 border-white/10 hover:bg-white/10"
+                        )}
+                      >
+                        <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-black/60 border border-white/10 shrink-0">
+                          {stillPath ? (
+                            <SafeImage src={stillPath} alt={ep.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-gray-500 font-bold text-xs">
+                              {displayEpName}
+                            </div>
+                          )}
+                          <div className={cn(
+                            "absolute inset-0 flex items-center justify-center transition-all",
+                            isSelected ? "bg-black/40" : "bg-black/20 group-hover:bg-black/0"
+                          )}>
+                            <div className={cn(
+                              "w-7 h-7 rounded-full flex items-center justify-center transition-all",
+                              isSelected ? "bg-[#e50914] text-white shadow-lg" : "bg-black/60 text-white border border-white/20"
+                            )}>
+                              <Play size={16} fill="white" className="ml-0.5" />
+                            </div>
+                          </div>
+                        </div>
+                        <span className={cn("text-xs font-bold truncate", isSelected ? "text-[#e50914]" : "text-white")}>
+                          {displayEpName} {tmdbEp?.name ? `— ${tmdbEp.name}` : ''}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
