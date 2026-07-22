@@ -81,10 +81,9 @@ a, button, [role="button"], [tabindex] {
   contain: layout;
 }
 
-/* CSS containment for off-screen rows — browser skips rendering until visible */
+/* CSS containment for off-screen rows */
 .lazy-row-section {
-  content-visibility: auto;
-  contain-intrinsic-size: 0 320px;
+  contain: layout style;
 }
 
 /* Respect reduced motion */

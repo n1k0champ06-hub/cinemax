@@ -269,21 +269,16 @@ export default function App() {
     }
   }, [currentTab, selectedMovieSlug, showSearch]);
 
-  // Manage body overflow-hidden at App level so lifecycle matches animation exit duration
+  // Manage body overflow-hidden at App level
   useEffect(() => {
     if (selectedMovieSlug || showSearch || showUserGuide) {
       document.body.classList.add('overflow-hidden');
     } else {
-      // Delay matches the exit animation duration (0.28s) so pointer-events
-      // are restored only after the fixed overlay has fully unmounted
-      const t = window.setTimeout(() => {
-        document.body.classList.remove('overflow-hidden');
-        requestAnimationFrame(() => {
-          window.dispatchEvent(new Event('resize'));
-          window.dispatchEvent(new Event('scroll'));
-        });
-      }, 350);
-      return () => window.clearTimeout(t);
+      document.body.classList.remove('overflow-hidden');
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'));
+        window.dispatchEvent(new Event('scroll'));
+      });
     }
   }, [selectedMovieSlug, showSearch, showUserGuide]);
 
@@ -372,7 +367,7 @@ export default function App() {
   return (
     <PersistQueryClientProvider client={queryClient} persistOptions={{ persister }}>
       <Suspense fallback={<SuspenseFallback />}>
-      <div className="min-h-screen bg-[#050505] text-white selection:bg-red-600/30 selection:text-white font-sans overflow-x-hidden relative">
+      <div className="min-h-screen bg-[#050505] text-white selection:bg-red-600/30 selection:text-white font-sans relative">
         {currentTab !== "scraper" && currentTab !== "admin" && (
           <NavBar
             currentTab={currentTab}
@@ -700,7 +695,7 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
               transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-              style={{ pointerEvents: 'auto' }}
+              style={{ pointerEvents: selectedMovieSlug ? 'auto' : 'none' }}
               onAnimationStart={() => {}}
             >
               <MovieDetail

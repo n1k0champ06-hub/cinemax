@@ -279,6 +279,18 @@ const MovieDetailContent: React.FC<{
     } catch (e) {}
   }, [slug, isPlaying]);
 
+  // Lock body scroll cleanly when player modal is open
+  useEffect(() => {
+    if (isPlaying) {
+      document.body.classList.add('overflow-hidden');
+    } else {
+      document.body.classList.remove('overflow-hidden');
+    }
+    return () => {
+      document.body.classList.remove('overflow-hidden');
+    };
+  }, [isPlaying]);
+
   // Reset season/episode selections immediately when slug changes to avoid state inheritance
   useEffect(() => {
     setActiveSeasonNumber(null);
@@ -847,6 +859,33 @@ const MovieDetailContent: React.FC<{
   const posterUrl = proxyImage(rawPoster);
   const cleanMovieName = isTv ? `${cleanTitleForSeasonSearch(movie.name)} (Phần ${currentSeason})` : movie.name;
 
+  const seasonEpText = useMemo(() => {
+    if (isTv) {
+      const numSeasons = finalTmdbData?.number_of_seasons || (filteredSeasons?.length > 0 ? filteredSeasons.length : 1);
+      const numEpisodes = finalTmdbData?.number_of_episodes || seasonData?.episodes?.length;
+      const status = finalTmdbData?.status || movie?.status;
+      const isCompleted = status === "Ended" || status === "completed" || movie?.status === "completed";
+      
+      const seasonStr = numSeasons > 1 ? `${numSeasons} Phần` : `1 Phần`;
+      if (numEpisodes) {
+        if (isCompleted) {
+          return `${seasonStr} (${numEpisodes} Tập)`;
+        } else {
+          return `${seasonStr} (${numEpisodes} Tập • Đang chiếu)`;
+        }
+      } else {
+        return isCompleted ? `${seasonStr} (Trọn bộ)` : `${seasonStr} (Đang cập nhật)`;
+      }
+    } else {
+      if (finalTmdbData?.runtime) {
+        return `${finalTmdbData.runtime} phút`;
+      } else if (movie?.time) {
+        return movie.time;
+      }
+      return null;
+    }
+  }, [isTv, finalTmdbData?.number_of_seasons, finalTmdbData?.number_of_episodes, finalTmdbData?.status, finalTmdbData?.runtime, filteredSeasons?.length, seasonData?.episodes?.length, movie?.status, movie?.time]);
+
   return (
     <>
       {!showCollectionPage && !isPlaying && (
@@ -858,7 +897,7 @@ const MovieDetailContent: React.FC<{
         </button>
       )}
 
-      {!isPlaying && bgDetailImg && (
+      {bgDetailImg && (
         <div className="absolute top-0 left-0 w-full h-[60vh] sm:h-[75vh] 2xl:h-[80vh] pointer-events-none z-0">
           <SafeImage src={bgDetailImg} alt="Hero" className="w-full h-full object-cover object-top opacity-50" />
           <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/80 to-transparent" />
@@ -866,108 +905,112 @@ const MovieDetailContent: React.FC<{
         </div>
       )}
 
-      <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-10 pb-20 pt-[20vh] sm:pt-[25vh] md:pt-[35vh] lg:pt-[45vh] relative z-10 flex flex-col gap-6 sm:gap-8 xl:gap-12">
-        
-        <div className="w-full">
-          <AnimatePresence mode="sync">
-            {isPlaying && activeEp ? (
-              <div className="flex flex-col gap-4 mb-12 -mt-[15vh] sm:-mt-[25vh] lg:-mt-[35vh]">
-                <div className="flex justify-between items-center z-[110] relative">
-                  <button
-                    onClick={() => setIsPlaying(false)}
-                    className="flex items-center justify-center gap-2 text-gray-300 hover:text-white bg-black/95 backdrop-blur-md hover:bg-neutral-900 border border-white/15 w-10 h-10 sm:w-auto sm:h-auto sm:px-4 sm:py-2.5 rounded-full transition-all font-bold tracking-wide shadow-lg cursor-pointer hover:scale-105 active:scale-95 shrink-0"
-                  >
-                    <ChevronLeft size={20} className="sm:hidden" />
-                    <ChevronLeft size={16} className="hidden sm:block" /> 
-                    <span className="hidden sm:inline text-xs">Quay lại trang thông tin</span>
-                  </button>
-
-                  <button
-                    onClick={() => setShowReportModal(true)}
-                    className="flex items-center justify-center gap-2 text-red-400 hover:text-red-300 bg-red-950/20 hover:bg-red-950/30 border border-red-500/25 hover:border-red-500/40 w-10 h-10 sm:w-auto sm:h-auto sm:px-4 sm:py-2.5 rounded-full transition-all font-bold tracking-wide shadow-lg cursor-pointer hover:scale-105 active:scale-95 shrink-0"
-                  >
-                    <AlertTriangle size={20} className="sm:hidden" />
-                    <AlertTriangle size={16} className="hidden sm:block" />
-                    <span className="hidden sm:inline text-xs">Báo lỗi phim</span>
-                  </button>
-                </div>
-
-                <motion.div 
-                  key="player"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="w-full rounded-2xl overflow-hidden bg-black shadow-2xl relative z-[110] aspect-video"
-                >
-                  <NetflixPlayer
-                    key={isTv ? `player-${slug}-${currentSeason}-${activeEp?.name || '1'}` : `player-${slug}-movie`}
-                     url={isCinemaOS ? undefined : (activeStream?.type === 'hls' ? activeStream.url : undefined)}
-                     embedUrl={
-                       activeStream?.type === 'embed'
-                         ? activeStream.url
-                         : ((!isAggregatorLoading && !activeStream && finalTmdbData?.id)
-                             ? (isTv
-                                 ? `https://vidsrc.me/embed/tv?tmdb=${finalTmdbData.id}&season=${currentSeason}&episode=${activeEp?.name || 1}`
-                                 : `https://vidsrc.me/embed/movie?tmdb=${finalTmdbData.id}`
-                               )
-                             : undefined)
-                     }
-                    headers={activeStream?.headers}
-                    subtitleUrl={bestSubUrl}
-                    externalSubtitles={limitedSubtitles}
-                    title={`${cleanMovieName} - ${activeEp?.name || '1'}`}
-                    slug={slug}
-                    episodeName={activeEp?.name || '1'}
-                    posterUrl={posterUrl || ''}
-                    thumbUrl={bgDetailImg || ''}
-                    movieName={cleanMovieName}
-                    onClose={() => setIsPlaying(false)}
-                    servers={currentServers}
-                    selectedServerId={selectedServerId}
-                    tmdbId={finalTmdbData?.id}
-                    type={isTv ? 'series' : 'single'}
-                    onServerChange={(newId) => {
-                      setSelectedServerId(newId);
-                      const srvEps = currentServers[newId]?.server_data || [];
-                      const matchingEp = srvEps.find((ep: any) => isSameEpisode(ep.name, activeEp?.name));
-                      if (matchingEp) {
-                        setActiveEp(matchingEp);
-                      } else if (srvEps[0]) {
-                        setActiveEp(srvEps[0]);
-                      }
-                    }}
-                    episodes={
-                      isTv
-                        ? (seasonData?.episodes && seasonData.episodes.length > 0
-                            ? seasonData.episodes.map((ep: any) => ({
-                                ...ep,
-                                name: String(ep.episode_number),
-                              }))
-                            : (currentServers?.[selectedServerId]?.server_data || []))
-                        : []
-                    }
-                    onEpisodeSelect={handleSelectEpisode}
-                    isTv={isTv}
-                    currentSeason={currentSeason}
-                    activeEpSeason={currentSeason}
-                    seasons={filteredSeasons}
-                    onSeasonChange={handleSeasonSwitch}
-                    tmdbEpisodes={seasonData?.episodes || []}
-                    streams={streams}
-                    activeStream={activeStream}
-                    onStreamSelect={selectStream}
-                    isAggregatorLoading={isAggregatorLoading}
-                  />
-                </motion.div>
-              </div>
-            ) : (
-              <motion.div 
-                key="info"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="flex flex-col relative z-10 w-full"
+      {/* Apple & Netflix Style Fluid Player Modal Overlay */}
+      <AnimatePresence>
+        {isPlaying && activeEp && (
+          <motion.div 
+            key="player-overlay"
+            initial={{ opacity: 0, scale: 0.96, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 12 }}
+            transition={{ 
+              type: "spring", 
+              stiffness: 320, 
+              damping: 28, 
+              mass: 0.85 
+            }}
+            className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-2xl flex flex-col p-3 sm:p-6 md:p-8"
+          >
+            <div className="flex justify-between items-center z-[210] relative max-w-[1600px] w-full mx-auto mb-3 sm:mb-4 shrink-0">
+              <button
+                onClick={() => setIsPlaying(false)}
+                className="flex items-center justify-center gap-2 text-gray-300 hover:text-white bg-black/80 backdrop-blur-md hover:bg-neutral-900 border border-white/15 px-3 py-2 sm:px-4 sm:py-2.5 rounded-full transition-all font-bold tracking-wide shadow-lg cursor-pointer hover:scale-105 active:scale-95 shrink-0"
               >
+                <ChevronLeft size={20} className="sm:hidden" />
+                <ChevronLeft size={16} className="hidden sm:block" /> 
+                <span className="text-xs">Quay lại trang thông tin</span>
+              </button>
+
+              <button
+                onClick={() => setShowReportModal(true)}
+                className="flex items-center justify-center gap-2 text-red-400 hover:text-red-300 bg-red-950/20 hover:bg-red-950/30 border border-red-500/25 hover:border-red-500/40 px-3 py-2 sm:px-4 sm:py-2.5 rounded-full transition-all font-bold tracking-wide shadow-lg cursor-pointer hover:scale-105 active:scale-95 shrink-0"
+              >
+                <AlertTriangle size={20} className="sm:hidden" />
+                <AlertTriangle size={16} className="hidden sm:block" />
+                <span className="text-xs">Báo lỗi phim</span>
+              </button>
+            </div>
+
+            <div className="w-full max-w-[1600px] mx-auto flex-1 flex items-center justify-center min-h-0 relative">
+              <div className="w-full aspect-video max-h-[88vh] rounded-2xl overflow-hidden bg-black shadow-2xl relative border border-white/10">
+                <NetflixPlayer
+                  key={`player-${slug}`}
+                  url={isCinemaOS ? undefined : (activeStream?.type === 'hls' ? activeStream.url : undefined)}
+                  embedUrl={
+                    activeStream?.type === 'embed'
+                      ? activeStream.url
+                      : ((!isAggregatorLoading && !activeStream && finalTmdbData?.id)
+                          ? (isTv
+                              ? `https://vidsrc.me/embed/tv?tmdb=${finalTmdbData.id}&season=${currentSeason}&episode=${activeEp?.name || 1}`
+                              : `https://vidsrc.me/embed/movie?tmdb=${finalTmdbData.id}`
+                            )
+                          : undefined)
+                  }
+                  headers={activeStream?.headers}
+                  subtitleUrl={bestSubUrl}
+                  externalSubtitles={limitedSubtitles}
+                  title={`${cleanMovieName} - ${activeEp?.name || '1'}`}
+                  slug={slug}
+                  episodeName={activeEp?.name || '1'}
+                  posterUrl={posterUrl || ''}
+                  thumbUrl={bgDetailImg || ''}
+                  movieName={cleanMovieName}
+                  onClose={() => setIsPlaying(false)}
+                  servers={currentServers}
+                  selectedServerId={selectedServerId}
+                  tmdbId={finalTmdbData?.id}
+                  type={isTv ? 'series' : 'single'}
+                  onServerChange={(newId) => {
+                    setSelectedServerId(newId);
+                    const srvEps = currentServers[newId]?.server_data || [];
+                    const matchingEp = srvEps.find((ep: any) => isSameEpisode(ep.name, activeEp?.name));
+                    if (matchingEp) {
+                      setActiveEp(matchingEp);
+                    } else if (srvEps[0]) {
+                      setActiveEp(srvEps[0]);
+                    }
+                  }}
+                  episodes={
+                    isTv
+                      ? (seasonData?.episodes && seasonData.episodes.length > 0
+                          ? seasonData.episodes.map((ep: any) => ({
+                              ...ep,
+                              name: String(ep.episode_number),
+                            }))
+                          : (currentServers?.[selectedServerId]?.server_data || []))
+                      : []
+                  }
+                  onEpisodeSelect={handleSelectEpisode}
+                  isTv={isTv}
+                  currentSeason={currentSeason}
+                  activeEpSeason={currentSeason}
+                  seasons={filteredSeasons}
+                  onSeasonChange={handleSeasonSwitch}
+                  tmdbEpisodes={seasonData?.episodes || []}
+                  streams={streams}
+                  activeStream={activeStream}
+                  onStreamSelect={selectStream}
+                  isAggregatorLoading={isAggregatorLoading}
+                />
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-10 pb-20 pt-[20vh] sm:pt-[25vh] md:pt-[35vh] lg:pt-[45vh] relative z-10 flex flex-col gap-6 sm:gap-8 xl:gap-12">
+        <div className="w-full">
+          <div className="flex flex-col relative z-10 w-full">
                 {/* DESKTOP ONLY VIEW (Hidden on Mobile) */}
                 <div className="hidden md:flex flex-col md:flex-row gap-8 lg:gap-12 w-full mb-16 items-start">
                   {/* Left Column: Poster & Actions */}
@@ -1054,85 +1097,68 @@ const MovieDetailContent: React.FC<{
                       <p className="text-xl text-gray-400 font-medium italic mb-6">"{finalTmdbData.tagline}"</p>
                     )}
                     
-                    <div className="flex flex-wrap items-center gap-y-3 gap-x-5 text-sm font-medium text-gray-400 mb-6 border-y border-white/5 py-3.5 w-full">
-                      <span className="flex items-center gap-1.5 text-gray-300">
-                        <Calendar size={15} className="text-gray-500 shrink-0" /> 
+                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 text-sm font-semibold text-gray-300 mb-6 border-y border-white/5 py-3.5 w-full">
+                      {/* Year */}
+                      <span>
                         {(() => {
                           const startYear = finalTmdbData?.first_air_date ? finalTmdbData.first_air_date.substring(0,4) : (finalTmdbData?.release_date ? finalTmdbData.release_date.substring(0,4) : (movie.year || "2024"));
                           const endYear = finalTmdbData?.last_air_date ? finalTmdbData.last_air_date.substring(0,4) : null;
                           return (isTv && endYear && startYear !== endYear) ? `${startYear} - ${endYear}` : startYear;
                         })()}
                       </span>
-                      
-                      <span className="flex items-center gap-1.5 text-gray-300">
-                        <Film size={15} className="text-gray-500 shrink-0" />
-                        {(movie.type === "single" || movie.type === "phimle") ? "Phim Lẻ" : "Phim Bộ"}
-                      </span>
 
+                      {/* Season / Ep / Runtime info */}
+                      {seasonEpText && (
+                        <>
+                          <span className="text-gray-600 font-bold">•</span>
+                          <span>{seasonEpText}</span>
+                        </>
+                      )}
+
+                      {/* Quality */}
                       {movie.quality && (
-                        <span className="bg-white/5 border border-white/10 px-2.5 py-0.5 rounded-md text-[10px] font-black tracking-wider text-gray-300 uppercase leading-none">
-                          {movie.quality}
-                        </span>
+                        <>
+                          <span className="text-gray-600 font-bold">•</span>
+                          <span className="bg-white/10 border border-white/15 px-2 py-0.5 rounded text-[11px] font-black tracking-wider text-gray-200 uppercase leading-none">
+                            {movie.quality}
+                          </span>
+                        </>
                       )}
 
-                      {isTv && finalTmdbData?.number_of_seasons && (
-                        <span className="flex items-center gap-1.5 text-gray-300">
-                          <Tv size={15} className="text-gray-500 shrink-0" />
-                          {finalTmdbData.number_of_seasons} Phần
-                        </span>
-                      )}
-                      
-                      {isTv && finalTmdbData?.number_of_episodes && (
-                        <span className="flex items-center gap-1.5 text-gray-300">
-                          <Users size={15} className="text-gray-500 shrink-0" />
-                          {finalTmdbData.number_of_episodes} Tập
-                        </span>
-                      )}
-                      
-                      {(!isTv && (finalTmdbData?.runtime || movie.time)) && (
-                        <span className="flex items-center gap-1.5 text-gray-300">
-                          <Clock size={15} className="text-gray-500 shrink-0" /> 
-                          {finalTmdbData?.runtime ? `${finalTmdbData.runtime} phút` : movie.time}
-                        </span>
-                      )}
-
+                      {/* Age Rating / Certification */}
                       {(() => {
                         const cert = getCertification(finalTmdbData, isTv);
                         if (!cert) return null;
                         return (
-                          <span className="bg-red-600/10 border border-red-500/25 px-2.5 py-0.5 rounded text-[11px] font-black text-red-500 select-none">
-                            {cert}
-                          </span>
+                          <>
+                            <span className="text-gray-600 font-bold">•</span>
+                            <span className="bg-red-600/10 border border-red-500/25 px-2 py-0.5 rounded text-[11px] font-black text-red-400 select-none leading-none">
+                              {cert}
+                            </span>
+                          </>
                         );
                       })()}
 
-                      <span className="flex items-center gap-1.5 text-gray-300">
-                        <Star size={15} className="text-yellow-500 fill-yellow-500/10 shrink-0" />
+                      {/* Rating */}
+                      <span className="text-gray-600 font-bold">•</span>
+                      <span className="flex items-center gap-1.5 font-bold text-yellow-400">
+                        <Star size={15} className="fill-yellow-400 shrink-0" />
                         {imdbRating && imdbRating !== "?" ? imdbRating : "8.0"}
-                        {finalTmdbData?.vote_count ? (
-                          <span className="text-xs text-gray-500 font-normal">({finalTmdbData.vote_count} bình chọn)</span>
-                        ) : null}
                       </span>
 
+                      {/* Metascore */}
                       {metacriticScore && (
-                        <span className={cn(
-                          "px-2 py-0.5 rounded text-xs font-black select-none tracking-wider",
-                          metacriticScore >= 61 ? "bg-green-600 text-white border border-green-500/20" :
-                          metacriticScore >= 40 ? "bg-yellow-500 text-black border border-yellow-400/20" :
-                          "bg-red-600 text-white border border-red-500/20"
-                        )}>
-                          {metacriticScore} Metascore
-                        </span>
-                      )}
-                      
-                      {(finalTmdbData?.status || movie.status) && (
-                        <span className="bg-white/5 border border-white/15 px-3 py-1 rounded-xl text-xs font-bold text-gray-200 select-none ml-auto whitespace-nowrap">
-                          {finalTmdbData?.status === "Ended" ? "Đã ra mắt trọn bộ" : 
-                           finalTmdbData?.status === "Returning Series" ? "Đang cập nhật" : 
-                           (movie.status === "completed" ? "Đã ra mắt trọn bộ" : 
-                            movie.status === "ongoing" ? "Đang cập nhật" : 
-                            (finalTmdbData?.status || movie.status))}
-                        </span>
+                        <>
+                          <span className="text-gray-600 font-bold">•</span>
+                          <span className={cn(
+                            "px-2 py-0.5 rounded text-xs font-black select-none tracking-wider",
+                            metacriticScore >= 61 ? "bg-green-600 text-white border border-green-500/20" :
+                            metacriticScore >= 40 ? "bg-yellow-500 text-black border border-yellow-400/20" :
+                            "bg-red-600 text-white border border-red-500/20"
+                          )}>
+                            {metacriticScore} Metascore
+                          </span>
+                        </>
                       )}
                     </div>
                     
@@ -1249,28 +1275,10 @@ const MovieDetailContent: React.FC<{
                     )}
                   </div>
 
-                  {/* Badges/Metadata Pill layout - Sleek, centered pills */}
-                  <div className="flex flex-wrap justify-center items-center gap-y-2 gap-x-3.5 px-4 text-xs font-semibold text-gray-400 w-full">
-                    {/* Star */}
-                    <span className="flex items-center gap-1">
-                      <Star size={13} className="text-yellow-500 fill-yellow-500/10 shrink-0" />
-                      {imdbRating && imdbRating !== "?" ? imdbRating : "8.0"}
-                    </span>
-
-                    {metacriticScore && (
-                      <span className={cn(
-                        "px-1.5 py-0.5 rounded text-[10px] font-black select-none tracking-wider",
-                        metacriticScore >= 61 ? "bg-green-600 text-white border border-green-500/20" :
-                        metacriticScore >= 40 ? "bg-yellow-500 text-black border border-yellow-400/20" :
-                        "bg-red-600 text-white border border-red-500/20"
-                      )}>
-                        {metacriticScore} MC
-                      </span>
-                    )}
-                    
+                  {/* Badges/Metadata layout - Minimalist dot-separated */}
+                  <div className="flex flex-wrap justify-center items-center gap-x-2 gap-y-1.5 px-4 text-xs font-semibold text-gray-300 w-full">
                     {/* Year */}
-                    <span className="flex items-center gap-1">
-                      <Calendar size={13} className="text-gray-500 shrink-0" />
+                    <span>
                       {(() => {
                         const startYear = finalTmdbData?.first_air_date ? finalTmdbData.first_air_date.substring(0,4) : (finalTmdbData?.release_date ? finalTmdbData.release_date.substring(0,4) : (movie.year || "2024"));
                         const endYear = finalTmdbData?.last_air_date ? finalTmdbData.last_air_date.substring(0,4) : null;
@@ -1278,62 +1286,58 @@ const MovieDetailContent: React.FC<{
                       })()}
                     </span>
 
-                    {/* Movie/Series type */}
-                    <span className="flex items-center gap-1">
-                      <Film size={13} className="text-gray-500 shrink-0" />
-                      {(movie.type === "single" || movie.type === "phimle") ? "Phim Lẻ" : "Phim Bộ"}
-                    </span>
-
-                    {(() => {
-                      const cert = getCertification(finalTmdbData, isTv);
-                      if (!cert) return null;
-                      return (
-                        <span className="bg-red-600/10 border border-red-500/25 px-1.5 py-0.5 rounded text-[10px] font-black text-red-500 select-none">
-                          {cert}
-                        </span>
-                      );
-                    })()}
-
-                    {/* Tv Seasons */}
-                    {isTv && finalTmdbData?.number_of_seasons && (
-                      <span className="flex items-center gap-1">
-                        <Tv size={13} className="text-gray-500 shrink-0" />
-                        {finalTmdbData.number_of_seasons} Phần
-                      </span>
-                    )}
-
-                    {/* Tv Episodes */}
-                    {isTv && finalTmdbData?.number_of_episodes && (
-                      <span className="flex items-center gap-1">
-                        <Users size={13} className="text-gray-500 shrink-0" />
-                        {finalTmdbData.number_of_episodes} Tập
-                      </span>
-                    )}
-
-                    {/* Runtime */}
-                    {(!isTv && (finalTmdbData?.runtime || movie.time)) && (
-                      <span className="flex items-center gap-1">
-                        <Clock size={13} className="text-gray-500 shrink-0" />
-                        {finalTmdbData?.runtime ? `${finalTmdbData.runtime} phút` : movie.time}
-                      </span>
+                    {/* Season / Ep / Runtime info */}
+                    {seasonEpText && (
+                      <>
+                        <span className="text-gray-600 font-bold">•</span>
+                        <span>{seasonEpText}</span>
+                      </>
                     )}
 
                     {/* Quality */}
                     {movie.quality && (
-                      <span className="bg-white/5 border border-white/10 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold text-gray-300 leading-none">
-                        {movie.quality}
-                      </span>
+                      <>
+                        <span className="text-gray-600 font-bold">•</span>
+                        <span className="bg-white/10 border border-white/15 px-1.5 py-0.5 rounded text-[10px] uppercase font-black text-gray-200 leading-none">
+                          {movie.quality}
+                        </span>
+                      </>
                     )}
 
-                    {/* Status */}
-                    {(finalTmdbData?.status || movie.status) && (
-                      <span className="bg-white/5 border border-white/15 px-1.5 py-0.5 rounded text-[10px] font-bold text-gray-300 leading-none whitespace-nowrap">
-                        {finalTmdbData?.status === "Ended" ? "Trọn bộ" : 
-                         finalTmdbData?.status === "Returning Series" ? "Đang chiếu" : 
-                         (movie.status === "completed" ? "Trọn bộ" : 
-                          movie.status === "ongoing" ? "Đang chiếu" : 
-                          (finalTmdbData?.status || movie.status))}
-                      </span>
+                    {/* Age Rating / Certification */}
+                    {(() => {
+                      const cert = getCertification(finalTmdbData, isTv);
+                      if (!cert) return null;
+                      return (
+                        <>
+                          <span className="text-gray-600 font-bold">•</span>
+                          <span className="bg-red-600/10 border border-red-500/25 px-1.5 py-0.5 rounded text-[10px] font-black text-red-400 select-none leading-none">
+                            {cert}
+                          </span>
+                        </>
+                      );
+                    })()}
+
+                    {/* Rating */}
+                    <span className="text-gray-600 font-bold">•</span>
+                    <span className="flex items-center gap-1 font-bold text-yellow-400">
+                      <Star size={13} className="fill-yellow-400 shrink-0" />
+                      {imdbRating && imdbRating !== "?" ? imdbRating : "8.0"}
+                    </span>
+
+                    {/* Metascore */}
+                    {metacriticScore && (
+                      <>
+                        <span className="text-gray-600 font-bold">•</span>
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded text-[10px] font-black select-none tracking-wider",
+                          metacriticScore >= 61 ? "bg-green-600 text-white border border-green-500/20" :
+                          metacriticScore >= 40 ? "bg-yellow-500 text-black border border-yellow-400/20" :
+                          "bg-red-600 text-white border border-red-500/20"
+                        )}>
+                          {metacriticScore} MC
+                        </span>
+                      </>
                     )}
                   </div>
 
@@ -1491,9 +1495,7 @@ const MovieDetailContent: React.FC<{
                   </div>
                 </div>
 
-              </motion.div>
-            )}
-          </AnimatePresence>
+          </div>
 
           {/* 3. Episodes List Section */}
           {(isTv || baseEpList.length > 0) && (

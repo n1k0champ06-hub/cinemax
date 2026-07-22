@@ -79,6 +79,22 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string) {
     'smartadserver.com',
   ]);
 
+  const HEADER_TAGS = [
+    '#EXTM3U',
+    '#EXT-X-VERSION',
+    '#EXT-X-TARGETDURATION',
+    '#EXT-X-MEDIA-SEQUENCE',
+    '#EXT-X-PLAYLIST-TYPE',
+    '#EXT-X-INDEPENDENT-SEGMENTS',
+    '#EXT-X-START',
+    '#EXT-X-SERVER-CONTROL',
+  ];
+
+  const isHeaderTag = (tagLine: string) => {
+    const upper = tagLine.trim().toUpperCase();
+    return HEADER_TAGS.some((h) => upper.startsWith(h));
+  };
+
   const lines = text.split(/\r?\n/);
   const blocks: { start: number; uriIndex: number; end: number; uri: string }[] = [];
   let blockStart = 0;
@@ -102,6 +118,9 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string) {
       let start = block.uriIndex;
       for (let i = block.uriIndex - 1; i >= block.start; i--) {
         const l = lines[i].trim();
+        if (isHeaderTag(l)) {
+          break;
+        }
         if (l.startsWith('#') || l === '') {
           start = i;
           continue;
@@ -153,6 +172,9 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string) {
             let start = block.uriIndex;
             for (let i = block.uriIndex - 1; i >= block.start; i--) {
               const l = lines[i].trim();
+              if (isHeaderTag(l)) {
+                break;
+              }
               if (l.startsWith('#') || l === '') {
                 start = i;
                 continue;

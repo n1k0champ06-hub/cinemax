@@ -799,44 +799,52 @@ async function fetchFromHollysheeshApi(query: StreamQuery): Promise<StreamItem[]
     const data = await res.json().catch(() => ({}));
     if (!data || !data.streams || data.streams.length === 0) return [];
 
-    const streams: StreamItem[] = data.streams.map((s: any) => {
-      const isEmbed = s.streamUrl.includes('embed') || s.streamUrl.includes('iframe') || s.streamUrl.includes('streamc.xyz');
-      const type = isEmbed ? 'embed' : 'hls';
-      
-      let url = s.streamUrl;
-      if (type === 'hls') {
-        const VI_CDN_PATTERNS = ['kkphim', 'phimapi', 'phimimg', 'ophim', 'opstream', 'nguonc', 'phim.nguonc', 'xem20', 'xemphim', 'sing.phimmoi', 's3.phimmoi', 'stream.ophim'];
-        const isViCDN = VI_CDN_PATTERNS.some(p => s.streamUrl.includes(p));
-        if (!isViCDN && s.referer) {
-          url = buildProxiedM3u8Url(s.streamUrl, s.referer);
-        } else {
-          url = s.streamUrl;
+    const streams: StreamItem[] = data.streams
+      .filter((s: any) => {
+        if (!s || !s.streamUrl) return false;
+        // Filter out non-embeddable streamc.xyz iframe URLs that cause black screens
+        if (s.streamUrl.includes('streamc.xyz') && !s.streamUrl.includes('.m3u8')) return false;
+        return true;
+      })
+      .map((s: any) => {
+        const isM3U8 = s.streamUrl.toLowerCase().includes('.m3u8');
+        const isEmbed = !isM3U8 && (s.streamUrl.includes('embed') || s.streamUrl.includes('iframe'));
+        const type = isM3U8 ? 'hls' : (isEmbed ? 'embed' : 'hls');
+        
+        let url = s.streamUrl;
+        if (type === 'hls') {
+          const VI_CDN_PATTERNS = ['kkphim', 'phimapi', 'phimimg', 'ophim', 'opstream', 'nguonc', 'phim.nguonc', 'xem20', 'xemphim', 'sing.phimmoi', 's3.phimmoi', 'stream.ophim'];
+          const isViCDN = VI_CDN_PATTERNS.some(p => s.streamUrl.includes(p));
+          if (!isViCDN && s.referer) {
+            url = buildProxiedM3u8Url(s.streamUrl, s.referer);
+          } else {
+            url = s.streamUrl;
+          }
         }
-      }
 
-      const normServer = String(s.server).replace(/\s*#\d+/g, '');
-      let subType = 'Vietsub';
-      if (normServer.toLowerCase().includes('thuyết minh') || normServer.toLowerCase().includes('thuyet minh')) {
-        subType = 'Thuyết minh';
-      } else if (normServer.toLowerCase().includes('lồng tiếng') || normServer.toLowerCase().includes('long tieng')) {
-        subType = 'Lồng tiếng';
-      }
+        const normServer = String(s.server).replace(/\s*#\d+/g, '');
+        let subType = 'Vietsub';
+        if (normServer.toLowerCase().includes('thuyết minh') || normServer.toLowerCase().includes('thuyet minh')) {
+          subType = 'Thuyết minh';
+        } else if (normServer.toLowerCase().includes('lồng tiếng') || normServer.toLowerCase().includes('long tieng')) {
+          subType = 'Lồng tiếng';
+        }
 
-      const item: Omit<StreamItem, 'score'> = {
-        id: `hollysheesh:${type}:${s.server}:${s.streamUrl}`,
-        provider: 'hollysheesh',
-        providerLabel: `HOLLYSHEESH - ${subType}`,
-        type,
-        url,
-        quality: s.streamUrl.toLowerCase().includes('1080') ? '1080p' : 'auto',
-        lang: 'vi',
-        label: `HOLLYSHEESH · ${s.server} · ${type.toUpperCase()}`,
-        episodeName: s.episode,
-        category: 'vi',
-        headers: s.referer ? { Referer: s.referer } : undefined,
-      };
-      return { ...item, score: computeScore(item) };
-    });
+        const item: Omit<StreamItem, 'score'> = {
+          id: `hollysheesh:${type}:${s.server}:${s.streamUrl}`,
+          provider: 'hollysheesh',
+          providerLabel: `HOLLYSHEESH - ${subType}`,
+          type,
+          url,
+          quality: s.streamUrl.toLowerCase().includes('1080') ? '1080p' : 'auto',
+          lang: 'vi',
+          label: `HOLLYSHEESH · ${s.server} · ${type.toUpperCase()}`,
+          episodeName: s.episode,
+          category: 'vi',
+          headers: s.referer ? { Referer: s.referer } : undefined,
+        };
+        return { ...item, score: computeScore(item) };
+      });
 
     return streams;
   } catch (_) {
