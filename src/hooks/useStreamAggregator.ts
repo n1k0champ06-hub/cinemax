@@ -324,12 +324,12 @@ export function useStreamAggregator({
         }
       }
     }
-    return updatedList;
+    return updatedList.sort((a, b) => b.score - a.score);
   }, [state.streams, servers, activeEpName]);
 
   const autoSelected = useMemo(() => {
     return finalStreams.length > 0
-      ? (finalStreams.find(s => s.latencyLabel !== 'Offline') ?? finalStreams[0])
+      ? (finalStreams.find(s => s.type === 'hls' && s.latencyLabel !== 'Offline') ?? finalStreams.find(s => s.latencyLabel !== 'Offline') ?? finalStreams[0])
       : null;
   }, [finalStreams]);
 

@@ -866,15 +866,17 @@ const MovieDetailContent: React.FC<{
       const status = finalTmdbData?.status || movie?.status;
       const isCompleted = status === "Ended" || status === "completed" || movie?.status === "completed";
       
-      const seasonStr = numSeasons > 1 ? `${numSeasons} Phần` : `1 Phần`;
-      if (numEpisodes) {
-        if (isCompleted) {
-          return `${seasonStr} (${numEpisodes} Tập)`;
-        } else {
-          return `${seasonStr} (${numEpisodes} Tập • Đang chiếu)`;
+      const seasonPrefix = numSeasons > 1 ? `${numSeasons} Phần • ` : '';
+      if (isCompleted) {
+        if (numEpisodes) {
+          return `${seasonPrefix}${numEpisodes}/${numEpisodes} Tập`;
         }
+        return numSeasons > 1 ? `${numSeasons} Phần` : `Trọn bộ`;
       } else {
-        return isCompleted ? `${seasonStr} (Trọn bộ)` : `${seasonStr} (Đang cập nhật)`;
+        if (numEpisodes) {
+          return `${seasonPrefix}Tập ${numEpisodes}`;
+        }
+        return `Đang cập nhật`;
       }
     } else {
       if (finalTmdbData?.runtime) {
@@ -1339,6 +1341,23 @@ const MovieDetailContent: React.FC<{
                         </span>
                       </>
                     )}
+                  </div>
+
+                  {/* Genres / Category Pills */}
+                  <div className="flex flex-wrap justify-center gap-1.5 px-4 mt-1">
+                    {(() => {
+                      const categories = Array.isArray(finalTmdbData?.genres) ? finalTmdbData.genres : (Array.isArray(movie.category) ? movie.category : []);
+                      return categories.slice(0, 4).map((c: any) => (
+                        <span key={c.name} className="bg-white/5 border border-white/10 px-3 py-1 rounded-md text-[11px] font-bold text-gray-300">
+                          {c.name === "Hanh Dong" ? "Hành Động" : 
+                           c.name === "Tinh Cam" ? "Tình Cảm" : 
+                           c.name === "Hai Huoc" ? "Hài Hước" : 
+                           c.name === "Chinh Kich" ? "Chính Kịch" :
+                           c.name === "Hinh Su" ? "Hình Sự" : 
+                           c.name === "Vien Tuong" ? "Viễn Tưởng" : c.name}
+                        </span>
+                      ));
+                    })() || null}
                   </div>
 
                   {/* Action Buttons: 1. Xem ngay, 2. Xem Trailer, 3. Row of: Lưu Lại & ••• */}
