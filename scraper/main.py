@@ -32,6 +32,9 @@ from pymongo.errors import BulkWriteError
 # ---------------------------------------------------------------------------
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -261,7 +264,7 @@ def scrape_source(
                 continue
 
             if verbose:
-                log.info('[%s] ✔ %s (%s)', source_name.upper(), movie_doc['title'], slug)
+                log.info('[%s] [OK] %s (%s)', source_name.upper(), movie_doc['title'], slug)
 
             # Chuẩn hóa dữ liệu stream
             stream_docs = normalize_streams(detail_data, slug, source_name)
@@ -342,7 +345,10 @@ def main():
         try:
             client = MongoClient(mongo_uri, serverSelectionTimeoutMS=10_000, tlsCAFile=certifi.where())
             client.admin.command('ping')
-            db = client.get_default_database() or client['cinemax']
+            try:
+                db = client.get_default_database(default='cinemax')
+            except Exception:
+                db = client['cinemax']
             log.info('[DB] Kết nối MongoDB thành công: %s', db.name)
         except Exception as e:
             log.error('[DB] Kết nối MongoDB thất bại: %s', e)
