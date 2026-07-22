@@ -23,8 +23,13 @@ function extractHostname(url) {
 function clientFilterPlaylistAds(text: string, playlistUrl: string) {
   if (!text || !text.includes('#EXTM3U')) return text;
 
+  const CONVERT_PREFIX_PATTERN = /(^|\/)convertv\d*(\/|$)/i;
+
   const AD_PATTERNS = [
+    CONVERT_PREFIX_PATTERN,
     /9922/i,
+    /convertv\d*/i,
+    /convert\d*/i,
     /nhacai/i,
     /cacuoc/i,
     /kubet/i,
@@ -55,6 +60,25 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string) {
     /banner/i,
   ];
 
+  const AD_CDN_HOSTNAMES = new Set([
+    '9922.com',
+    'cdn-ads.vip',
+    'ads.opstream.vip',
+    'adstream.vip',
+    'cdn-ad.net',
+    'staticads.net',
+    'adcdn.net',
+    'stream-ads.net',
+    'quangcao.net',
+    'adserver.vn',
+    'ads.vn',
+    'doubleclick.net',
+    'googlesyndication.com',
+    'adnxs.com',
+    'adsrvr.org',
+    'smartadserver.com',
+  ]);
+
   const lines = text.split(/\r?\n/);
   const blocks: { start: number; uriIndex: number; end: number; uri: string }[] = [];
   let blockStart = 0;
@@ -72,7 +96,8 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string) {
   // Pass 1: Pattern-based ad segment detection
   for (const block of blocks) {
     const norm = block.uri.toLowerCase();
-    const isAd = AD_PATTERNS.some((p) => p.test(norm));
+    const segHost = extractHostname(block.uri);
+    const isAd = AD_PATTERNS.some((p) => p.test(norm)) || (segHost && (AD_CDN_HOSTNAMES.has(segHost) || Array.from(AD_CDN_HOSTNAMES).some(h => segHost.endsWith('.' + h))));
     if (isAd) {
       let start = block.uriIndex;
       for (let i = block.uriIndex - 1; i >= block.start; i--) {
