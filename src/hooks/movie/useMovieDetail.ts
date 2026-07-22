@@ -131,13 +131,16 @@ export const useMovieDetail = (rawSlug: string) => {
   // 3. Determine if media is an Anime
   const isAnime = useMemo(() => {
     if (isAnilistSlug) return true;
+    const lowerSlug = (slug || '').toLowerCase();
+    if (lowerSlug.includes('hoat-hinh') || lowerSlug.includes('hoathinh') || lowerSlug.includes('anime')) return true;
     if (finalTmdbData) {
-      const isJa = finalTmdbData.original_language === 'ja';
-      const hasAnimGenre = finalTmdbData.genres?.some((g: any) => g.id === 16 || g.name?.toLowerCase() === 'animation' || g.name?.toLowerCase() === 'hoạt hình');
+      const isJa = finalTmdbData.original_language === 'ja' || finalTmdbData.origin_country?.includes('JP');
+      const hasAnimGenre = finalTmdbData.genres?.some((g: any) => g.id === 16 || g.name?.toLowerCase() === 'animation' || g.name?.toLowerCase() === 'hoạt hình' || g.name?.toLowerCase() === 'anime');
       if (isJa && hasAnimGenre) return true;
+      if (hasAnimGenre && (finalTmdbData.original_language === 'ja' || finalTmdbData.origin_country?.includes('JP'))) return true;
     }
     return false;
-  }, [isAnilistSlug, finalTmdbData]);
+  }, [isAnilistSlug, finalTmdbData, slug]);
 
   const filteredSeasons = useMemo(() => {
     return finalTmdbData?.seasons ? finalTmdbData.seasons.filter((s: any) => s.season_number > 0) : [];

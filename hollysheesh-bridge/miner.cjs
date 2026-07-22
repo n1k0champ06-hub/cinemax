@@ -80,6 +80,19 @@ const SOURCES = {
       return parseInt(p.total_page || p.totalPages || '100', 10);
     },
   },
+  hoathinh: {
+    label: 'Anime/HoạtHình',
+    color: '\x1b[32m',   // green
+    listUrl: (page) => `https://phimapi.com/v1/api/danh-sach/hoat-hinh?page=${page}`,
+    detailUrl: (slug) => `https://phimapi.com/phim/${slug}`,
+    referer: 'https://phimapi.com/',
+    parseList: (d) => d.data?.items || d.items || [],
+    parseDetail: (d) => ({ movie: d.movie, episodes: d.episodes || [] }),
+    totalPages: (d) => {
+      const p = d.data?.params?.pagination || d.paginate || {};
+      return parseInt(p.totalPages || p.total_page || '100', 10);
+    },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -214,6 +227,11 @@ async function syncSource(srcKey, db, { pages, syncAll }) {
       if (!movie) return;
 
       // Upsert movie
+      const cats = Array.isArray(movie.category) ? movie.category.map(c => typeof c === 'object' ? (c.name || c.title || '') : c).filter(Boolean) : [];
+      const actors = Array.isArray(movie.actor) ? movie.actor.map(a => typeof a === 'object' ? (a.name || '') : a).filter(Boolean) : [];
+      const directors = Array.isArray(movie.director) ? movie.director.map(d => typeof d === 'object' ? (d.name || '') : d).filter(Boolean) : [];
+      const countries = Array.isArray(movie.country) ? movie.country.map(c => typeof c === 'object' ? (c.name || '') : c).filter(Boolean) : [];
+
       await moviesCol.updateOne(
         { slug: movie.slug || slug },
         { $set: {
@@ -225,6 +243,13 @@ async function syncSource(srcKey, db, { pages, syncAll }) {
           status:      movie.episode_current || movie.status || 'ongoing',
           thumbUrl:    movie.thumb_url || '',
           posterUrl:   movie.poster_url || '',
+          category:    cats,
+          actor:       actors,
+          director:    directors,
+          country:     countries,
+          content:     movie.content || '',
+          quality:     movie.quality || '',
+          lang:        movie.lang || '',
           source:      srcKey,
           updatedAt:   new Date(),
         }},

@@ -373,9 +373,7 @@ const MovieDetailContent: React.FC<{
         || (finalTmdbData?.first_air_date ? finalTmdbData.first_air_date.split('-')[0] : null)
         || data?.movie?.year 
         || null,
-      title: isAnime 
-        ? (enTitle || finalTmdbData?.name || finalTmdbData?.title || finalTmdbData?.original_name || finalTmdbData?.original_title || data?.movie?.origin_name || '')
-        : (data?.movie?.origin_name || finalTmdbData?.original_title || finalTmdbData?.original_name || ''),
+      title: (finalTmdbData?.name || finalTmdbData?.title || data?.movie?.origin_name || finalTmdbData?.original_name || finalTmdbData?.original_title || ''),
       titleVi: finalTmdbData?.title || finalTmdbData?.name || data?.movie?.name || '',
       type: isTv ? 'tv' as const : 'movie' as const,
       season: isTv ? (currentSeason || 1) : undefined,
@@ -935,20 +933,20 @@ const MovieDetailContent: React.FC<{
             <div className="flex justify-between items-center z-[210] relative max-w-[1600px] w-full mx-auto mb-3 sm:mb-4 shrink-0">
               <button
                 onClick={() => setIsPlaying(false)}
-                className="flex items-center justify-center gap-2 text-gray-300 hover:text-white bg-black/80 backdrop-blur-md hover:bg-neutral-900 border border-white/15 px-3 py-2 sm:px-4 sm:py-2.5 rounded-full transition-all font-bold tracking-wide shadow-lg cursor-pointer hover:scale-105 active:scale-95 shrink-0"
+                className="flex items-center justify-center gap-2 text-gray-300 hover:text-white bg-black/80 backdrop-blur-md hover:bg-neutral-900 border border-white/15 p-2.5 sm:px-4 sm:py-2.5 rounded-full transition-all font-bold tracking-wide shadow-lg cursor-pointer hover:scale-105 active:scale-95 shrink-0"
               >
                 <ChevronLeft size={20} className="sm:hidden" />
                 <ChevronLeft size={16} className="hidden sm:block" /> 
-                <span className="text-xs">Quay lại trang thông tin</span>
+                <span className="hidden sm:inline text-xs">Quay lại trang thông tin</span>
               </button>
 
               <button
                 onClick={() => setShowReportModal(true)}
-                className="flex items-center justify-center gap-2 text-red-400 hover:text-red-300 bg-red-950/20 hover:bg-red-950/30 border border-red-500/25 hover:border-red-500/40 px-3 py-2 sm:px-4 sm:py-2.5 rounded-full transition-all font-bold tracking-wide shadow-lg cursor-pointer hover:scale-105 active:scale-95 shrink-0"
+                className="flex items-center justify-center gap-2 text-red-400 hover:text-red-300 bg-red-950/20 hover:bg-red-950/30 border border-red-500/25 hover:border-red-500/40 p-2.5 sm:px-4 sm:py-2.5 rounded-full transition-all font-bold tracking-wide shadow-lg cursor-pointer hover:scale-105 active:scale-95 shrink-0"
               >
                 <AlertTriangle size={20} className="sm:hidden" />
                 <AlertTriangle size={16} className="hidden sm:block" />
-                <span className="text-xs">Báo lỗi phim</span>
+                <span className="hidden sm:inline text-xs">Báo lỗi phim</span>
               </button>
             </div>
 

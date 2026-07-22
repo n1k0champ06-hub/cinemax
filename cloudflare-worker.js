@@ -1132,6 +1132,11 @@ async function handleRequest(request, env, ctx) {
     }
 
 
+    // Dev telemetry logger endpoint -> /api/dev-logger
+    if (url.pathname === "/api/dev-logger") {
+      return json({ success: true }, 200);
+    }
+
     // 6. Proxy cho img-proxy -> /api/img-proxy
     if (url.pathname.startsWith("/api/img-proxy")) {
       const imageUrl = url.searchParams.get('url');
@@ -2572,14 +2577,7 @@ function filterPlaylistAds(text, url = '') {
     }
   }
 
-  // --- Pass 2: Foreign-CDN discontinuity block detection ---
-  // OPhim/KKPhim gambling ads are often spliced in as:
-  //   #EXT-X-DISCONTINUITY
-  //   #EXTINF:<short>,
-  //   https://<foreign-ad-cdn>/....ts
-  //   #EXT-X-DISCONTINUITY
-  // We identify the "main" CDN host from the first segment, then mark
-  // blocks from a different host that are flanked by DISCONTINUITY tags as ads.
+  // --- Pass 2: Foreign-CDN & Discontinuity-bounded region ad detection ---
   if (blocks.length > 1) {
     // Determine main CDN host from majority of segments
     const hostCounts = new Map();
@@ -2593,48 +2591,76 @@ function filterPlaylistAds(text, url = '') {
       if (count > maxCount) { mainHost = h; maxCount = count; }
     }
 
-    if (mainHost) {
-      for (let bi = 0; bi < blocks.length; bi += 1) {
-        const block = blocks[bi];
-        const segHost = extractHostname(block.uri);
-        // Skip blocks already marked for removal
-        const alreadyMarked = removalRanges.some(r => block.uriIndex >= r.start && block.uriIndex <= r.end);
-        if (alreadyMarked) continue;
+    // Group blocks into regions separated by DISCONTINUITY tags
+    const regions = [];
+    let currentRegionBlocks = [];
+    let regionStartLine = 0;
+    let hasDiscBefore = false;
 
-        // Different host than main CDN?
-        if (segHost && segHost !== mainHost) {
-          // Check if DISCONTINUITY appears before this segment (within its block range)
-          let hasDiscBefore = false;
-          for (let i = block.start; i < block.uriIndex; i++) {
-            if (lines[i].trim().toUpperCase() === "#EXT-X-DISCONTINUITY") {
-              hasDiscBefore = true;
-              break;
+    for (let bi = 0; bi < blocks.length; bi++) {
+      const b = blocks[bi];
+      let discBeforeThisBlock = false;
+      for (let i = b.start; i < b.uriIndex; i++) {
+        if (lines[i].trim().toUpperCase() === "#EXT-X-DISCONTINUITY") {
+          discBeforeThisBlock = true;
+          break;
+        }
+      }
+
+      if (discBeforeThisBlock && currentRegionBlocks.length > 0) {
+        const prevBlock = currentRegionBlocks[currentRegionBlocks.length - 1];
+        regions.push({
+          blocks: currentRegionBlocks,
+          startLine: regionStartLine,
+          endLine: prevBlock.end,
+          hasDiscBefore,
+          hasDiscAfter: true,
+        });
+        currentRegionBlocks = [];
+        regionStartLine = b.start;
+        hasDiscBefore = true;
+      } else if (bi === 0) {
+        hasDiscBefore = discBeforeThisBlock;
+        regionStartLine = b.start;
+      }
+
+      currentRegionBlocks.push(b);
+    }
+
+    if (currentRegionBlocks.length > 0) {
+      const lastBlock = currentRegionBlocks[currentRegionBlocks.length - 1];
+      regions.push({
+        blocks: currentRegionBlocks,
+        startLine: regionStartLine,
+        endLine: lastBlock.end,
+        hasDiscBefore,
+        hasDiscAfter: false,
+      });
+    }
+
+    // Evaluate regions for ad characteristics
+    for (const region of regions) {
+      if (region.blocks.length === 0) continue;
+      const isAdRegion = region.blocks.some((b) => {
+        const norm = b.uri.toLowerCase();
+        const segHost = extractHostname(b.uri);
+        const isForeignHost = Boolean(mainHost && segHost && segHost !== mainHost);
+        const matchesAdPattern = isAdUri(b.uri);
+        return isForeignHost || matchesAdPattern;
+      });
+
+      if (isAdRegion && (region.hasDiscBefore || region.hasDiscAfter)) {
+        for (const b of region.blocks) {
+          let start = b.uriIndex;
+          for (let index = b.uriIndex - 1; index >= b.start; index -= 1) {
+            const line = lines[index];
+            if (isExtinf(line) || isDropTag(line) || line.trim() === "") {
+              start = index;
+              continue;
             }
+            break;
           }
-          // Check if DISCONTINUITY appears after this segment (in next block's range)
-          const nextBlock = blocks[bi + 1];
-          let hasDiscAfter = false;
-          if (nextBlock) {
-            for (let i = block.end + 1; i < nextBlock.uriIndex; i++) {
-              if (lines[i].trim().toUpperCase() === "#EXT-X-DISCONTINUITY") {
-                hasDiscAfter = true;
-                break;
-              }
-            }
-          }
-          // If surrounded by discontinuities and from foreign host → it's an ad
-          if (hasDiscBefore && hasDiscAfter) {
-            let start = block.uriIndex;
-            for (let index = block.uriIndex - 1; index >= block.start; index -= 1) {
-              const line = lines[index];
-              if (isExtinf(line) || isDropTag(line) || line.trim() === "") {
-                start = index;
-                continue;
-              }
-              break;
-            }
-            removalRanges.push({ start, end: block.end });
-          }
+          removalRanges.push({ start, end: b.end });
         }
       }
     }

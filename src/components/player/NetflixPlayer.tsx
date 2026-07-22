@@ -17,127 +17,122 @@ import { godModeStore } from '../../lib/godmode';
 // ---------------------------------------------------------------------------
 // Client-side HLS Ad Blocker
 // ---------------------------------------------------------------------------
-function extractHostname(url) {
-  try { return new URL(url).hostname; } catch { return null; }
+
+
+// Tags to drop alongside an ad segment (same as AdsSkipperRoPhim)
+const TAGS_TO_DROP_WITH_AD = new Set(['#EXT-X-DISCONTINUITY', '#EXT-X-KEY']);
+
+// Exact KKPhim ad segment URL pattern: /v8/18d007379882ef14.../segment_0001.ts
+const KKPHIM_AD_SEGMENT_PATTERN = /\/v\d+\/[a-f0-9]{16,}\/segment_\d+\.ts(?:[?#].*)?$/i;
+// convertv8/ prefix normalisation (strip prefix, keep filename)
+const CONVERT_PREFIX_PATTERN = /(^\/|\/)convertv\d+\//i;
+
+const AD_URL_PATTERNS = [
+  /9922/i,
+  /nhacai/i,
+  /cacuoc/i,
+  /kubet/i,
+  /shbet/i,
+  /okvip/i,
+  /789bet/i,
+  /new88/i,
+  /hi88/i,
+  /jun88/i,
+  /f8bet/i,
+  /bk8/i,
+  /w88/i,
+  /fun88/i,
+  /fb88/i,
+  /v9bet/i,
+  /ae888/i,
+  /mb66/i,
+  /rovideo/i,
+  /rostream/i,
+  /phimimg\.com\/ads/i,
+  /doubleclick/i,
+  /googleads/i,
+  /googlesyndication/i,
+  /adnxs/i,
+  /adsrvr/i,
+  /smartadserver/i,
+  /quangcao/i,
+];
+
+const AD_CDN_HOSTNAMES = new Set([
+  '9922.com', 'cdn-ads.vip', 'ads.opstream.vip', 'adstream.vip',
+  'cdn-ad.net', 'staticads.net', 'adcdn.net', 'stream-ads.net',
+  'quangcao.net', 'adserver.vn', 'ads.vn', 'doubleclick.net',
+  'googlesyndication.com', 'adnxs.com', 'adsrvr.org', 'smartadserver.com',
+]);
+
+function isAdSegmentUri(uri: string): boolean {
+  // KKPhim-style path-based ad segments
+  if (KKPHIM_AD_SEGMENT_PATTERN.test(uri)) return true;
+  const norm = uri.toLowerCase();
+  if (AD_URL_PATTERNS.some((p) => p.test(norm))) return true;
+  try {
+    const host = new URL(uri).hostname;
+    if (AD_CDN_HOSTNAMES.has(host) || Array.from(AD_CDN_HOSTNAMES).some(h => host.endsWith('.' + h))) return true;
+  } catch { /* relative URL — fine */ }
+  return false;
 }
 
+function isDropTag(line: string): boolean {
+  const upper = line.trim().toUpperCase();
+  for (const tag of TAGS_TO_DROP_WITH_AD) {
+    if (upper === tag || upper.startsWith(tag + ':')) return true;
+  }
+  return false;
+}
+
+const SEGMENT_URI_RE = /^[^#\s][^\s]*\.ts(?:[?#].*)?$/i;
+
 function clientFilterPlaylistAds(text: string, playlistUrl: string) {
-  if (!text || !text.includes('#EXTM3U')) return text;
+  if (!text || !text.includes('#EXTM3U') || !text.includes('#EXTINF')) return text;
 
-  const CONVERT_PREFIX_PATTERN = /(^|\/)convertv\d*(\/|$)/i;
+  const hadTrailingNewline = /\r?\n$/.test(text);
 
-  const AD_PATTERNS = [
-    CONVERT_PREFIX_PATTERN,
-    /9922/i,
-    /convertv\d*/i,
-    /convert\d*/i,
-    /nhacai/i,
-    /cacuoc/i,
-    /kubet/i,
-    /shbet/i,
-    /okvip/i,
-    /789bet/i,
-    /new88/i,
-    /hi88/i,
-    /jun88/i,
-    /f8bet/i,
-    /bk8/i,
-    /w88/i,
-    /fun88/i,
-    /fb88/i,
-    /v9bet/i,
-    /ae888/i,
-    /mb66/i,
-    /rovideo/i,
-    /rostream/i,
-    /phimimg\.com\/ads/i,
-    /doubleclick/i,
-    /googleads/i,
-    /googlesyndication/i,
-    /adnxs/i,
-    /adsrvr/i,
-    /smartadserver/i,
-    /quangcao/i,
-    /banner/i,
-  ];
+  // Normalise convertv8/ prefix (strip prefix, keep filename — same as original)
+  const lines = text.split(/\r?\n/).map((line) => {
+    if (SEGMENT_URI_RE.test(line.trim()) && CONVERT_PREFIX_PATTERN.test(line.trim())) {
+      return line.replace(CONVERT_PREFIX_PATTERN, '$1');
+    }
+    return line;
+  });
 
-  const AD_CDN_HOSTNAMES = new Set([
-    '9922.com',
-    'cdn-ads.vip',
-    'ads.opstream.vip',
-    'adstream.vip',
-    'cdn-ad.net',
-    'staticads.net',
-    'adcdn.net',
-    'stream-ads.net',
-    'quangcao.net',
-    'adserver.vn',
-    'ads.vn',
-    'doubleclick.net',
-    'googlesyndication.com',
-    'adnxs.com',
-    'adsrvr.org',
-    'smartadserver.com',
-  ]);
-
-  const HEADER_TAGS = [
-    '#EXTM3U',
-    '#EXT-X-VERSION',
-    '#EXT-X-TARGETDURATION',
-    '#EXT-X-MEDIA-SEQUENCE',
-    '#EXT-X-PLAYLIST-TYPE',
-    '#EXT-X-INDEPENDENT-SEGMENTS',
-    '#EXT-X-START',
-    '#EXT-X-SERVER-CONTROL',
-  ];
-
-  const isHeaderTag = (tagLine: string) => {
-    const upper = tagLine.trim().toUpperCase();
-    return HEADER_TAGS.some((h) => upper.startsWith(h));
-  };
-
-  const lines = text.split(/\r?\n/);
+  // Collect segment blocks
   const blocks: { start: number; uriIndex: number; end: number; uri: string }[] = [];
   let blockStart = 0;
-
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (line && !line.startsWith('#')) {
-      blocks.push({ start: blockStart, uriIndex: i, end: i, uri: line });
+    if (SEGMENT_URI_RE.test(lines[i].trim())) {
+      blocks.push({ start: blockStart, uriIndex: i, end: i, uri: lines[i].trim() });
       blockStart = i + 1;
     }
   }
 
   const removalRanges: { start: number; end: number }[] = [];
 
-  // Pass 1: Pattern-based ad segment detection
+  // Pass 1: Direct URL-pattern match (covers KKPhim /v8/hex/segment_N.ts + keyword patterns)
   for (const block of blocks) {
-    const norm = block.uri.toLowerCase();
-    const segHost = extractHostname(block.uri);
-    const isAd = AD_PATTERNS.some((p) => p.test(norm)) || (segHost && (AD_CDN_HOSTNAMES.has(segHost) || Array.from(AD_CDN_HOSTNAMES).some(h => segHost.endsWith('.' + h))));
-    if (isAd) {
-      let start = block.uriIndex;
-      for (let i = block.uriIndex - 1; i >= block.start; i--) {
-        const l = lines[i].trim();
-        if (isHeaderTag(l)) {
-          break;
-        }
-        if (l.startsWith('#') || l === '') {
-          start = i;
-          continue;
-        }
-        break;
+    if (!isAdSegmentUri(block.uri)) continue;
+    // Walk backwards from URI: drop #EXTINF, #EXT-X-DISCONTINUITY, #EXT-X-KEY, empty lines
+    let start = block.uriIndex;
+    for (let i = block.uriIndex - 1; i >= block.start; i--) {
+      const l = lines[i].trim();
+      if (l.startsWith('#EXTINF') || isDropTag(l) || l === '') {
+        start = i;
+        continue;
       }
-      removalRanges.push({ start, end: block.end });
+      break;
     }
+    removalRanges.push({ start, end: block.end });
   }
 
-  // Pass 2: Foreign CDN / Discontinuity-flanked ad block detection
+  // Pass 2: Discontinuity-bounded foreign-host region detection
   if (blocks.length > 1) {
     const hostCounts = new Map<string, number>();
     for (const b of blocks) {
-      const h = extractHostname(b.uri);
-      if (h) hostCounts.set(h, (hostCounts.get(h) || 0) + 1);
+      try { const h = new URL(b.uri).hostname; if (h) hostCounts.set(h, (hostCounts.get(h) || 0) + 1); } catch { /* relative */ }
     }
     let mainHost: string | null = null;
     let maxCount = 0;
@@ -145,56 +140,75 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string) {
       if (c > maxCount) { mainHost = h; maxCount = c; }
     }
 
+    const regions: { blocks: typeof blocks; startLine: number; endLine: number; hasDiscBefore: boolean; hasDiscAfter: boolean }[] = [];
+    let curBlocks: typeof blocks = [];
+    let regionStart = 0;
+    let discBefore = false;
+
     for (let bi = 0; bi < blocks.length; bi++) {
-      const block = blocks[bi];
-      const segHost = extractHostname(block.uri);
-      if (removalRanges.some((r) => block.uriIndex >= r.start && block.uriIndex <= r.end)) continue;
-
-      let isForeignHost = Boolean(mainHost && segHost && segHost !== mainHost);
-      let isAdPath = /convert|ad|qc|quangcao|9922|nhacai|cacuoc|v8|vip/i.test(block.uri);
-
-      let hasDiscBefore = false;
-      for (let i = block.start; i < block.uriIndex; i++) {
-        if (lines[i].trim().toUpperCase() === '#EXT-X-DISCONTINUITY') {
-          hasDiscBefore = true;
-          break;
-        }
+      const b = blocks[bi];
+      let hasDisc = false;
+      for (let i = b.start; i < b.uriIndex; i++) {
+        if (lines[i].trim().toUpperCase() === '#EXT-X-DISCONTINUITY') { hasDisc = true; break; }
       }
-      const nb = blocks[bi + 1];
-      let hasDiscAfter = false;
-      if (nb) {
-        for (let i = block.end + 1; i < nb.uriIndex; i++) {
-          if (lines[i].trim().toUpperCase() === '#EXT-X-DISCONTINUITY') {
-            hasDiscAfter = true;
+      if (hasDisc && curBlocks.length > 0) {
+        regions.push({ blocks: curBlocks, startLine: regionStart, endLine: curBlocks[curBlocks.length - 1].end, hasDiscBefore: discBefore, hasDiscAfter: true });
+        curBlocks = [];
+        regionStart = b.start;
+        discBefore = true;
+      } else if (bi === 0) {
+        discBefore = hasDisc;
+        regionStart = b.start;
+      }
+      curBlocks.push(b);
+    }
+    if (curBlocks.length > 0) regions.push({ blocks: curBlocks, startLine: regionStart, endLine: curBlocks[curBlocks.length - 1].end, hasDiscBefore: discBefore, hasDiscAfter: false });
+
+    for (const region of regions) {
+      if (!region.blocks.length) continue;
+      const isAdRegion = region.blocks.some((b) => {
+        try { const h = new URL(b.uri).hostname; if (mainHost && h && h !== mainHost) return true; } catch { /* relative */ }
+        return isAdSegmentUri(b.uri);
+      });
+      if (isAdRegion && (region.hasDiscBefore || region.hasDiscAfter)) {
+        for (const b of region.blocks) {
+          let start = b.uriIndex;
+          for (let i = b.uriIndex - 1; i >= b.start; i--) {
+            const l = lines[i].trim();
+            if (l.startsWith('#EXTINF') || isDropTag(l) || l === '') { start = i; continue; }
             break;
           }
+          removalRanges.push({ start, end: b.end });
         }
-      }
-
-      if ((isForeignHost || isAdPath) && hasDiscBefore && hasDiscAfter) {
-        let start = block.uriIndex;
-        for (let i = block.uriIndex - 1; i >= block.start; i--) {
-          const l = lines[i].trim();
-          if (isHeaderTag(l)) {
-            break;
-          }
-          if (l.startsWith('#') || l === '') {
-            start = i;
-            continue;
-          }
-          break;
-        }
-        removalRanges.push({ start, end: block.end });
       }
     }
   }
 
-  // Filter out marked lines
+  if (removalRanges.length === 0) {
+    const joined = lines.join('\n');
+    return hadTrailingNewline && !joined.endsWith('\n') ? joined + '\n' : joined;
+  }
+
+  // Sort & merge overlapping ranges
+  const sorted = removalRanges.slice().sort((a, b) => a.start - b.start);
+  const merged: { start: number; end: number }[] = [];
+  for (const r of sorted) {
+    const prev = merged[merged.length - 1];
+    if (prev && r.start <= prev.end + 1) { prev.end = Math.max(prev.end, r.end); }
+    else merged.push({ start: r.start, end: r.end });
+  }
+
   const kept: string[] = [];
+  let ri = 0;
+  let removedCount = 0;
   for (let i = 0; i < lines.length; i++) {
-    if (!removalRanges.some((r) => i >= r.start && i <= r.end)) {
-      kept.push(lines[i]);
+    const range = merged[ri];
+    if (range && i >= range.start && i <= range.end) {
+      if (SEGMENT_URI_RE.test(lines[i].trim())) removedCount++;
+      if (i === range.end) ri++;
+      continue;
     }
+    kept.push(lines[i]);
   }
 
   // Compact consecutive DISCONTINUITY tags
@@ -207,13 +221,14 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string) {
     prevWasDisc = isDisc;
   }
 
-  const removedCount = removalRanges.length;
   if (removedCount > 0) {
     const cleanName = playlistUrl.split('?')[0].split('/').pop() || 'playlist.m3u8';
-    godModeStore.addLog('PLAYER', 'INFO', `[AdFilter] Filtered ${removedCount} ad segment blocks from ${cleanName}`);
+    godModeStore.addLog('PLAYER', 'INFO', `[AdFilter] Removed ${removedCount} ad segments from ${cleanName}`);
   }
 
-  return compacted.join('\n');
+  let result = compacted.join('\n');
+  if (hadTrailingNewline && !result.endsWith('\n')) result += '\n';
+  return result;
 }
 
 class AdFilteringHlsLoader extends (Hls.DefaultConfig.loader as any) {
@@ -330,6 +345,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
   const effectiveFullscreen = isFullscreen || simulatedFullscreen;
   const isMobileFullscreenMode = isMobile && (effectiveFullscreen || isLandscape);
+  const isMobileNonFullscreen = isMobile && !isMobileFullscreenMode;
   const [seekFx,       setSeekFx]       = useState<{ type: 'fwd' | 'rev'; amount: number } | null>(null);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [qualities,    setQualities]    = useState<{ id: number; name: string }[]>([]);
@@ -465,16 +481,18 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       const isVi = activeStream?.category === 'vi';
       hls = new Hls({
         loader: AdFilteringHlsLoader as any,
-        maxBufferLength: 240, // Tải trước lên tới 4 phút (mặc định 30s)
-        maxMaxBufferLength: 480, // Tối đa lên tới 8 phút
-        maxBufferSize: 200 * 1024 * 1024, // Tăng dung lượng bộ đệm tối đa lên 200MB (mặc định 60MB)
+        maxBufferLength: 180, // Tải trước lên tới 3 phút cho phép tua mượt mà
+        maxMaxBufferLength: 360, // Tối đa 6 phút
+        maxBufferSize: 150 * 1024 * 1024, // Bộ đệm 150MB cho trải nghiệm tua thoải mái
         enableWorker: false,
         lowLatencyMode: false,
         capLevelToPlayerSize: true,
-        backBufferLength: 90,
+        backBufferLength: 90, // Giữ 90s đoạn đã xem để tua ngược lại instant không phải tải lại
         startFragPrefetch: true,
         nudgeMaxRetry: 5,
         nudgeOffset: 0.1,
+        manifestLoadingTimeOut: 15000,
+        fragLoadingTimeOut: 20000,
         xhrSetup: (xhr) => {
           if (headersObj) Object.entries(headersObj).forEach(([k,v]) => xhr.setRequestHeader(k, String(v)));
         },
@@ -1385,7 +1403,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
       {/* Mobile Fullscreen Audio & Subtitles Panel (Matching Netflix Mobile UI Screenshot 1) */}
       <AnimatePresence>
-        {isMobile && panelOpen === 'sub' && (
+        {isMobile && isMobileFullscreenMode && panelOpen === 'sub' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}
             className="fixed inset-0 z-[100] bg-black/95 p-4 sm:p-8 flex flex-col justify-between overflow-hidden"
             onClick={e => e.stopPropagation()}>
@@ -1518,27 +1536,31 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
       {/* Settings / Quality / Speed / Subtitle Panel */}
       <AnimatePresence>
-        {settingsPanelOpen && (panelOpen !== 'sub' || !isMobile) && (
+        {settingsPanelOpen && (panelOpen !== 'sub' || !isMobile || isMobileNonFullscreen) && (
           <>
             <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration: 0.12 }}
-              className="fixed inset-0 z-50 bg-black/50" onClick={closePanel} />
+              className={cn("fixed inset-0", isMobileNonFullscreen ? "z-[190] bg-black/75 backdrop-blur-sm" : "z-50 bg-black/50")} onClick={closePanel} />
             <motion.div
-              initial={isMobile ? { opacity: 0, scale: 0.95 } : { scale: 0.96, opacity: 0, y: 6 }}
-              animate={isMobile ? { opacity: 1, scale: 1 } : { scale: 1, opacity: 1, y: 0 }}
-              exit={isMobile ? { opacity: 0, scale: 0.95 } : { scale: 0.96, opacity: 0, y: 6 }}
-              transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
+              initial={isMobileNonFullscreen ? { y: "100%", opacity: 0 } : isMobile ? { opacity: 0, scale: 0.95 } : { scale: 0.96, opacity: 0, y: 6 }}
+              animate={isMobileNonFullscreen ? { y: 0, opacity: 1 } : isMobile ? { opacity: 1, scale: 1 } : { scale: 1, opacity: 1, y: 0 }}
+              exit={isMobileNonFullscreen ? { y: "100%", opacity: 0 } : isMobile ? { opacity: 0, scale: 0.95 } : { scale: 0.96, opacity: 0, y: 6 }}
+              transition={isMobileNonFullscreen ? { type: "spring", damping: 30, stiffness: 350 } : { duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
               className={cn(
-                "z-[100] bg-[#0a0a0d]/95 backdrop-blur-2xl border border-white/15 flex flex-col shadow-[0_20px_60px_rgba(0,0,0,0.85)] overflow-hidden transform-gpu will-change-transform",
-                isMobile
-                  ? "fixed inset-0 w-full h-full rounded-0 border-0 p-6 flex flex-col justify-between"
-                  : cn(
-                      "absolute bottom-16 rounded-2xl shadow-2xl transition-all duration-200",
-                      panelOpen === 'speed' && "right-32 sm:right-48 w-60 sm:w-68 max-h-[48vh]",
-                      panelOpen === 'sub' && "right-12 sm:right-28 w-[360px] sm:w-[420px] max-h-[55vh]",
-                      panelOpen === 'settings' && "right-4 sm:right-10 w-[320px] sm:w-[380px] max-h-[55vh]"
-                    )
+                "z-[200] bg-[#0a0a0d]/98 backdrop-blur-2xl border border-white/15 flex flex-col shadow-[0_20px_60px_rgba(0,0,0,0.85)] overflow-hidden transform-gpu will-change-transform",
+                isMobileNonFullscreen
+                  ? "fixed bottom-0 inset-x-0 max-h-[82vh] w-full rounded-t-3xl border-b-0 p-4 sm:p-5 flex flex-col shadow-[0_-10px_40px_rgba(0,0,0,0.9)]"
+                  : isMobile
+                    ? "fixed inset-0 w-full h-full rounded-0 border-0 p-6 flex flex-col justify-between"
+                    : cn(
+                        "absolute bottom-16 rounded-2xl shadow-2xl transition-all duration-200",
+                        panelOpen === 'speed' && "right-32 sm:right-48 w-60 sm:w-68 max-h-[48vh]",
+                        panelOpen === 'sub' && "right-12 sm:right-28 w-[360px] sm:w-[420px] max-h-[55vh]",
+                        panelOpen === 'settings' && "right-4 sm:right-10 w-[320px] sm:w-[380px] max-h-[55vh]"
+                      )
               )}
               onClick={e => e.stopPropagation()}>
+
+
 
               <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/[0.06] shrink-0 sticky top-0 z-20 bg-[#0a0a0c]/98 backdrop-blur-md">
                 {panelOpen !== 'settings' && panelOpen !== 'sub' && (
@@ -1842,87 +1864,146 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Episode Drawer: Mobile Fullscreen Horizontal Cards Overlay (Screenshot 2) vs Desktop Popover */}
+      {/* Episode Drawer: Mobile Fullscreen Horizontal Cards Overlay vs Mobile Non-Fullscreen Bottom Sheet vs Desktop Popover */}
       <AnimatePresence>
         {panelOpen === 'episodes' && (
           isMobile ? (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}
-              className="fixed inset-0 z-[100] bg-black/95 p-6 sm:p-8 flex flex-col justify-between overflow-hidden"
-              onClick={e => e.stopPropagation()}>
-              
-              {/* Top Header Bar */}
-              <div className="flex items-center justify-between gap-4 pb-2 border-b border-white/10 shrink-0">
-                <button onClick={closePanel} className="p-2 rounded-full hover:bg-white/10 text-white cursor-pointer transition-all active:scale-95">
-                  <ArrowLeft size={24} />
-                </button>
-                <h2 className="text-base sm:text-lg font-bold text-white truncate text-right">{movieName || title}</h2>
-              </div>
-
-              {/* Season Tabs if multiple seasons */}
-              {seasons && seasons.length > 0 && (
-                <div className="flex gap-2 py-2 overflow-x-auto scrollbar-hide shrink-0">
-                  {seasons.map((s) => (
-                    <button key={s.season_number} onClick={() => onSeasonChange?.(s.season_number)}
-                      className={cn(
-                        "shrink-0 px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer border",
-                        s.season_number === activeEpSeason
-                          ? "bg-[#E50914] border-[#E50914] text-white"
-                          : "bg-white/5 border-white/10 text-white/60 hover:text-white"
-                      )}>
-                      {s.name || `Mùa ${s.season_number}`}
-                    </button>
-                  ))}
+            isMobileFullscreenMode ? (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}
+                className="fixed inset-0 z-[100] bg-black/95 p-6 sm:p-8 flex flex-col justify-between overflow-hidden"
+                onClick={e => e.stopPropagation()}>
+                
+                {/* Top Header Bar */}
+                <div className="flex items-center justify-between gap-4 pb-2 border-b border-white/10 shrink-0">
+                  <button onClick={closePanel} className="p-2 rounded-full hover:bg-white/10 text-white cursor-pointer transition-all active:scale-95">
+                    <ArrowLeft size={24} />
+                  </button>
+                  <h2 className="text-base sm:text-lg font-bold text-white truncate text-right">{movieName || title}</h2>
                 </div>
-              )}
 
-              {/* Horizontal Scrollable Episode Cards Container */}
-              <div className="flex-1 flex items-start gap-5 overflow-x-auto py-3 scrollbar-hide w-full align-top">
-                {episodes.map((ep, i) => {
-                  const isActive = isSameEp(ep.name, episodeName);
-                  const epKey = `${slug}_ep_${ep.name}`;
-                  const epProg = episodeProgressMap[epKey];
-                  const pct = epProg && epProg.duration > 0 ? Math.min(100, (epProg.currentTime / epProg.duration) * 100) : 0;
-                  const tmdbEp = tmdbEpisodes?.find((t: any) => t.episode_number === (i + 1) || isSameEp(t.episode_number, ep.name));
-                  const epTitle = tmdbEp?.name || (ep.title && ep.title !== ep.name ? ep.title : (ep.name ? `Tập ${ep.name}` : `Tập ${i + 1}`));
-                  const stillPath = tmdbEp?.still_path || ep.still_path;
-                  const stillImg = stillPath ? `https://image.tmdb.org/t/p/w500${stillPath}` : (thumbUrl || posterUrl);
-                  const durationText = tmdbEp?.runtime ? `${tmdbEp.runtime} phút` : '23 phút';
-                  const overview = tmdbEp?.overview || ep.overview || '';
+                {/* Season Tabs if multiple seasons */}
+                {seasons && seasons.length > 0 && (
+                  <div className="flex gap-2 py-2 overflow-x-auto scrollbar-hide shrink-0">
+                    {seasons.map((s) => (
+                      <button key={s.season_number} onClick={() => onSeasonChange?.(s.season_number)}
+                        className={cn(
+                          "shrink-0 px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer border",
+                          s.season_number === activeEpSeason
+                            ? "bg-[#E50914] border-[#E50914] text-white"
+                            : "bg-white/5 border-white/10 text-white/60 hover:text-white"
+                        )}>
+                        {s.name || `Mùa ${s.season_number}`}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
-                  return (
-                    <div key={ep.slug || i} onClick={() => { onEpisodeSelect?.(ep); closePanel(); }}
-                      className="flex flex-col w-64 sm:w-72 shrink-0 gap-2 cursor-pointer group/ep">
-                      {/* 16:9 Thumbnail */}
-                      <div className="relative w-full aspect-video rounded-md overflow-hidden bg-black/60 border border-white/10 shrink-0">
-                        {stillImg ? (
-                          <img src={stillImg} alt={epTitle} className="w-full h-full object-cover group-hover/ep:scale-105 transition-transform duration-300" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-white/40 text-xs font-bold">Tập {i + 1}</div>
-                        )}
-                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                          <div className={cn("w-10 h-10 rounded-full flex items-center justify-center border border-white/30", isActive ? "bg-[#E50914] text-white border-[#E50914]" : "bg-black/60 text-white")}>
-                            <Play size={20} fill="white" className="ml-0.5" />
+                {/* Horizontal Scrollable Episode Cards Container */}
+                <div className="flex-1 flex items-start gap-5 overflow-x-auto py-3 scrollbar-hide w-full align-top">
+                  {episodes.map((ep, i) => {
+                    const isActive = isSameEp(ep.name, episodeName);
+                    const epKey = `${slug}_ep_${ep.name}`;
+                    const epProg = episodeProgressMap[epKey];
+                    const pct = epProg && epProg.duration > 0 ? Math.min(100, (epProg.currentTime / epProg.duration) * 100) : 0;
+                    const tmdbEp = tmdbEpisodes?.find((t: any) => t.episode_number === (i + 1) || isSameEp(t.episode_number, ep.name));
+                    const epTitle = tmdbEp?.name || (ep.title && ep.title !== ep.name ? ep.title : (ep.name ? `Tập ${ep.name}` : `Tập ${i + 1}`));
+                    const stillPath = tmdbEp?.still_path || ep.still_path;
+                    const stillImg = stillPath ? `https://image.tmdb.org/t/p/w500${stillPath}` : (thumbUrl || posterUrl);
+                    const durationText = tmdbEp?.runtime ? `${tmdbEp.runtime} phút` : '23 phút';
+                    const overview = tmdbEp?.overview || ep.overview || '';
+
+                    return (
+                      <div key={ep.slug || i} onClick={() => { onEpisodeSelect?.(ep); closePanel(); }}
+                        className="flex flex-col w-64 sm:w-72 shrink-0 gap-2 cursor-pointer group/ep">
+                        {/* 16:9 Thumbnail */}
+                        <div className="relative w-full aspect-video rounded-md overflow-hidden bg-black/60 border border-white/10 shrink-0">
+                          {stillImg ? (
+                            <img src={stillImg} alt={epTitle} className="w-full h-full object-cover group-hover/ep:scale-105 transition-transform duration-300" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-white/40 text-xs font-bold">Tập {i + 1}</div>
+                          )}
+                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                            <div className={cn("w-10 h-10 rounded-full flex items-center justify-center border border-white/30", isActive ? "bg-[#E50914] text-white border-[#E50914]" : "bg-black/60 text-white")}>
+                              <Play size={20} fill="white" className="ml-0.5" />
+                            </div>
                           </div>
+                          {pct > 0 && (
+                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/80">
+                              <div className="h-full bg-[#E50914]" style={{ width: `${pct}%` }} />
+                            </div>
+                          )}
                         </div>
-                        {pct > 0 && (
-                          <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/80">
-                            <div className="h-full bg-[#E50914]" style={{ width: `${pct}%` }} />
-                          </div>
-                        )}
+                        {/* Title & Info */}
+                        <div className="flex items-center justify-between gap-2 mt-1">
+                          <h4 className={cn("text-xs sm:text-sm font-bold truncate", isActive ? "text-[#E50914]" : "text-white")}>
+                            {i + 1}. {epTitle}
+                          </h4>
+                        </div>
+                        <span className="text-[11px] text-gray-400 font-medium">{durationText}</span>
+                        {overview && <p className="text-[11px] text-gray-400 line-clamp-3 leading-relaxed">{overview}</p>}
                       </div>
-                      {/* Title & Info */}
-                      <div className="flex items-center justify-between gap-2 mt-1">
-                        <h4 className={cn("text-xs sm:text-sm font-bold truncate", isActive ? "text-[#E50914]" : "text-white")}>
-                          {i + 1}. {epTitle}
-                        </h4>
-                      </div>
-                      <span className="text-[11px] text-gray-400 font-medium">{durationText}</span>
-                      {overview && <p className="text-[11px] text-gray-400 line-clamp-3 leading-relaxed">{overview}</p>}
+                    );
+                  })}
+                </div>
+              </motion.div>
+            ) : (
+              <>
+                <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration: 0.12 }}
+                  className="fixed inset-0 z-[190] bg-black/75 backdrop-blur-sm" onClick={closePanel} />
+                <motion.div
+                  initial={{ y: "100%", opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: "100%", opacity: 0 }}
+                  transition={{ type: "spring", damping: 30, stiffness: 350 }}
+                  className="fixed bottom-0 inset-x-0 z-[200] max-h-[82vh] w-full bg-[#0a0a0d]/98 backdrop-blur-2xl border-t border-white/15 rounded-t-3xl p-4 sm:p-5 flex flex-col shadow-[0_-10px_40px_rgba(0,0,0,0.9)] overflow-hidden transform-gpu will-change-transform"
+                  onClick={e => e.stopPropagation()}>
+
+                  <div className="flex items-center justify-between px-2 py-2 border-b border-white/[0.06] shrink-0">
+                    <h3 className="text-sm font-bold text-white/90 uppercase tracking-wider">Danh sách tập</h3>
+                    <button onClick={closePanel} className="p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer">
+                      <X size={16} className="text-white/60" />
+                    </button>
+                  </div>
+
+                  {seasons && seasons.length > 0 && (
+                    <div className="flex gap-2 py-2.5 border-b border-white/[0.04] overflow-x-auto scrollbar-hide shrink-0">
+                      {seasons.map((s) => (
+                        <button key={s.season_number} onClick={() => onSeasonChange?.(s.season_number)}
+                          className={cn(
+                            "shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer border",
+                            s.season_number === activeEpSeason
+                              ? "bg-[#E50914] border-[#E50914] text-white"
+                              : "bg-white/5 border-white/10 text-white/60 hover:text-white"
+                          )}>
+                          {s.name || `Mùa ${s.season_number}`}
+                        </button>
+                      ))}
                     </div>
-                  );
-                })}
-              </div>
-            </motion.div>
+                  )}
+
+                  <div className="flex-1 overflow-y-auto py-3 space-y-2.5 custom-scrollbar">
+                    {episodes.map((ep, i) => {
+                      const isActive = isSameEp(ep.name, episodeName);
+                      const tmdbEp = tmdbEpisodes?.find((t: any) => t.episode_number === (i + 1) || isSameEp(t.episode_number, ep.name));
+                      const epTitle = tmdbEp?.name || (ep.title && ep.title !== ep.name ? ep.title : (ep.name ? `Tập ${ep.name}` : `Tập ${i + 1}`));
+                      return (
+                        <button key={ep.slug || i} onClick={() => { onEpisodeSelect?.(ep); closePanel(); }}
+                          className={cn(
+                            "flex items-center justify-between w-full p-3 rounded-xl border text-left transition-all cursor-pointer",
+                            isActive ? "bg-white/10 border-[#E50914] text-white" : "bg-white/5 border-transparent text-white/80 hover:bg-white/10"
+                          )}>
+                          <div className="flex items-center gap-3 min-w-0">
+                            <Play size={14} className={isActive ? "text-[#E50914]" : "text-white/40"} fill={isActive ? "#E50914" : "none"} />
+                            <span className="text-xs font-semibold truncate">{i + 1}. {epTitle}</span>
+                          </div>
+                          {isActive && <span className="text-[10px] bg-[#E50914] text-white px-2 py-0.5 rounded font-bold shrink-0">Đang phát</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              </>
+            )
           ) : (
             <>
               <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} transition={{ duration: 0.12 }}

@@ -111,10 +111,12 @@ export function useStreamAggregator({
     return null;
   }, [servers, activeEpName]);
 
-  // Stable query key — only re-run when media identity or episode changes
+  // Stable query key — only re-run when media identity, episode, or anime resolution changes
   const queryKey = useMemo(() => JSON.stringify({
     tmdbId: query.tmdbId,
     imdbId: query.imdbId,
+    anilistId: query.anilistId,
+    isAnime: query.isAnime,
     type: query.type,
     season: query.season,
     episode: query.episode,
@@ -125,8 +127,7 @@ export function useStreamAggregator({
     ep: activeEpName,
     retry: retryCount,
     hianimeEpisodeId: query.hianimeEpisodeId || activeEpisodeObj?.hianime_episode_id
-    // NOTE: serversLength đã bỏ — tránh re-fetch toàn bộ khi servers VI load xong
-  }), [query.tmdbId, query.imdbId, query.type, query.season, query.episode, query.viSlug, query.title, query.titleVi, query.year, activeEpName, retryCount, query.hianimeEpisodeId, activeEpisodeObj?.hianime_episode_id]);
+  }), [query.tmdbId, query.imdbId, query.anilistId, query.isAnime, query.type, query.season, query.episode, query.viSlug, query.title, query.titleVi, query.year, activeEpName, retryCount, query.hianimeEpisodeId, activeEpisodeObj?.hianime_episode_id]);
 
   const prevRef = useRef<{ queryKey: string; enabled: boolean }>({ queryKey: '', enabled: false });
   const episodeIdentityKey = useMemo(() => `${query.tmdbId || ''}:${query.type || ''}:${query.season || 1}:${query.episode || 1}:${activeEpName}`, [query.tmdbId, query.type, query.season, query.episode, activeEpName]);
@@ -327,11 +328,32 @@ export function useStreamAggregator({
     return updatedList.sort((a, b) => b.score - a.score);
   }, [state.streams, servers, activeEpName]);
 
+  // Track whether loading has "settled" enough to allow embed fallback.
+  // We wait for loading to finish OR a 4s grace window — whichever comes first.
+  const [hlsWaitSettled, setHlsWaitSettled] = useState(false);
+  const hlsSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setHlsWaitSettled(false);
+    if (hlsSettleTimerRef.current) clearTimeout(hlsSettleTimerRef.current);
+    // Fallback: allow embed after 4 s even if still loading
+    hlsSettleTimerRef.current = setTimeout(() => setHlsWaitSettled(true), 4000);
+    return () => { if (hlsSettleTimerRef.current) clearTimeout(hlsSettleTimerRef.current); };
+  }, [queryKey]); // reset whenever episode/movie changes
+
+  useEffect(() => {
+    if (!state.isLoading) setHlsWaitSettled(true);
+  }, [state.isLoading]);
+
   const autoSelected = useMemo(() => {
-    return finalStreams.length > 0
-      ? (finalStreams.find(s => s.type === 'hls' && s.latencyLabel !== 'Offline') ?? finalStreams.find(s => s.latencyLabel !== 'Offline') ?? finalStreams[0])
-      : null;
-  }, [finalStreams]);
+    if (finalStreams.length === 0) return null;
+    const hlsStream = finalStreams.find(s => s.type === 'hls' && s.latencyLabel !== 'Offline');
+    // If HLS found → always prefer it regardless of loading state
+    if (hlsStream) return hlsStream;
+    // No HLS yet — only fall back to embed once the grace window has passed
+    if (!hlsWaitSettled) return null;
+    return finalStreams.find(s => s.latencyLabel !== 'Offline') ?? finalStreams[0];
+  }, [finalStreams, hlsWaitSettled]);
 
   const activeStream = selectedStream ?? autoSelected;
 

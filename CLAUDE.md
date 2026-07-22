@@ -165,6 +165,7 @@ npx wrangler deploy   # Deploy Cloudflare Worker
 | [`src/api/cineproApi.ts`](file:///c:/Users/cykab/Downloads/cinemax/src/api/cineproApi.ts) | `buildProxiedM3u8Url()` — proxy routing qua Cloudflare Worker |
 | [`src/api/streamProviders/viProviders.ts`](file:///c:/Users/cykab/Downloads/cinemax/src/api/streamProviders/viProviders.ts) | OPhim, KKPhim, NguonC, Xem20, Hollysheesh providers |
 | [`src/api/streamProviders/animapperProvider.ts`](file:///c:/Users/cykab/Downloads/cinemax/src/api/streamProviders/animapperProvider.ts) | AniMapper REST provider (Anime Vietsub/Lồng tiếng) |
+| [`docs/AniMapper_Documentation.md`](file:///c:/Users/cykab/Downloads/cinemax/docs/AniMapper_Documentation.md) | Tài liệu kỹ thuật & API Spec đầy đủ của AniMapper |
 | [`src/components/player/NetflixPlayer.tsx`](file:///c:/Users/cykab/Downloads/cinemax/src/components/player/NetflixPlayer.tsx) | HLS & Iframe player, stream selection drawer, watch progress saving |
 | [`cloudflare-worker.js`](file:///c:/Users/cykab/Downloads/cinemax/cloudflare-worker.js) | Cloudflare Worker Backend API Router |
 | [`wrangler.json`](file:///c:/Users/cykab/Downloads/cinemax/wrangler.json) | Worker configuration (routes, env vars, cron triggers) |
@@ -182,7 +183,9 @@ npx wrangler deploy   # Deploy Cloudflare Worker
 - ❌ **KHÔNG** gọi trực tiếp `graphql.anilist.co` → PHẢI dùng AniMapper REST qua route `/api/anilist`.
 - ❌ **KHÔNG** tạo file `.ts` mới trong thư mục `scripts/` → PHẢI dùng `.cjs` (CommonJS).
 - ❌ **KHÔNG** ghi đè `selectedServerId` khi người dùng chọn stream thủ công từ drawer `NetflixPlayer` → Tránh tạo race-condition với effect đồng bộ server.
-- ❌ **KHÔNG** trả về `embedUrl` (VidSrc fallback) khi `activeStream` đã có luồng HLS → PHẢI trả `resolvedEmbedUrl = null` để render `<video>` thay vì `<iframe>`.
+- ❌ **KHÔNG** trả về `embedUrl` (VidSrc/CinemaOS fallback) khi `activeStream` đã có luồng HLS → PHẢI trả `resolvedEmbedUrl = null` để render `<video>` thay vì `<iframe>`.
+- ❌ **KHÔNG** giảm thông số Hls.js buffer (`maxBufferLength: 180s`, `maxBufferSize: 150MB`) trong `NetflixPlayer.tsx` với lý do "tối ưu bộ lọc" → Giữ nguyên buffer lớn để người dùng tua phim mượt mà.
+- ❌ **KHÔNG** để nguồn Embed (CinemaOS, VidSrc) auto-select cướp vị trí trong khi HLS đang fetch bất đồng bộ → PHẢI dùng HLS-Wait Grace Window (`hlsWaitSettled`) trong `useStreamAggregator.ts`.
 
 ### Workflow & Verification
 - ❌ **KHÔNG** dùng `grep_search` để navigate codebase → PHẢI dùng `search_graph` / `trace_path` từ codebase-memory-mcp.
@@ -193,9 +196,13 @@ npx wrangler deploy   # Deploy Cloudflare Worker
 
 ## 🐛 Known Issues & Solutions
 
+| Sự cố / Hiện tượng | Nguyên nhân gốc (Root Cause) | Giải pháp chuẩn (Standard Fix) |
+|---|---|---|
+| **Bộ lọc quảng cáo KKPhim bị lọt (phút 14-15)** | KKPhim chèn ad segment theo **path pattern mã hex** (`/v\d+/[a-f0-9]{16,}/segment_\d+.ts`) chứ không dùng hostname quảng cáo hay từ khóa `9922`. Quảng cáo đi kèm với tag `#EXT-X-KEY` và `#EXT-X-DISCONTINUITY`. | Áp dụng thuật toán chuẩn từ `AdsSkipperRoPhim` (`SinonCute/AdsSkipperRoPhim`): Bắt pattern `/v\d+/[hex]/segment_\d+.ts`, bóc tách cả `#EXT-X-KEY` & `#EXTINF`, normalize `convertv8/` prefix (giữ file) và compact các thẻ `#EXT-X-DISCONTINUITY` liên tiếp. |
+| **Trình phát ưu tiên Embed VIP hơn HLS khi vừa vào phim** | Embed providers (CinemaOS, VidSrc) trả về kết quả tức thì (sync/instant URL), trong khi HLS (KKPhim/OPhim/CinePro) cần fetch API bất đồng bộ. Khi vừa mở phim, HLS chưa kịp về thì `autoSelected` đã tự động chọn Embed. | Thiết lập **HLS-Wait Grace Window** (`hlsWaitSettled` + 4s timeout) trong `useStreamAggregator.ts`. Trong khi HLS đang load, tạm hoãn auto-select Embed cho tới khi HLS resolve xong hoặc hết 4s. |
 | **Nguồn Việt Nam bị lỗi 403 khi dùng proxy** | Cloudflare Worker IP bị VI CDN (KKPhim/OPhim) chặn 403 | Thêm `VI_CDN_PATTERNS` bypass proxy để trình duyệt phát trực tiếp |
-| **Bộ lọc quảng cáo 9922 bị bypass** | Hls.js bật Web Worker (`enableWorker: true`) đẩy fetch sang background thread bỏ qua custom loader | Đặt `enableWorker: false` trong Hls options để ép chạy custom loader trên main thread |
 | **Lỗi phát luồng HLS khi chuyển nguồn** | `resolvedEmbedUrl` bị đè bởi fallback `embedUrl`, render `<iframe>` thay vì `<video>` | Fix `resolvedEmbedUrl = activeStream?.type === 'hls' ? null : ...` |
 | **Xung đột chọn nguồn thủ công** | `handleStreamSelect` tự động đổi `selectedServerId` kích hoạt effect đồng bộ lại | Bỏ `handleStreamSelect` và dùng trực tiếp `selectStream` |
 | **Render bridge cold start ~50s** | Render free tier tự ngủ sau 15 phút không dùng | Cloudflare Worker Cron `*/10 * * * *` ping `/health` |
 | **Body scroll bị lock sau khi back** | `body.style.overflow` race condition | Chuyển sang `classList.add/remove('overflow-hidden')` |
+

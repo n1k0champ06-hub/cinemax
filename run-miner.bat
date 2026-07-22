@@ -14,28 +14,32 @@ echo             MINER v2.0  --  Hollysheesh Data Engine
 echo.
 echo ====================================================================
 echo  Chon che do crawl:
-echo   [1] Quick sync - 5 trang tu tat ca nguon (KKPhim + OPhim + NguonC)
-echo   [2] Deep sync  - 20 trang tu tat ca nguon
-echo   [3] Full sync  - TAT CA trang (rat lau)
-echo   [4] Chi KKPhim - 10 trang
-echo   [5] Chi OPhim  - 10 trang
-echo   [6] Chi NguonC - 10 trang
-echo   [7] Auto watch - Sync lai moi 60 phut
-echo   [8] Xem thong ke DB
+echo   [1] Quick sync  - 5 trang x 4 nguon (~350 phim)
+echo   [2] Batch 300   - 13 trang x 4 nguon (~1,000 phim / 300+ phim moi nguon)
+echo   [3] Deep sync   - 30 trang tu 4 nguon
+echo   [4] Full sync   - TAT CA trang (rat lau)
+echo   [5] Chi KKPhim  - 10 trang
+echo   [6] Chi OPhim   - 10 trang
+echo   [7] Chi NguonC  - 10 trang
+echo   [8] Chi HoatHinh - 10 trang Anime chuyên biệt
+echo   [9] Auto watch  - Sync lai moi 60 phut
+echo   [10] Xem thong ke DB
 echo   [0] Thoat
 echo ====================================================================
 echo.
-set /p choice="Nhap lua chon (0-8): "
+set /p choice="Nhap lua chon (0-10): "
 
 if "%choice%"=="0" exit
 if "%choice%"=="1" goto quick
-if "%choice%"=="2" goto deep
-if "%choice%"=="3" goto full
-if "%choice%"=="4" goto kkphim
-if "%choice%"=="5" goto ophim
-if "%choice%"=="6" goto nguonc
-if "%choice%"=="7" goto watch
-if "%choice%"=="8" goto stats
+if "%choice%"=="2" goto batch300
+if "%choice%"=="3" goto deep
+if "%choice%"=="4" goto full
+if "%choice%"=="5" goto kkphim
+if "%choice%"=="6" goto ophim
+if "%choice%"=="7" goto nguonc
+if "%choice%"=="8" goto hoathinh
+if "%choice%"=="9" goto watch
+if "%choice%"=="10" goto stats
 
 echo Lua chon khong hop le!
 pause
@@ -43,8 +47,14 @@ goto :eof
 
 :quick
 echo.
-echo [QUICK] Sync 5 trang tu tat ca nguon...
-node hollysheesh-bridge\miner.cjs --pages 5
+echo [QUICK] Sync 5 trang x 4 nguon...
+node hollysheesh-bridge\miner.cjs --pages 5 --concurrency 6
+goto done
+
+:batch300
+echo.
+echo [BATCH 300] Sync 13 trang x 4 nguon (300+ phim moi nguon)...
+node hollysheesh-bridge\miner.cjs --pages 13 --concurrency 8
 goto done
 
 :deep
@@ -75,6 +85,12 @@ goto done
 echo.
 echo [NGUONC] Sync 10 trang tu NguonC...
 node hollysheesh-bridge\miner.cjs --source nguonc --pages 10
+goto done
+
+:hoathinh
+echo.
+echo [HOATHINH] Sync 10 trang Anime/HoatHinh...
+node hollysheesh-bridge\miner.cjs --source hoathinh --pages 10
 goto done
 
 :watch

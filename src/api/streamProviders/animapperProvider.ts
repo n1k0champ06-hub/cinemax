@@ -1,6 +1,7 @@
 import type { StreamItem, StreamProvider, StreamQuery } from './types';
 import { computeScore } from './types';
 import { buildProxiedM3u8Url } from '../cineproApi';
+import { godModeStore } from '../../lib/godmode';
 
 // Timeout fetch wrapper helper
 const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 6000) => {
@@ -18,8 +19,9 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout 
 
 function getEpisodeNumber(nameStr: string | number | undefined | null): number | null {
   if (nameStr === undefined || nameStr === null) return null;
-  // Clean all non-numeric characters except maybe decimal (e.g. 11.5)
-  const cleaned = nameStr.toString().replace(/[^\d.]/g, '');
+  const s = nameStr.toString().toLowerCase().trim();
+  if (s === 'full' || s.includes('full') || s === 'movie' || s.includes('movie') || s.includes('ova')) return 1;
+  const cleaned = s.replace(/[^\d.]/g, '');
   if (!cleaned) return null;
   const num = parseFloat(cleaned);
   return isNaN(num) ? null : Math.floor(num);
@@ -35,7 +37,6 @@ async function fetchProviderStreams(
     const epUrl = `https://api.animapper.net/api/v1/stream/episodes?id=${anilistId}&provider=${provider}`;
     const epRes = await fetchWithTimeout(epUrl);
     if (!epRes.ok) {
-      console.warn(`[AniMapper:${provider}] Failed to fetch episode list for id ${anilistId}: ${epRes.status}`);
       return [];
     }
 
@@ -46,13 +47,18 @@ async function fetchProviderStreams(
     }
 
     // 2. Find matching episodes
-    const matchingEps = episodes.filter((ep: any) => {
+    let matchingEps = episodes.filter((ep: any) => {
       const epNum = getEpisodeNumber(ep.episodeNumber);
       return epNum !== null && epNum === targetEpisode;
     });
 
+    if (matchingEps.length === 0 && episodes.length > 0) {
+      if (targetEpisode === 1 || episodes.length === 1) {
+        matchingEps = [episodes[0]];
+      }
+    }
+
     if (matchingEps.length === 0) {
-      console.log(`[AniMapper:${provider}] No episode matching number ${targetEpisode} found.`);
       return [];
     }
 
@@ -77,7 +83,6 @@ async function fetchProviderStreams(
         const sourceData = await sourceRes.json();
         return { ep, source: sourceData };
       } catch (err) {
-        console.warn(`[AniMapper:${provider}] Failed to fetch stream source for ${ep.episodeId}:`, err);
         return null;
       }
     });
@@ -122,7 +127,6 @@ async function fetchProviderStreams(
 
     return streams;
   } catch (err) {
-    console.error(`[AniMapper:${provider}] Error during fetching streams:`, err);
     return [];
   }
 }
@@ -133,63 +137,94 @@ export const animapperProvider: StreamProvider = {
   lang: 'vi',
   group: 'vi',
   async fetchStreams(query: StreamQuery): Promise<StreamItem[]> {
-    if (!query.isAnime) return [];
-
-    let anilistId = query.anilistId;
-    if (!anilistId && query.viSlug?.startsWith('anilist-')) {
-      anilistId = query.viSlug.split('-')[1];
+    const isAnimeTarget = query.isAnime || !!query.anilistId || query.viSlug?.startsWith('anilist-') || query.viSlug?.includes('hoat-hinh') || query.viSlug?.includes('anime');
+    if (!isAnimeTarget) {
+      return [];
     }
 
-    if (!anilistId && query.title) {
+    const candidateIds: (string | number)[] = [];
+
+    if (query.anilistId) {
+      candidateIds.push(query.anilistId);
+    }
+    if (query.viSlug?.startsWith('anilist-')) {
+      const slugId = query.viSlug.split('-')[1];
+      if (!candidateIds.includes(slugId)) candidateIds.push(slugId);
+    }
+
+    // Also perform search by title to gather candidate IDs
+    const isCJK = (str: string) => /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uffef\u4e00-\u9faf]/.test(str);
+    const searchTitles = [query.title, query.titleVi]
+      .filter((t): t is string => Boolean(t) && !isCJK(t as string));
+
+    for (const t of searchTitles) {
       try {
-        const searchUrl = `https://api.animapper.net/api/v1/search?title=${encodeURIComponent(query.title)}&mediaType=ANIME&limit=5`;
+        const searchUrl = `https://api.animapper.net/api/v1/search?title=${encodeURIComponent(t)}&mediaType=ANIME&limit=5`;
         const searchRes = await fetchWithTimeout(searchUrl);
         if (searchRes.ok) {
           const searchData = await searchRes.json();
-          if (searchData.success && searchData.results && searchData.results.length > 0) {
-            anilistId = searchData.results[0].id;
-            console.log(`[animapperProvider] Resolved AniList ID ${anilistId} for title "${query.title}" via search`);
+          if (searchData.success && searchData.results) {
+            for (const r of searchData.results) {
+              if (r.id && !candidateIds.includes(r.id)) {
+                candidateIds.push(r.id);
+              }
+            }
           }
         }
       } catch (err: any) {
-        console.warn(`[animapperProvider] Failed to search AniMapper for title "${query.title}":`, err.message);
+        /* ignore */
       }
     }
 
-    if (!anilistId && query.titleVi) {
-      try {
-        const searchUrl = `https://api.animapper.net/api/v1/search?title=${encodeURIComponent(query.titleVi)}&mediaType=ANIME&limit=5`;
-        const searchRes = await fetchWithTimeout(searchUrl);
-        if (searchRes.ok) {
-          const searchData = await searchRes.json();
-          if (searchData.success && searchData.results && searchData.results.length > 0) {
-            anilistId = searchData.results[0].id;
-            console.log(`[animapperProvider] Resolved AniList ID ${anilistId} for Vietnamese title "${query.titleVi}" via search`);
-          }
-        }
-      } catch (err: any) {
-        console.warn(`[animapperProvider] Failed to search AniMapper for titleVi "${query.titleVi}":`, err.message);
-      }
-    }
-
-    if (!anilistId) {
-      console.warn('[animapperProvider] No AniList ID provided in query and could not resolve via search.');
+    if (candidateIds.length === 0) {
+      console.warn('%c[AniMapper] No AniList ID or candidates found.', 'color: #F59E0B; font-weight: bold;');
+      godModeStore.addLog('SYSTEM', 'WARN', '[AniMapper] Could not resolve AniList ID for title');
       return [];
     }
 
     const targetEpisode = query.episode || 1;
 
-    try {
-      // Fetch both ANIMEVIETSUB and NINIYO in parallel
-      const [animevietsubStreams, niniyoStreams] = await Promise.all([
-        fetchProviderStreams(anilistId, 'ANIMEVIETSUB', targetEpisode),
-        fetchProviderStreams(anilistId, 'NINIYO', targetEpisode)
-      ]);
+    console.log(
+      `%c[AniMapper] Checking ${candidateIds.length} candidate ID(s) [${candidateIds.join(', ')}] for Ep ${targetEpisode}...`,
+      'background: #EC4899; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;'
+    );
 
-      return [...animevietsubStreams, ...niniyoStreams];
-    } catch (err) {
-      console.error('[animapperProvider] Failed fetching AniMapper streams:', err);
-      return [];
+    // Try candidate IDs in sequence with Metadata discovery
+    for (const id of candidateIds) {
+      try {
+        // Step 1: Check Metadata API first to find active streamingProviders
+        const metaUrl = `https://api.animapper.net/api/v1/metadata?id=${id}`;
+        const metaRes = await fetchWithTimeout(metaUrl, {}, 4000);
+        if (!metaRes.ok) continue;
+
+        const metaData = await metaRes.json();
+        const activeProviders = Object.keys(metaData.result?.streamingProviders || {}) as ('ANIMEVIETSUB' | 'NINIYO')[];
+        
+        if (activeProviders.length === 0) {
+          // No mapped providers for this media ID, skip to avoid 404 errors
+          continue;
+        }
+
+        // Step 2: Fetch streams only for active providers returned by metadata
+        const providerPromises = activeProviders.map(p => fetchProviderStreams(id, p, targetEpisode));
+        const streamResults = await Promise.all(providerPromises);
+        const allStreams = streamResults.flat();
+
+        if (allStreams.length > 0) {
+          console.log(
+            `%c[AniMapper] Successfully resolved ${allStreams.length} stream(s) using AniList ID: ${id} via [${activeProviders.join(', ')}] (Score: 998)`,
+            'color: #10B981; font-weight: bold;',
+            allStreams.map(s => s.label)
+          );
+          godModeStore.addLog('SYSTEM', 'INFO', `[AniMapper] Found ${allStreams.length} streams for AniList ID ${id} (Ep ${targetEpisode})`);
+          return allStreams;
+        }
+      } catch (err) {
+        /* try next candidate */
+      }
     }
+
+    console.log(`%c[AniMapper] 0 streams returned across candidate IDs`, 'color: #F59E0B;');
+    return [];
   }
 };
