@@ -76,14 +76,13 @@ cinemax/
 
 ## 🔍 Stream Flow & Proxy Architecture
 
-### 1. Universal HLS Proxy Routing
-Tất cả các đường dẫn luồng phát HLS `.m3u8` (bao gồm các nguồn Việt Nam như KKPhim, OPhim, NguonC, Hollysheesh, AniMapper) đều đi qua Proxy `/api/m3u8-proxy` (Cloudflare Worker Proxy):
+### 1. HLS Proxy Routing & Direct VI CDN Bypass
+- **VI CDN Direct Streaming (KKPhim, OPhim, PhimAPI, NguonC):** Các nguồn HLS Việt Nam có CORS `Allow-Origin: *` bắt buộc phải **phát trực tiếp từ trình duyệt** (`isViCDN` check trong `cineproApi.ts`), KHÔNG được đi qua `/api/m3u8-proxy` vì IP của Cloudflare Worker bị VI CDN chặn `403 Forbidden`.
+- **International / Protected Streams:** Các nguồn quốc tế hoặc cần Header Referer đặc thù mới đi qua `/api/m3u8-proxy` (Cloudflare Worker Proxy):
 ```
 Browser → buildProxiedM3u8Url(rawUrl, referer)
-            └─ /api/m3u8-proxy?url=<encoded_url>&referer=<encoded_referer>
-                 ├─ Injects Mandatory Referer Headers (Tránh lỗi 403 Forbidden)
-                 ├─ Handles CORS (`Access-Control-Allow-Origin: *`)
-                 └─ Filters ad-segments automatically
+            ├─ VI CDN? → Stream direct from browser client IP
+            └─ Other Stream → /api/m3u8-proxy?url=<encoded_url>&referer=<encoded_referer>
 ```
 
 ### 2. HOLLYSHEESH Source Flow
@@ -194,10 +193,9 @@ npx wrangler deploy   # Deploy Cloudflare Worker
 
 ## 🐛 Known Issues & Solutions
 
-| Issue | Root Cause | Fix |
-|---|---|---|
+| **Nguồn Việt Nam bị lỗi 403 khi dùng proxy** | Cloudflare Worker IP bị VI CDN (KKPhim/OPhim) chặn 403 | Thêm `VI_CDN_PATTERNS` bypass proxy để trình duyệt phát trực tiếp |
+| **Bộ lọc quảng cáo 9922 bị bypass** | Hls.js bật Web Worker (`enableWorker: true`) đẩy fetch sang background thread bỏ qua custom loader | Đặt `enableWorker: false` trong Hls options để ép chạy custom loader trên main thread |
 | **Lỗi phát luồng HLS khi chuyển nguồn** | `resolvedEmbedUrl` bị đè bởi fallback `embedUrl`, render `<iframe>` thay vì `<video>` | Fix `resolvedEmbedUrl = activeStream?.type === 'hls' ? null : ...` |
-| **Không chọn được nguồn Việt Nam** | URL VI CDN bị lỗi 403 Forbidden do thiếu `Referer` header | Route toàn bộ luồng HLS qua `buildProxiedM3u8Url()` -> `/api/m3u8-proxy` |
 | **Xung đột chọn nguồn thủ công** | `handleStreamSelect` tự động đổi `selectedServerId` kích hoạt effect đồng bộ lại | Bỏ `handleStreamSelect` và dùng trực tiếp `selectStream` |
 | **Render bridge cold start ~50s** | Render free tier tự ngủ sau 15 phút không dùng | Cloudflare Worker Cron `*/10 * * * *` ping `/health` |
 | **Body scroll bị lock sau khi back** | `body.style.overflow` race condition | Chuyển sang `classList.add/remove('overflow-hidden')` |
