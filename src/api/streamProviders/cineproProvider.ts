@@ -41,6 +41,7 @@ export const cineproProvider: StreamProvider = {
           lang: 'en',
           label: `${source.provider.toUpperCase()} · ${source.quality}`,
           category: 'premium',
+          headers: source.headers,
         };
 
         return {

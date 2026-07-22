@@ -157,6 +157,8 @@ export const animapperProvider: StreamProvider = {
     const searchTitles = [query.title, query.titleVi]
       .filter((t): t is string => Boolean(t) && !isCJK(t as string));
 
+    godModeStore.addLog('SYSTEM', 'INFO', `[AniMapper] Initiating search for titles: [${searchTitles.map(t => `"${t}"`).join(', ')}]`);
+
     for (const t of searchTitles) {
       try {
         const searchUrl = `https://api.animapper.net/api/v1/search?title=${encodeURIComponent(t)}&mediaType=ANIME&limit=5`;
@@ -172,21 +174,22 @@ export const animapperProvider: StreamProvider = {
           }
         }
       } catch (err: any) {
-        /* ignore */
+        godModeStore.addLog('SYSTEM', 'WARN', `[AniMapper] Title search failed for "${t}": ${err.message}`);
       }
     }
 
     if (candidateIds.length === 0) {
       console.warn('%c[AniMapper] No AniList ID or candidates found.', 'color: #F59E0B; font-weight: bold;');
-      godModeStore.addLog('SYSTEM', 'WARN', '[AniMapper] Could not resolve AniList ID for title');
+      godModeStore.addLog('SYSTEM', 'WARN', `[AniMapper] Could not resolve any AniList candidate IDs for titles: [${searchTitles.join(', ')}]`);
       return [];
     }
 
     const targetEpisode = query.episode || 1;
 
-    console.log(
-      `%c[AniMapper] Checking ${candidateIds.length} candidate ID(s) [${candidateIds.join(', ')}] for Ep ${targetEpisode}...`,
-      'background: #EC4899; color: white; font-weight: bold; padding: 2px 5px; border-radius: 3px;'
+    godModeStore.addLog(
+      'SYSTEM',
+      'INFO',
+      `[AniMapper] Testing ${candidateIds.length} candidate ID(s) [${candidateIds.join(', ')}] for Ep ${targetEpisode}...`
     );
 
     // Try candidate IDs in sequence with Metadata discovery
@@ -195,11 +198,21 @@ export const animapperProvider: StreamProvider = {
         // Step 1: Check Metadata API first to find active streamingProviders
         const metaUrl = `https://api.animapper.net/api/v1/metadata?id=${id}`;
         const metaRes = await fetchWithTimeout(metaUrl, {}, 4000);
-        if (!metaRes.ok) continue;
+        if (!metaRes.ok) {
+          godModeStore.addLog('SYSTEM', 'WARN', `[AniMapper] Metadata API returned ${metaRes.status} for AniList ID ${id}`);
+          continue;
+        }
 
         const metaData = await metaRes.json();
         const activeProviders = Object.keys(metaData.result?.streamingProviders || {}) as ('ANIMEVIETSUB' | 'NINIYO')[];
+        const titleEn = metaData.result?.titles?.en || metaData.result?.titles?.['ja-ro'] || metaData.result?.titles?.vi || id;
         
+        godModeStore.addLog(
+          'SYSTEM',
+          activeProviders.length > 0 ? 'INFO' : 'WARN',
+          `[AniMapper] Candidate ID ${id} (${titleEn}) -> Mapped Providers: [${activeProviders.join(', ') || 'NONE'}]`
+        );
+
         if (activeProviders.length === 0) {
           // No mapped providers for this media ID, skip to avoid 404 errors
           continue;
@@ -211,20 +224,19 @@ export const animapperProvider: StreamProvider = {
         const allStreams = streamResults.flat();
 
         if (allStreams.length > 0) {
-          console.log(
-            `%c[AniMapper] Successfully resolved ${allStreams.length} stream(s) using AniList ID: ${id} via [${activeProviders.join(', ')}] (Score: 998)`,
-            'color: #10B981; font-weight: bold;',
-            allStreams.map(s => s.label)
+          godModeStore.addLog(
+            'SYSTEM',
+            'INFO',
+            `[AniMapper] SUCCESS! Resolved ${allStreams.length} stream(s) via AniList ID ${id} (${titleEn}) [${activeProviders.join(', ')}] (Score: 998)`
           );
-          godModeStore.addLog('SYSTEM', 'INFO', `[AniMapper] Found ${allStreams.length} streams for AniList ID ${id} (Ep ${targetEpisode})`);
           return allStreams;
         }
-      } catch (err) {
-        /* try next candidate */
+      } catch (err: any) {
+        godModeStore.addLog('SYSTEM', 'WARN', `[AniMapper] Error evaluating candidate ID ${id}: ${err.message}`);
       }
     }
 
-    console.log(`%c[AniMapper] 0 streams returned across candidate IDs`, 'color: #F59E0B;');
+    godModeStore.addLog('SYSTEM', 'WARN', `[AniMapper] 0 streams returned across candidate IDs [${candidateIds.join(', ')}] for Ep ${targetEpisode}`);
     return [];
   }
 };

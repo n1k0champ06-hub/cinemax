@@ -148,12 +148,29 @@ function normalizeResponse(
       ? (s.provider.name || s.provider.id)
       : s.provider;
 
+    let rawUrl = s.url || s.stream || '';
+    let extraHeaders = s.headers || undefined;
+
+    // Unwrap CinePro's internal proxy URLs (e.g. http://localhost:10000/v1/proxy?data=...)
+    if (rawUrl.includes('/v1/proxy?data=')) {
+      try {
+        const dataMatch = rawUrl.match(/data=([^&]+)/);
+        if (dataMatch) {
+          const parsed = JSON.parse(decodeURIComponent(dataMatch[1]));
+          if (parsed.url) rawUrl = parsed.url;
+          if (parsed.headers) extraHeaders = { ...(extraHeaders || {}), ...parsed.headers };
+        }
+      } catch (e) {
+        // Ignore JSON parse errors
+      }
+    }
+
     return {
       provider: providerName || s.source || 'unknown',
-      url: s.url || s.stream || '',
+      url: rawUrl,
       quality: normalizeQuality(s.quality || s.resolution || 'auto'),
-      isHLS: s.isHLS ?? s.is_hls ?? s.type === 'hls' ?? (s.url || '').includes('.m3u8'),
-      headers: s.headers || undefined,
+      isHLS: s.isHLS ?? s.is_hls ?? s.type === 'hls' ?? (rawUrl || '').includes('.m3u8'),
+      headers: extraHeaders,
       subtitles: s.subtitles || s.captions || undefined,
     };
   }).filter((s: CineproSource) => s.url);
