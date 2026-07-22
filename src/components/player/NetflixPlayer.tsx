@@ -12,6 +12,7 @@ import { cn } from '../../lib/utils';
 import { SubtitleOverlay } from './SubtitleOverlay';
 import { StreamItem } from '../../api/streamProviders/types';
 import { ReportModal } from '../ui/ReportModal';
+import { godModeStore } from '../../lib/godmode';
 
 // ---------------------------------------------------------------------------
 // Client-side HLS Ad Blocker
@@ -206,6 +207,12 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string) {
     prevWasDisc = isDisc;
   }
 
+  const removedCount = removalRanges.length;
+  if (removedCount > 0) {
+    const cleanName = playlistUrl.split('?')[0].split('/').pop() || 'playlist.m3u8';
+    godModeStore.addLog('PLAYER', 'INFO', `[AdFilter] Filtered ${removedCount} ad segment blocks from ${cleanName}`);
+  }
+
   return compacted.join('\n');
 }
 
@@ -217,7 +224,9 @@ class AdFilteringHlsLoader extends (Hls.DefaultConfig.loader as any) {
       const onSuccess = callbacks.onSuccess;
       callbacks.onSuccess = (response: any, stats: any, ctx: any, networkDetails: any) => {
         if (typeof response?.data === 'string' && response.data.includes('#EXTM3U')) {
-          try { response.data = clientFilterPlaylistAds(response.data, ctx?.url || ''); } catch {}
+          try { response.data = clientFilterPlaylistAds(response.data, ctx?.url || ''); } catch (e: any) {
+            godModeStore.addLog('PLAYER', 'WARN', `[AdFilter] Exception during playlist filter: ${e.message}`);
+          }
         }
         onSuccess(response, stats, ctx, networkDetails);
       };
