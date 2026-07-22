@@ -3,7 +3,7 @@ import {
   Play, Pause, RotateCcw, RotateCw, Maximize, Minimize,
   VolumeX, Volume1, Volume2, Settings, ArrowLeft,
   Loader2, Check, ChevronRight, X, List, Flag,
-  Gauge, MessageSquare, SkipForward, Layers, Lock, Unlock, Server,
+  Gauge, MessageSquare, SkipForward, Layers, Lock, Unlock, Server, FastForward,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Hls from 'hls.js';
@@ -277,6 +277,10 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   const hlsRef      = useRef<Hls | null>(null);
   const timerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seekFxRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isHoldActionRef = useRef<boolean>(false);
+  const justFinishedHoldRef = useRef<boolean>(false);
+  const prevRateRef = useRef<number>(1);
   const { saveProgress } = useWatchProgress();
 
   const [isPlaying,    setIsPlaying]    = useState(true);
@@ -284,6 +288,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   const [duration,     setDuration]     = useState(0);
   const [isBuffering,  setIsBuffering]  = useState(true);
   const [showControls, setShowControls] = useState(true);
+  const [isHolding2x,  setIsHolding2x]  = useState(false);
   const [isMuted,      setIsMuted]      = useState(false);
   const [volume,       setVolume]       = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -596,18 +601,19 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   }, [subEnabled, selectedSub]);
 
   const resetControls = useCallback(() => {
+    if (isHolding2x) return;
     setShowControls(true);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       if (panelOpen === 'none') setShowControls(false);
-    }, 6000);
-  }, [panelOpen]);
+    }, 4500);
+  }, [panelOpen, isHolding2x]);
 
   const handleMouseMove = useCallback(() => {
-    if (!isMobile) {
+    if (!isMobile && !isHolding2x) {
       resetControls();
     }
-  }, [isMobile, resetControls]);
+  }, [isMobile, isHolding2x, resetControls]);
 
   const handleSeekMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!duration) return;
@@ -769,19 +775,69 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   useEffect(() => {
     return () => {
       if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
     };
   }, []);
 
-  const handleVideoClick = (e: React.MouseEvent<HTMLVideoElement>) => {
+  const handlePointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 || isEmbed) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, input, select, a, [role="button"]')) {
+      return;
+    }
+
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+    isHoldActionRef.current = false;
+
+    holdTimerRef.current = setTimeout(() => {
+      isHoldActionRef.current = true;
+      setIsHolding2x(true);
+      if (videoRef.current) {
+        prevRateRef.current = videoRef.current.playbackRate || playbackRate || 1;
+        videoRef.current.playbackRate = 2;
+      }
+      setShowControls(false);
+    }, 250);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLElement>) => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+
+    if (isHoldActionRef.current) {
+      setIsHolding2x(false);
+      if (videoRef.current) {
+        videoRef.current.playbackRate = prevRateRef.current || playbackRate || 1;
+      }
+      justFinishedHoldRef.current = true;
+      setTimeout(() => {
+        justFinishedHoldRef.current = false;
+        isHoldActionRef.current = false;
+      }, 100);
+    }
+  };
+
+  const handleVideoClick = (e: React.MouseEvent<HTMLElement>) => {
     e.stopPropagation();
+    if (isHoldActionRef.current || justFinishedHoldRef.current) {
+      return;
+    }
+
+    const target = e.target as HTMLElement;
+    if (target.closest('button, input, select, a, [role="button"]')) {
+      return;
+    }
+
     const now = Date.now();
     const diff = now - lastTapRef.current;
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const rect = containerRef.current?.getBoundingClientRect() || (e.currentTarget as HTMLElement).getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const width = rect.width;
 
     if (diff > 0 && diff < 300) {
-      // Double tap/click detected: cancel pending single-click togglePlay
+      // Double tap/click detected: cancel pending single-click toggle
       if (clickTimerRef.current) {
         clearTimeout(clickTimerRef.current);
         clickTimerRef.current = null;
@@ -801,14 +857,15 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
         clearTimeout(clickTimerRef.current);
       }
       clickTimerRef.current = setTimeout(() => {
-        if (isMobile) {
-          // On Mobile, single-tap anywhere ALWAYS shows controls & resets the 6s timer!
-          resetControls();
-        } else {
-          // On Desktop PC, single-click toggles play/pause
-          togglePlay();
-          resetControls();
-        }
+        setShowControls(prev => {
+          if (!prev) {
+            resetControls();
+            return true;
+          } else {
+            if (timerRef.current) clearTimeout(timerRef.current);
+            return false;
+          }
+        });
         clickTimerRef.current = null;
       }, 250);
     }
@@ -838,7 +895,14 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       "relative w-full h-full flex flex-col bg-black overflow-hidden select-none",
       simulatedFullscreen && "fixed inset-0 z-[100] w-screen h-screen"
     )} ref={containerRef}>
-      <div className="relative w-full flex-1 bg-black overflow-hidden">
+      <div 
+        className="relative w-full flex-1 bg-black overflow-hidden select-none cursor-pointer"
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onClick={handleVideoClick}
+        onMouseMove={handleMouseMove}
+      >
         {isEmbed ? (
           <iframe
             key={resolvedEmbedUrl}
@@ -853,10 +917,24 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
             className="w-full h-full object-contain"
             playsInline
             preload="auto"
-            onClick={handleVideoClick}
-            onMouseMove={handleMouseMove}
           />
         )}
+
+        <AnimatePresence>
+          {isHolding2x && (
+            <motion.div
+              initial={{ opacity: 0, y: -10, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.9 }}
+              transition={{ duration: 0.15 }}
+              className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 rounded-full bg-black/80 backdrop-blur-md border border-white/20 text-white font-bold text-xs sm:text-sm shadow-2xl pointer-events-none select-none"
+            >
+              <FastForward className="w-4 h-4 text-[#E50914] animate-pulse" />
+              <span className="text-[#E50914] font-extrabold tracking-wider">2x</span>
+              <span className="text-white/90 font-medium">Đang tua nhanh</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {activeSubUrl && subEnabled && !isEmbed && (
           <SubtitleOverlay
