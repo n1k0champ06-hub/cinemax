@@ -835,7 +835,7 @@ async function fetchFromHollysheeshApi(query: StreamQuery): Promise<StreamItem[]
         category: 'vi',
         headers: s.referer ? { Referer: s.referer } : undefined,
       };
-      return { ...item, score: 999 };
+      return { ...item, score: computeScore(item) };
     });
 
     return streams;

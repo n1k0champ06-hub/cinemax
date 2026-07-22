@@ -24,12 +24,6 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string) {
   if (!text || !text.includes('#EXTM3U')) return text;
 
   const AD_PATTERNS = [
-    /\/v\d+\/[a-f0-9]{16,}\/segment_\d+\.ts/i,
-    /\/v\d+\/.*\/segment_\d+\.ts/i,
-    /\/segment_\d+\.ts/i,
-    /\/v\d+\//i,
-    /convertv\d*/i,
-    /convert\d*/i,
     /9922/i,
     /nhacai/i,
     /cacuoc/i,
