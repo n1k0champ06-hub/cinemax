@@ -188,6 +188,14 @@ const MovieDetailContent: React.FC<{
   const [copied, setCopied] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
 
+  const modalEpScrollRef = useRef<HTMLDivElement>(null);
+  const handleModalEpScroll = (direction: "left" | "right") => {
+    if (modalEpScrollRef.current) {
+      const scrollAmount = direction === "left" ? -400 : 400;
+      modalEpScrollRef.current.scrollBy({ left: scrollAmount, behavior: "smooth" });
+    }
+  };
+
   // Scroll lock is handled in parent wrapper component
   const handleShare = async () => {
     try {
@@ -1036,56 +1044,79 @@ const MovieDetailContent: React.FC<{
                   )}
                 </div>
 
-                <div className="flex gap-3 overflow-x-auto pb-3 custom-scrollbar snap-x w-full">
-                  {epList.map((ep: any, i: number) => {
-                    const tmdbEp = isTv && seasonData?.episodes
-                      ? seasonData.episodes.find((t: any) => isSameEpisode(t.episode_number || t.name, ep.name || ep.episode_number))
-                      : null;
-                    const epNameStr = ep.episode_number ? `${ep.episode_number}` : ep.name;
-                    const stillPath = getEpStillPath(epNameStr, tmdbEp?.still_path || ep.still_path);
-                    const isSelected = currentSeason === activeEpSeason && (activeEp === ep || (activeEp?.name && isSameEpisode(ep.episode_number || ep.name, activeEp.name)));
-                    const displayEpName = ep.episode_number ? `Tập ${ep.episode_number}` : (String(ep.name).startsWith("Tập") ? ep.name : `Tập ${ep.name}`);
-                    const displayEpTitle = tmdbEp?.name && !isGenericEpisodeName(tmdbEp.name, tmdbEp.episode_number)
-                      ? tmdbEp.name
-                      : (ep.name && !isGenericEpisodeName(ep.name, ep.episode_number) && !String(ep.name).startsWith("Tập") ? ep.name : '');
+                <div className="relative group/scroll w-full">
+                  {/* Left Scroll Button */}
+                  <button 
+                    onClick={() => handleModalEpScroll("left")}
+                    className="absolute -left-3 top-1/2 -translate-y-1/2 bg-neutral-900/90 hover:bg-black text-white border border-white/15 w-9 h-9 rounded-full shadow-2xl opacity-0 group-hover/scroll:opacity-100 transition-all duration-300 pointer-events-auto hover:scale-110 active:scale-95 z-20 flex items-center justify-center cursor-pointer"
+                    aria-label="Scroll Left"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
 
-                    return (
-                      <button
-                        key={i}
-                        onClick={() => handleSelectEpisode(ep, true)}
-                        className={cn(
-                          "w-44 sm:w-56 shrink-0 flex flex-col gap-2 p-2 rounded-xl text-left transition-all border snap-start group cursor-pointer",
-                          isSelected
-                            ? "bg-white/10 border-[#e50914] shadow-[0_0_15px_rgba(229,9,20,0.3)]"
-                            : "bg-white/5 border-white/10 hover:bg-white/10"
-                        )}
-                      >
-                        <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-black/60 border border-white/10 shrink-0">
-                          {stillPath ? (
-                            <SafeImage src={stillPath} alt={ep.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-gray-500 font-bold text-xs">
-                              {displayEpName}
-                            </div>
+                  <div 
+                    ref={modalEpScrollRef}
+                    className="flex gap-3 overflow-x-auto pb-3 custom-scrollbar snap-x w-full scroll-smooth"
+                  >
+                    {epList.map((ep: any, i: number) => {
+                      const tmdbEp = isTv && seasonData?.episodes
+                        ? seasonData.episodes.find((t: any) => isSameEpisode(t.episode_number || t.name, ep.name || ep.episode_number))
+                        : null;
+                      const epNameStr = ep.episode_number ? `${ep.episode_number}` : ep.name;
+                      const stillPath = getEpStillPath(epNameStr, tmdbEp?.still_path || ep.still_path);
+                      const isSelected = currentSeason === activeEpSeason && (activeEp === ep || (activeEp?.name && isSameEpisode(ep.episode_number || ep.name, activeEp.name)));
+                      const displayEpName = ep.episode_number ? `Tập ${ep.episode_number}` : (String(ep.name).startsWith("Tập") ? ep.name : `Tập ${ep.name}`);
+                      const displayEpTitle = tmdbEp?.name && !isGenericEpisodeName(tmdbEp.name, tmdbEp.episode_number)
+                        ? tmdbEp.name
+                        : (ep.name && !isGenericEpisodeName(ep.name, ep.episode_number) && !String(ep.name).startsWith("Tập") ? ep.name : '');
+
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => handleSelectEpisode(ep, true)}
+                          className={cn(
+                            "w-44 sm:w-56 shrink-0 flex flex-col gap-2 p-2 rounded-xl text-left transition-all border snap-start group cursor-pointer",
+                            isSelected
+                              ? "bg-white/10 border-[#e50914] shadow-[0_0_15px_rgba(229,9,20,0.3)]"
+                              : "bg-white/5 border-white/10 hover:bg-white/10"
                           )}
-                          <div className={cn(
-                            "absolute inset-0 flex items-center justify-center transition-all",
-                            isSelected ? "bg-black/40" : "bg-black/20 group-hover:bg-black/0"
-                          )}>
+                        >
+                          <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-black/60 border border-white/10 shrink-0">
+                            {stillPath ? (
+                              <SafeImage src={stillPath} alt={ep.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-gray-500 font-bold text-xs">
+                                {displayEpName}
+                              </div>
+                            )}
                             <div className={cn(
-                              "w-7 h-7 rounded-full flex items-center justify-center transition-all",
-                              isSelected ? "bg-[#e50914] text-white shadow-lg" : "bg-black/60 text-white border border-white/20"
+                              "absolute inset-0 flex items-center justify-center transition-all",
+                              isSelected ? "bg-black/40" : "bg-black/20 group-hover:bg-black/0"
                             )}>
-                              <Play size={16} fill="white" className="ml-0.5" />
+                              <div className={cn(
+                                "w-7 h-7 rounded-full flex items-center justify-center transition-all",
+                                isSelected ? "bg-[#e50914] text-white shadow-lg" : "bg-black/60 text-white border border-white/20"
+                              )}>
+                                <Play size={16} fill="white" className="ml-0.5" />
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        <span className={cn("text-xs font-bold truncate", isSelected ? "text-[#e50914]" : "text-white")}>
-                          {displayEpName}{displayEpTitle ? ` — ${displayEpTitle}` : ''}
-                        </span>
-                      </button>
-                    );
-                  })}
+                          <span className={cn("text-xs font-bold truncate", isSelected ? "text-[#e50914]" : "text-white")}>
+                            {displayEpName}{displayEpTitle ? ` — ${displayEpTitle}` : ''}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Right Scroll Button */}
+                  <button 
+                    onClick={() => handleModalEpScroll("right")}
+                    className="absolute -right-3 top-1/2 -translate-y-1/2 bg-neutral-900/90 hover:bg-black text-white border border-white/15 w-9 h-9 rounded-full shadow-2xl opacity-0 group-hover/scroll:opacity-100 transition-all duration-300 pointer-events-auto hover:scale-110 active:scale-95 z-20 flex items-center justify-center cursor-pointer"
+                    aria-label="Scroll Right"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
                 </div>
               </div>
             )}
