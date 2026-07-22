@@ -216,31 +216,15 @@ export function selectBestCineproSource(sources: CineproSource[]): CineproSource
 const WORKER_URL = 'https://cinemax-backend-proxy.cykablyatt1505.workers.dev';
 const BRIDGE_URL = 'https://hollysheesh-bridge.onrender.com';
 
-// VI CDN domains: CORS Allow-Origin:* — browser plays directly, no proxy needed
-const VI_CDN_PATTERNS = [
-  'kkphim', 'kkphimplayer', 'phimapi',
-  'ophim', 'opstream', 'phimimg',
-  'nguonc', 'phim.nguonc',
-  'xem20', 'xemphim',
-  // CDN worker endpoints used by VI providers
-  'sing.phimmoi', 's3.phimmoi', 'stream.ophim',
-];
-
 /**
- * Build stream URL for a given raw m3u8.
- * VI CDN sources (KKPhim, OPhim, NguonC) are served directly from the browser —
- * they have CORS Allow-Origin:* and do NOT need the Render proxy.
- * All streams are routed through the proxy bridge for ad-filtering.
+ * Build proxied m3u8 URL for a given raw m3u8 stream.
+ * All HLS URLs go through /api/m3u8-proxy (Cloudflare Worker) which:
+ *  - Injects Referer headers (VI CDN requires Referer to avoid 403)
+ *  - Filters ads from playlist
+ *  - Handles CORS for all origins
  */
 export function buildProxiedM3u8Url(streamUrl: string, referer?: string | null): string {
   if (!streamUrl) return '';
-
-  // VI CDN domains have CORS Allow-Origin:* — play directly from browser to avoid Cloudflare 403 blocks.
-  // Client-side AdFilteringHlsLoader in NetflixPlayer intercepts & filters 9922.com / convertv ads.
-  const isViCdn = VI_CDN_PATTERNS.some(p => streamUrl.includes(p) || (referer || '').includes(p));
-  if (isViCdn) {
-    return streamUrl;
-  }
 
   const params = new URLSearchParams({ url: streamUrl });
   if (referer) params.set('referer', referer);
