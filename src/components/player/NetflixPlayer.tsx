@@ -144,46 +144,46 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string) {
       if (c > maxCount) { mainHost = h; maxCount = c; }
     }
 
-    if (mainHost) {
-      for (let bi = 0; bi < blocks.length; bi++) {
-        const block = blocks[bi];
-        const segHost = extractHostname(block.uri);
-        if (removalRanges.some((r) => block.uriIndex >= r.start && block.uriIndex <= r.end)) continue;
+    for (let bi = 0; bi < blocks.length; bi++) {
+      const block = blocks[bi];
+      const segHost = extractHostname(block.uri);
+      if (removalRanges.some((r) => block.uriIndex >= r.start && block.uriIndex <= r.end)) continue;
 
-        if (segHost && segHost !== mainHost) {
-          let hasDiscBefore = false;
-          for (let i = block.start; i < block.uriIndex; i++) {
-            if (lines[i].trim().toUpperCase() === '#EXT-X-DISCONTINUITY') {
-              hasDiscBefore = true;
-              break;
-            }
-          }
-          const nb = blocks[bi + 1];
-          let hasDiscAfter = false;
-          if (nb) {
-            for (let i = block.end + 1; i < nb.uriIndex; i++) {
-              if (lines[i].trim().toUpperCase() === '#EXT-X-DISCONTINUITY') {
-                hasDiscAfter = true;
-                break;
-              }
-            }
-          }
-          if (hasDiscBefore && hasDiscAfter) {
-            let start = block.uriIndex;
-            for (let i = block.uriIndex - 1; i >= block.start; i--) {
-              const l = lines[i].trim();
-              if (isHeaderTag(l)) {
-                break;
-              }
-              if (l.startsWith('#') || l === '') {
-                start = i;
-                continue;
-              }
-              break;
-            }
-            removalRanges.push({ start, end: block.end });
+      let isForeignHost = Boolean(mainHost && segHost && segHost !== mainHost);
+      let isAdPath = /convert|ad|qc|quangcao|9922|nhacai|cacuoc|v8|vip/i.test(block.uri);
+
+      let hasDiscBefore = false;
+      for (let i = block.start; i < block.uriIndex; i++) {
+        if (lines[i].trim().toUpperCase() === '#EXT-X-DISCONTINUITY') {
+          hasDiscBefore = true;
+          break;
+        }
+      }
+      const nb = blocks[bi + 1];
+      let hasDiscAfter = false;
+      if (nb) {
+        for (let i = block.end + 1; i < nb.uriIndex; i++) {
+          if (lines[i].trim().toUpperCase() === '#EXT-X-DISCONTINUITY') {
+            hasDiscAfter = true;
+            break;
           }
         }
+      }
+
+      if ((isForeignHost || isAdPath) && hasDiscBefore && hasDiscAfter) {
+        let start = block.uriIndex;
+        for (let i = block.uriIndex - 1; i >= block.start; i--) {
+          const l = lines[i].trim();
+          if (isHeaderTag(l)) {
+            break;
+          }
+          if (l.startsWith('#') || l === '') {
+            start = i;
+            continue;
+          }
+          break;
+        }
+        removalRanges.push({ start, end: block.end });
       }
     }
   }
@@ -337,6 +337,9 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   const [activeSourceTab, setActiveSourceTab] = useState<'vi' | 'vip' | 'comm'>('vi');
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [hoverX, setHoverX] = useState<number>(0);
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [seekingTime, setSeekingTime] = useState<number | null>(null);
+  const seekingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const resolvedUrl = useMemo(() =>
     activeStream?.type === 'hls' ? activeStream.url : url,
@@ -456,7 +459,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
         maxBufferLength: 240, // Tải trước lên tới 4 phút (mặc định 30s)
         maxMaxBufferLength: 480, // Tối đa lên tới 8 phút
         maxBufferSize: 200 * 1024 * 1024, // Tăng dung lượng bộ đệm tối đa lên 200MB (mặc định 60MB)
-        enableWorker: true,
+        enableWorker: false,
         lowLatencyMode: false,
         capLevelToPlayerSize: true,
         backBufferLength: 90,
@@ -762,11 +765,35 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     if (hlsRef.current) hlsRef.current.subtitleTrack = (typeof id === 'number') ? id : -1;
   };
 
-  const handleSeekBar = (e) => {
+  const handleSeekStart = useCallback((e: React.SyntheticEvent<HTMLInputElement>) => {
+    e.stopPropagation();
     const v = videoRef.current;
     if (!v || !duration) return;
-    v.currentTime = parseFloat(e.target.value);
-  };
+    const val = parseFloat((e.currentTarget as HTMLInputElement).value);
+    setIsSeeking(true);
+    setSeekingTime(val);
+    setCurrentTime(val);
+    v.currentTime = val;
+  }, [duration]);
+
+  const handleSeekBarChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = videoRef.current;
+    if (!v || !duration) return;
+    const val = parseFloat(e.target.value);
+    setIsSeeking(true);
+    setSeekingTime(val);
+    setCurrentTime(val);
+    v.currentTime = val;
+  }, [duration]);
+
+  const handleSeekEnd = useCallback((e?: React.SyntheticEvent<HTMLInputElement>) => {
+    e?.stopPropagation();
+    if (seekingTimerRef.current) clearTimeout(seekingTimerRef.current);
+    seekingTimerRef.current = setTimeout(() => {
+      setIsSeeking(false);
+      setSeekingTime(null);
+    }, 120);
+  }, []);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -893,7 +920,8 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
     }
   };
 
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const displayTime = isSeeking && seekingTime !== null ? seekingTime : currentTime;
+  const progress = duration > 0 ? Math.min(100, Math.max(0, (displayTime / duration) * 100)) : 0;
   const buffered = useMemo(() => {
     const v = videoRef.current;
     if (!v || !v.buffered.length || !duration) return 0;
@@ -1091,7 +1119,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                       {/* Top row: Time counter (Left) & Only 3 essential buttons (Right: Sub, Settings, Fullscreen) */}
                       <div className="pointer-events-auto flex items-center justify-between px-1 mb-1.5">
                         <span className="text-white/80 text-[11px] font-mono tabular-nums font-medium select-none">
-                          {formatTime(currentTime)} / {formatTime(duration)}
+                          {formatTime(displayTime)} / {formatTime(duration)}
                         </span>
 
                         <div className="flex items-center gap-1">
@@ -1121,15 +1149,18 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
                       {/* YouTube-style Seekbar pinned to VERY BOTTOM EDGE (bottom-0) below subtitles */}
                       {!isEmbed && (
-                        <div className="pointer-events-auto relative w-full h-3 flex items-center group/seek cursor-pointer">
+                        <div className="pointer-events-auto relative w-full h-3 flex items-center group/seek cursor-pointer touch-none">
                           <div className="absolute left-0 h-1 group-hover/seek:h-1.5 bg-white/20 rounded-full transition-all duration-150" style={{ width: `${buffered}%` }} />
-                          <div className="absolute left-0 h-1 group-hover/seek:h-1.5 bg-[#E50914] rounded-full transition-all duration-150 pointer-events-none" style={{ width: `${progress}%` }}>
-                            <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-2.5 h-2.5 rounded-full bg-[#E50914] shadow-[0_0_8px_#E50914] opacity-0 group-hover/seek:opacity-100 transition-all" />
+                          <div className={cn("absolute left-0 h-1 group-hover/seek:h-1.5 bg-[#E50914] rounded-full pointer-events-none", isSeeking ? "transition-none h-1.5 shadow-[0_0_10px_#E50914]" : "transition-all duration-150")} style={{ width: `${progress}%` }}>
+                            <div className={cn("absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-2.5 h-2.5 rounded-full bg-[#E50914] shadow-[0_0_8px_#E50914] transition-all", isSeeking ? "opacity-100 scale-125" : "opacity-0 group-hover/seek:opacity-100")} />
                           </div>
                           <div className="absolute left-0 right-0 h-1 group-hover/seek:h-1.5 bg-white/10 rounded-full -z-10 transition-all duration-150" />
-                          <input type="range" min="0" max={duration || 0} step="0.5" value={currentTime}
-                            onChange={handleSeekBar} onClick={e => e.stopPropagation()}
-                            className="absolute inset-0 w-full opacity-0 cursor-pointer h-full z-10" />
+                          <input type="range" min="0" max={duration || 0} step="0.1" value={displayTime}
+                            onPointerDown={handleSeekStart} onMouseDown={handleSeekStart}
+                            onInput={handleSeekBarChange} onChange={handleSeekBarChange}
+                            onPointerUp={handleSeekEnd} onMouseUp={handleSeekEnd} onTouchEnd={handleSeekEnd}
+                            onClick={e => e.stopPropagation()}
+                            className="absolute inset-0 w-full opacity-0 cursor-pointer h-full z-10 touch-none" />
                         </div>
                       )}
                     </div>
@@ -1139,18 +1170,21 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                       {/* Seek bar with remaining time on far right */}
                       {!isEmbed && (
                         <div className="pointer-events-auto flex items-center gap-3 w-full">
-                          <div className="relative flex-1 h-3 flex items-center group/seek cursor-pointer">
+                          <div className="relative flex-1 h-3 flex items-center group/seek cursor-pointer touch-none">
                             <div className="absolute left-0 h-1 group-hover/seek:h-1.5 bg-white/20 rounded-full transition-all duration-150" style={{ width: `${buffered}%` }} />
-                            <div className="absolute left-0 h-1 group-hover/seek:h-1.5 bg-[#E50914] rounded-full transition-all duration-150 pointer-events-none" style={{ width: `${progress}%` }}>
-                              <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-3 h-3 rounded-full bg-[#E50914] shadow-[0_0_8px_#E50914] transition-all" />
+                            <div className={cn("absolute left-0 h-1 group-hover/seek:h-1.5 bg-[#E50914] rounded-full pointer-events-none", isSeeking ? "transition-none h-1.5 shadow-[0_0_10px_#E50914]" : "transition-all duration-150")} style={{ width: `${progress}%` }}>
+                              <div className={cn("absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-3 h-3 rounded-full bg-[#E50914] shadow-[0_0_8px_#E50914] transition-all", isSeeking ? "scale-125 shadow-[0_0_12px_#E50914]" : "")} />
                             </div>
                             <div className="absolute left-0 right-0 h-1 group-hover/seek:h-1.5 bg-white/10 rounded-full -z-10 transition-all duration-150" />
-                            <input type="range" min="0" max={duration || 0} step="0.5" value={currentTime}
-                              onChange={handleSeekBar} onClick={e => e.stopPropagation()}
-                              className="absolute inset-0 w-full opacity-0 cursor-pointer h-full z-10" />
+                            <input type="range" min="0" max={duration || 0} step="0.1" value={displayTime}
+                              onPointerDown={handleSeekStart} onMouseDown={handleSeekStart}
+                              onInput={handleSeekBarChange} onChange={handleSeekBarChange}
+                              onPointerUp={handleSeekEnd} onMouseUp={handleSeekEnd} onTouchEnd={handleSeekEnd}
+                              onClick={e => e.stopPropagation()}
+                              className="absolute inset-0 w-full opacity-0 cursor-pointer h-full z-10 touch-none" />
                           </div>
                           <span className="text-white/90 text-xs sm:text-sm font-mono tabular-nums font-medium shrink-0 select-none">
-                            {formatTime(Math.max(0, duration - currentTime))}
+                            {formatTime(Math.max(0, duration - displayTime))}
                           </span>
                         </div>
                       )}
@@ -1211,16 +1245,19 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                         <div 
                           onMouseMove={handleSeekMouseMove}
                           onMouseLeave={handleSeekMouseLeave}
-                          className="pointer-events-auto relative w-full h-4 sm:h-5 flex items-center group/seek mb-1 cursor-pointer"
+                          className="pointer-events-auto relative w-full h-4 sm:h-5 flex items-center group/seek mb-1 cursor-pointer touch-none"
                         >
                           <div className="absolute left-0 h-1 group-hover/seek:h-2 bg-white/20 rounded-full transition-all duration-150" style={{ width: `${buffered}%` }} />
-                          <div className="absolute left-0 h-1 group-hover/seek:h-2 bg-[#E50914] rounded-full transition-all duration-150 pointer-events-none" style={{ width: `${progress}%` }}>
-                            <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-[#E50914] shadow-[0_0_10px_#E50914] opacity-0 group-hover/seek:opacity-100 transition-all transform group-hover/seek:scale-110" />
+                          <div className={cn("absolute left-0 h-1 group-hover/seek:h-2 bg-[#E50914] rounded-full pointer-events-none", isSeeking ? "transition-none h-2 shadow-[0_0_12px_#E50914]" : "transition-all duration-150")} style={{ width: `${progress}%` }}>
+                            <div className={cn("absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-[#E50914] shadow-[0_0_10px_#E50914] transition-all transform group-hover/seek:scale-110", isSeeking ? "opacity-100 scale-125 shadow-[0_0_14px_#E50914]" : "opacity-0 group-hover/seek:opacity-100")} />
                           </div>
                           <div className="absolute left-0 right-0 h-1 group-hover/seek:h-2 bg-white/10 rounded-full -z-10 transition-all duration-150" />
-                          <input type="range" min="0" max={duration || 0} step="0.5" value={currentTime}
-                            onChange={handleSeekBar} onClick={e => e.stopPropagation()}
-                            className="absolute inset-0 w-full opacity-0 cursor-pointer h-full z-10" />
+                          <input type="range" min="0" max={duration || 0} step="0.1" value={displayTime}
+                            onPointerDown={handleSeekStart} onMouseDown={handleSeekStart}
+                            onInput={handleSeekBarChange} onChange={handleSeekBarChange}
+                            onPointerUp={handleSeekEnd} onMouseUp={handleSeekEnd} onTouchEnd={handleSeekEnd}
+                            onClick={e => e.stopPropagation()}
+                            className="absolute inset-0 w-full opacity-0 cursor-pointer h-full z-10 touch-none" />
                           
                           {hoverTime !== null && (
                             <div 
@@ -1256,7 +1293,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                             </div>
 
                             <span className="text-white/70 text-[11px] sm:text-xs font-mono tabular-nums">
-                              {formatTime(currentTime)} / {formatTime(duration)}
+                              {formatTime(displayTime)} / {formatTime(duration)}
                             </span>
                           </div>
                         ) : (
