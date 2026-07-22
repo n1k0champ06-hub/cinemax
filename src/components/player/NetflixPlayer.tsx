@@ -101,14 +101,8 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string) {
     if (isAd) {
       let start = block.uriIndex;
       for (let i = block.uriIndex - 1; i >= block.start; i--) {
-        const l = lines[i].trim().toUpperCase();
-        if (
-          l.startsWith('#EXTINF') ||
-          l.startsWith('#EXT-X-DISCONTINUITY') ||
-          l.startsWith('#EXT-X-KEY') ||
-          l.startsWith('#EXT-X-BYTERANGE') ||
-          l === ''
-        ) {
+        const l = lines[i].trim();
+        if (l.startsWith('#') || l === '') {
           start = i;
           continue;
         }
@@ -158,8 +152,8 @@ function clientFilterPlaylistAds(text: string, playlistUrl: string) {
           if (hasDiscBefore && hasDiscAfter) {
             let start = block.uriIndex;
             for (let i = block.uriIndex - 1; i >= block.start; i--) {
-              const l = lines[i].trim().toUpperCase();
-              if (l.startsWith('#EXTINF') || l === '#EXT-X-DISCONTINUITY' || l.startsWith('#EXT-X-KEY') || l === '') {
+              const l = lines[i].trim();
+              if (l.startsWith('#') || l === '') {
                 start = i;
                 continue;
               }
@@ -200,8 +194,8 @@ class AdFilteringHlsLoader extends (Hls.DefaultConfig.loader as any) {
     this.load = (context: any, cfg: any, callbacks: any) => {
       const onSuccess = callbacks.onSuccess;
       callbacks.onSuccess = (response: any, stats: any, ctx: any, networkDetails: any) => {
-        if ((ctx.type === 'manifest' || ctx.type === 'level') && typeof response.data === 'string') {
-          try { response.data = clientFilterPlaylistAds(response.data, ctx.url); } catch {}
+        if (typeof response?.data === 'string' && response.data.includes('#EXTM3U')) {
+          try { response.data = clientFilterPlaylistAds(response.data, ctx?.url || ''); } catch {}
         }
         onSuccess(response, stats, ctx, networkDetails);
       };
