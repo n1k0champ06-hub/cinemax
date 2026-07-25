@@ -60,19 +60,11 @@ SOURCES = {
         'detail_path': '/phim/{slug}',
         'format': 'ophim',
     },
-    'nguonc': {
-        'tier': 'c',
-        'base_url': 'https://phim.nguonc.com/api',
-        'list_path': '/films/phim-moi-cap-nhat',
-        'detail_path': '/film/{slug}',
-        'format': 'nguonc',
-    },
 }
 
 TIER_MAP = {
     'a': ['kkphim'],
     'b': ['ophim'],
-    'c': ['nguonc'],
     'all': list(SOURCES.keys()),
 }
 
@@ -324,8 +316,8 @@ def scrape_source(
 def main():
     parser = argparse.ArgumentParser(description='Cinemax Movie Scraper Bot')
     parser.add_argument('--tier', default='all',
-                        choices=['a', 'b', 'c', 'all'],
-                        help='Source tier: a=kkphim, b=ophim, c=nguonc, all=tất cả')
+                        choices=['a', 'b', 'all'],
+                        help='Source tier: a=kkphim, b=ophim, all=tất cả')
     parser.add_argument('--pages', type=int, default=3,
                         help='Số trang cào từ mỗi nguồn (default: 3)')
     parser.add_argument('--dry-run', action='store_true',
@@ -335,7 +327,7 @@ def main():
     args = parser.parse_args()
 
     # Kết nối MongoDB (bắt buộc nếu không phải dry-run)
-    mongo_uri = os.getenv('MONGODB_URI', '')
+    mongo_uri = os.getenv('MONGODB_URI', '').strip()
     db = None
 
     if not args.dry_run:

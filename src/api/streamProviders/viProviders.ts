@@ -6,7 +6,7 @@
 
 import type { StreamItem, StreamProvider, StreamQuery } from './types';
 import { computeScore } from './types';
-import { buildProxiedM3u8Url } from '../cineproApi';
+import { buildProxiedM3u8Url } from '../m3u8ProxyApi';
 import { fetchAiMapping } from '../aiMappingApi';
 
 // ---------------------------------------------------------------------------
@@ -877,5 +877,4 @@ export const VI_PROVIDERS: StreamProvider[] = [
   kkphimProvider,
   ophimProvider,
   nguoncProvider,
-  xem20Provider,
 ];

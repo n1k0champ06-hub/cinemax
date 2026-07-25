@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tier:
-        description: 'Source tier (a=kkphim / b=ophim / c=nguonc / all)'
+        description: 'Source tier (a=kkphim / b=ophim / all)'
         required: false
         default: 'all'
       pages:

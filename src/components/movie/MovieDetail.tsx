@@ -603,7 +603,7 @@ const MovieDetailContent: React.FC<{
   // Episode selection is blocked when the player is actively playing.
   const lastProcessedSeasonDataRef = useRef<any>(null);
   const activeStreamRef = useRef<any>(null);
-  const prevSelectedServerIdRef = useRef<number>(-1);
+  const prevSelectedServerIdRef = useRef<number>(0);
 
   // Keep activeStreamRef in sync without causing dep loops
   useEffect(() => { activeStreamRef.current = activeStream; }, [activeStream]);

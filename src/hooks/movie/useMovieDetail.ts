@@ -326,33 +326,65 @@ export const useMovieDetail = (rawSlug: string) => {
     queryKey: ["resolvedAnilistId", resolvedTmdbId, finalTmdbData?.title, mediaType === 'tv' ? currentSeason : 1],
     queryFn: async () => {
       if (!finalTmdbData) return null;
-      const baseTitle = finalTmdbData.original_name || finalTmdbData.original_title || finalTmdbData.title || finalTmdbData.name;
-      if (!baseTitle) return null;
       
-      try {
-        // Build search queries: season-specific first, then base title
-        let searchQueries = [baseTitle];
-        if (mediaType === 'tv' && currentSeason > 1) {
-          searchQueries = [
-            `${baseTitle} Season ${currentSeason}`,
-            `${baseTitle} Part ${currentSeason}`,
-            `${baseTitle} ${currentSeason}`,
-            baseTitle
-          ];
-        }
+      const translations = rawTmdbData?.translations?.translations || [];
+      const en = translations.find((t: any) => t.iso_639_1 === 'en')?.data;
+      const enTitle = en?.name || en?.title;
 
-        for (const q of searchQueries) {
-          const searchUrl = `https://api.animapper.net/api/v1/search?title=${encodeURIComponent(q)}&mediaType=ANIME&limit=5`;
-          const res = await fetch(searchUrl);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.success && data.results && data.results.length > 0) {
-              return data.results[0].id;
+      const isCJK = (str: string) => /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uffef\u4e00-\u9faf]/.test(str);
+
+      const candidates: string[] = [];
+      if (enTitle && !isCJK(enTitle)) candidates.push(enTitle);
+      if (finalTmdbData.name && !isCJK(finalTmdbData.name)) candidates.push(finalTmdbData.name);
+      if (finalTmdbData.title && !isCJK(finalTmdbData.title)) candidates.push(finalTmdbData.title);
+      if (finalTmdbData.original_name && !isCJK(finalTmdbData.original_name)) candidates.push(finalTmdbData.original_name);
+      if (finalTmdbData.original_title && !isCJK(finalTmdbData.original_title)) candidates.push(finalTmdbData.original_title);
+
+      const uniqueTitles = Array.from(new Set(candidates)).filter(Boolean);
+      if (uniqueTitles.length === 0) {
+        const fallback = finalTmdbData.title || finalTmdbData.name || '';
+        if (fallback) uniqueTitles.push(fallback);
+      }
+
+      try {
+        for (const baseTitle of uniqueTitles) {
+          let searchQueries = [baseTitle];
+          if (mediaType === 'tv' && currentSeason > 1) {
+            searchQueries = [
+              `${baseTitle} Season ${currentSeason}`,
+              `${baseTitle} Part ${currentSeason}`,
+              `${baseTitle} ${currentSeason}`,
+              baseTitle
+            ];
+          }
+
+          for (const q of searchQueries) {
+            const searchUrl = `https://api.animapper.net/api/v1/search?title=${encodeURIComponent(q)}&mediaType=ANIME&limit=5`;
+            const res = await fetch(searchUrl);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.success && data.results && data.results.length > 0) {
+                if (resolvedTmdbId) {
+                  for (const item of data.results) {
+                    try {
+                      const metaRes = await fetch(`https://api.animapper.net/api/v1/metadata?id=${item.id}`);
+                      if (metaRes.ok) {
+                        const meta = await metaRes.json();
+                        const tmdbExt = meta.result?.externalIds?.find((x: any) => x.source === 'TMDB');
+                        if (tmdbExt && (String(tmdbExt.externalInt) === String(resolvedTmdbId) || String(tmdbExt.externalKey) === String(resolvedTmdbId))) {
+                          return item.id;
+                        }
+                      }
+                    } catch {}
+                  }
+                }
+                return data.results[0].id;
+              }
             }
           }
         }
       } catch (err) {
-        console.warn(`[useMovieDetail] Failed to search AniList ID for "${baseTitle}":`, err);
+        console.warn(`[useMovieDetail] Failed to search AniList ID:`, err);
       }
       return null;
     },
@@ -740,7 +772,7 @@ export const useMovieDetail = (rawSlug: string) => {
 
     // Filter out OPhim/KKPhim servers if they are completely empty, but only if we have at least one other server (like HiAnime)
     const hasAtLeastOneActiveServer = processedServers.some((s: any) => s.status === 'ok');
-    if (hasAtLeastOneActiveServer) {
+    if (hasAtLeastOneActiveServer && !isLoading) {
       processedServers = processedServers.filter((s: any) => s.status === 'ok');
     }
 

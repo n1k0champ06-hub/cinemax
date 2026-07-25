@@ -866,7 +866,7 @@ async function handleLocalScraperStart(searchParams) {
   const customUrl = searchParams.get('customUrl') || '';
   
   if (source === 'all') {
-    const activeSources = ['kkphim', 'ophim', 'nguonc', 'niniyo'];
+    const activeSources = ['kkphim', 'ophim', 'niniyo'];
     let startedCount = 0;
     
     for (const src of activeSources) {
@@ -877,7 +877,6 @@ async function handleLocalScraperStart(searchParams) {
         } else {
           let defaultUrl = '';
           if (src === 'kkphim') defaultUrl = 'https://phimapi.com';
-          else if (src === 'nguonc') defaultUrl = 'https://phim.nguonc.com/api';
           else defaultUrl = 'https://ophim1.com';
           
           startBackgroundSync(src, limit, defaultUrl);
@@ -1168,6 +1167,21 @@ async function main() {
       res.end(Buffer.from(await response.arrayBuffer()));
       return;
     }
+    if (pathname === '/api/dev-logger' && req.method === 'POST') {
+      try {
+        const bodyText = (body || Buffer.from([])).toString('utf-8');
+        if (bodyText) {
+          const logObj = JSON.parse(bodyText);
+          const logLine = `[${logObj.timestamp || new Date().toISOString()}] [${logObj.category || 'SYSTEM'}] [${logObj.level || 'INFO'}] ${logObj.message || ''}${logObj.metric ? ` (${logObj.metric})` : ''}\n`;
+          fs.appendFileSync(path.join(__dirname, '..', 'cinemax-debug.log'), logLine, 'utf-8');
+        }
+      } catch (e) {
+        // ignore log write errors
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
 
 
 
@@ -1237,8 +1251,6 @@ async function main() {
   server.listen(PORT, () => {
     console.log(`\n[CINEMAX dev-api] Running on http://localhost:${PORT}`);
     console.log('[CINEMAX dev-api] Routes:');
-    console.log(`  /api/cinepro-proxy?type=movie&tmdbId=550`);
-    console.log(`  /api/cinepro-proxy?type=tv&tmdbId=1396&season=1&episode=1`);
     console.log(`  /api/m3u8-proxy?url=<encoded_url>&referer=<encoded_referer>`);
     console.log(`  /api/sub-proxy?provider=subdl&tmdb_id=123&type=movie&lang=vi`);
     console.log(`  /api/tmdb?path=/movie/popular`);

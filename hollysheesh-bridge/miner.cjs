@@ -56,30 +56,6 @@ const SOURCES = {
       return parseInt(p.total_page || p.totalPages || '100', 10);
     },
   },
-  nguonc: {
-    label: 'NguonC',
-    color: '\x1b[35m',   // magenta
-    listUrl: (page) => `https://phim.nguonc.com/api/films/phim-moi-cap-nhat?page=${page}`,
-    detailUrl: (slug) => `https://phim.nguonc.com/api/film/${slug}`,
-    referer: 'https://phim.nguonc.com/',
-    parseList: (d) => d.data?.items || d.items || [],
-    parseDetail: (d) => {
-      const movie = d.movie || d;
-      const eps = (d.movie?.episodes || d.episodes || []).map(s => ({
-        server_name: s.server_name || s.name || 'Server',
-        server_data: (s.items || s.server_data || []).map(ep => ({
-          name: ep.name || ep.slug,
-          link_m3u8: ep.m3u8 || ep.link_m3u8 || '',
-          link_embed: ep.embed || ep.link_embed || '',
-        })),
-      }));
-      return { movie, episodes: eps };
-    },
-    totalPages: (d) => {
-      const p = d.paginate || d.data?.paginate || {};
-      return parseInt(p.total_page || p.totalPages || '100', 10);
-    },
-  },
   hoathinh: {
     label: 'Anime/HoạtHình',
     color: '\x1b[32m',   // green
@@ -105,7 +81,7 @@ const getArg = (flag) => {
 };
 const hasFlag = (flag) => args.includes(flag);
 
-const SOURCE_ARG = getArg('--source');     // 'kkphim' | 'ophim' | 'nguonc'
+const SOURCE_ARG = getArg('--source');     // 'kkphim' | 'ophim' | 'hoathinh'
 const PAGES_ARG  = parseInt(getArg('--pages') || '5', 10);
 const ALL_ARG    = hasFlag('--all');        // sync tất cả trang
 const WATCH_ARG  = parseInt(getArg('--watch') || '0', 10);  // interval phút

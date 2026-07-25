@@ -1,6 +1,6 @@
 import type { StreamItem, StreamProvider, StreamQuery } from './types';
 import { computeScore } from './types';
-import { buildProxiedM3u8Url } from '../cineproApi';
+import { buildProxiedM3u8Url } from '../m3u8ProxyApi';
 import { godModeStore } from '../../lib/godmode';
 
 // Timeout fetch wrapper helper

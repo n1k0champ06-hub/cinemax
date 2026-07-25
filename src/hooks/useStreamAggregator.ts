@@ -14,13 +14,13 @@ import { aggregateStreams } from '../api/streamAggregator';
 import type { AggregatorState, StreamQuery, StreamItem } from '../api/streamAggregator';
 import { VI_PROVIDERS } from '../api/streamProviders/viProviders';
 import { animapperProvider } from '../api/streamProviders/animapperProvider';
-import { cineproProvider } from '../api/streamProviders/cineproProvider';
 import { EMBED_PROVIDERS } from '../api/streamProviders/embedProviders';
 import { allmangaProvider } from '../api/streamProviders/allmangaProvider';
 import { hianimeProvider } from '../api/streamProviders/hianimeProvider';
+import { anivexaProvider } from '../api/streamProviders/anivexaProvider';
 import type { StreamProvider } from '../api/streamProviders/types';
 import { computeScore } from '../api/streamProviders/types';
-import { buildProxiedM3u8Url } from '../api/cineproApi';
+import { buildProxiedM3u8Url } from '../api/m3u8ProxyApi';
 
 // CinemaOS VIP Embed Provider (Backup Embed Source)
 const cinemaosProvider: StreamProvider = {
@@ -176,8 +176,10 @@ export function useStreamAggregator({
     // 1.1. AniMapper Provider (Vietnamese Anime streams)
     allProviders.push(animapperProvider);
 
-    // 2. CinePro HLS (provides all international HLS and embeds dynamically)
-    allProviders.push(cineproProvider);
+    // 1.2. Anivexa Provider — AniBD (English sub, AniList ID direct)
+    allProviders.push(anivexaProvider);
+
+
 
 
 

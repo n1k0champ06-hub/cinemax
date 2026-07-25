@@ -50,6 +50,26 @@ function buildVidNestAnimePaheUrl(q: StreamQuery): string | null {
   return null;
 }
 
+function buildVideasyUrl(q: StreamQuery): string | null {
+  if (q.isAnime || (q.viSlug && q.viSlug.startsWith('anilist-'))) {
+    const anilistId = q.anilistId || (q.viSlug && q.viSlug.startsWith('anilist-') ? q.viSlug.split('-')[1] : null);
+    if (anilistId) {
+      if (q.type === 'movie') {
+        return `https://player.videasy.net/anime/${anilistId}?color=8B5CF6&overlay=true&nextEpisode=true&episodeSelector=true`;
+      }
+      const ep = q.episode ?? 1;
+      return `https://player.videasy.net/anime/${anilistId}/${ep}?color=8B5CF6&overlay=true&nextEpisode=true&episodeSelector=true`;
+    }
+  }
+
+  const id = q.tmdbId;
+  if (!id) return null;
+  if (q.type === 'movie') {
+    return `https://player.videasy.net/movie/${id}?color=8B5CF6&overlay=true&nextEpisode=true&episodeSelector=true`;
+  }
+  return `https://player.videasy.net/tv/${id}/${q.season ?? 1}/${q.episode ?? 1}?color=8B5CF6&overlay=true&nextEpisode=true&episodeSelector=true`;
+}
+
 export interface ServerDef {
   id: string;
   label: string;
@@ -60,6 +80,7 @@ export interface ServerDef {
 }
 
 export const SERVERS_REGISTRY: ServerDef[] = [
+  { id: 'videasy', label: 'Videasy (Community)', category: 'free', pingHost: 'player.videasy.net', urlBuilder: buildVideasyUrl, quality: '1080p' },
   { id: 'vidnest', label: 'VidNest (Community)', category: 'free', pingHost: 'vidnest.fun', urlBuilder: buildVidNestUrl, quality: '1080p' },
   { id: 'vidnest_animepahe', label: 'VidNest AnimePahe (Community)', category: 'free', pingHost: 'vidnest.fun', urlBuilder: buildVidNestAnimePaheUrl, quality: '1080p' },
   { id: 'vidsrc_to', label: 'VidSrc.to', category: 'free', pingHost: 'vidsrc.to', urlBuilder: buildVidSrcToUrl, quality: '1080p' },

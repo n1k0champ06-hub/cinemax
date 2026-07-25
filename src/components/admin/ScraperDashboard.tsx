@@ -20,7 +20,7 @@ interface ScraperStatus {
 export default function ScraperDashboard() {
   const [stats, setStats] = useState<ScraperStats>({ connected: false, moviesCount: 0, streamsCount: 0, animeCount: 0 });
   const [status, setStatus] = useState<ScraperStatus>({ isRunning: false, currentTask: 'Idle', processed: 0, total: 0, logs: [] });
-  const [source, setSource] = useState<'kkphim' | 'ophim' | 'nguonc'>('kkphim');
+  const [source, setSource] = useState<'kkphim' | 'ophim'>('kkphim');
   const [limitPages, setLimitPages] = useState<number>(2);
   const [customUrl, setCustomUrl] = useState<string>('https://phimapi.com');
   const [syncAll, setSyncAll] = useState<boolean>(false);
@@ -346,13 +346,13 @@ export default function ScraperDashboard() {
             {/* VN Sync Config */}
             <div className="space-y-4">
               <h3 className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest font-mono border-b border-zinc-950 pb-2">Đồng Bộ Nguồn Lẻ</h3>
-              <div className="grid grid-cols-3 gap-2">
-                {(['kkphim', 'ophim', 'nguonc'] as const).map((src) => (
+              <div className="grid grid-cols-2 gap-2">
+                {(['kkphim', 'ophim'] as const).map((src) => (
                   <button
                     key={src}
                     onClick={() => {
                       setSource(src);
-                      setCustomUrl(src === 'kkphim' ? 'https://phimapi.com' : src === 'nguonc' ? 'https://phim.nguonc.com/api' : 'https://ophim1.com');
+                      setCustomUrl(src === 'kkphim' ? 'https://phimapi.com' : 'https://ophim1.com');
                     }}
                     disabled={status.isRunning}
                     className={`py-1.5 rounded-lg border text-[9px] font-bold font-mono tracking-wider transition-all cursor-pointer ${

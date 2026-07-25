@@ -5,7 +5,6 @@
  * 1. TMDB API (Vượt chặn nhà mạng) -> /tmdb/*
  * 2. Hình ảnh poster (Bypass nhà mạng chặn) -> /img/[url]
  * 3. Tìm phụ đề (Subdl & Stremio Addons) -> /api/sub-proxy
- * 4. Nguồn phát CinePro Core -> /api/cinepro-proxy
  */
 
 import crypto from 'node:crypto';
@@ -840,93 +839,7 @@ async function handleRequest(request, env, ctx) {
       }
     }
 
-    // 4. Proxy cho nguồn phát CinePro Core -> /api/cinepro-proxy
-    if (url.pathname.startsWith("/api/cinepro-proxy")) {
-      const type = url.searchParams.get('type');
-      const tmdbId = url.searchParams.get('tmdbId');
 
-      if (!type || !tmdbId) {
-        if (request.addEdgeLog) {
-          request.addEdgeLog('EDGE_WORKER', 'ERROR', 'CinePro proxy failed: Missing type or tmdbId');
-        }
-        return json({ error: 'Missing type or tmdbId' }, 400);
-      }
-
-      const CINEPRO_BASE = (
-        env.CINEPRO_URL ||
-        env.VITE_CINEPRO_URL ||
-        'http://localhost:3232'
-      ).replace(/\/$/, '');
-
-      if (request.addEdgeLog) {
-        request.addEdgeLog('EDGE_WORKER', 'INFO', `CinePro proxy requested for type: ${type}, tmdbId: ${tmdbId}. Base URL: ${CINEPRO_BASE}`);
-      }
-      const cineproStart = Date.now();
-
-      try {
-        let apiPath;
-
-        if (type === 'movie') {
-          apiPath = `/v1/movies/${tmdbId}`;
-        } else if (type === 'tv') {
-          const season = url.searchParams.get('season') || '1';
-          const episode = url.searchParams.get('episode') || '1';
-          apiPath = `/v1/tv/${tmdbId}/seasons/${season}/episodes/${episode}`;
-        } else {
-          if (request.addEdgeLog) {
-            request.addEdgeLog('EDGE_WORKER', 'ERROR', `CinePro proxy failed: Unknown type: ${type}`);
-          }
-          return json({ error: `Unknown type: ${type}` }, 400);
-        }
-
-        const targetUrl = `${CINEPRO_BASE}${apiPath}`;
-        console.log(`[cinepro-proxy] Forwarding to: ${targetUrl}`);
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
-        const res = await fetch(targetUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; CinemaxApp/1.0)',
-            'Accept': 'application/json',
-          },
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-        const duration = Date.now() - cineproStart;
-
-        if (!res.ok) {
-          const errorText = await res.text().catch(() => 'Unknown error');
-          console.error(`[cinepro-proxy] CinePro returned ${res.status}: ${errorText.slice(0, 200)}`);
-          if (request.addEdgeLog) {
-            request.addEdgeLog('EDGE_WORKER', 'ERROR', `CinePro returned status ${res.status}: ${errorText.slice(0, 100)}`, `${duration}ms`);
-          }
-          return json({ error: `CinePro returned ${res.status}`, detail: errorText.slice(0, 500) }, res.status);
-        }
-
-        const data = await res.json();
-        if (request.addEdgeLog) {
-          request.addEdgeLog('EDGE_WORKER', 'INFO', `CinePro resolved successfully. Target: ${targetUrl}`, `${duration}ms`);
-        }
-        return json(data);
-
-      } catch (err) {
-        const duration = Date.now() - cineproStart;
-        if (err.name === 'AbortError') {
-          console.error('[cinepro-proxy] Request timed out');
-          if (request.addEdgeLog) {
-            request.addEdgeLog('EDGE_WORKER', 'ERROR', 'CinePro request timed out after 30s', `${duration}ms`);
-          }
-          return json({ error: 'CinePro request timed out (30s)' }, 504);
-        }
-        console.error('[cinepro-proxy] Error:', err.message);
-        if (request.addEdgeLog) {
-          request.addEdgeLog('EDGE_WORKER', 'ERROR', `CinePro proxy error: ${err.message}`, `${duration}ms`);
-        }
-        return json({ error: err.message }, 500);
-      }
-    }
 
     // 4.5 Proxy xem20.net -> /api/xem20-proxy
     if (url.pathname.startsWith("/api/xem20-proxy")) {
@@ -1129,6 +1042,107 @@ async function handleRequest(request, env, ctx) {
         }
         return json({ error: err.message }, 500);
       }
+    }
+
+    // Anivexa AniBD proxy -> /api/anivexa/anibd/
+    if (url.pathname.startsWith("/api/anivexa/anibd")) {
+      const UA_ANIBD = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+      const ANIBD_BASE = "https://epeng.animeapps.top";
+
+      // GET /api/anivexa/anibd/episodes/:anilistId
+      const epMatch = url.pathname.match(/^\/api\/anivexa\/anibd\/episodes\/(\d+)$/);
+      if (epMatch) {
+        try {
+          const anilistId = epMatch[1];
+          const res = await fetch(`${ANIBD_BASE}/api2.php?epid=${anilistId}`, {
+            headers: { "User-Agent": UA_ANIBD, Accept: "application/json" },
+          });
+          if (!res.ok) return json({ error: `anibd api2 ${res.status}` }, 502);
+          const data = await res.json();
+          return json(Array.isArray(data) ? data : []);
+        } catch (err) {
+          return json({ error: err.message }, 500);
+        }
+      }
+
+      // GET /api/anivexa/anibd/watch/:anilistId/:audio/:ep
+      const watchMatch = url.pathname.match(/^\/api\/anivexa\/anibd\/watch\/(\d+)\/(sub|dub)\/(\d+)$/);
+      if (watchMatch) {
+        const [, anilistId, audio, epNum] = watchMatch;
+        try {
+          // Step 1: get server groups
+          const groupsRes = await fetch(`${ANIBD_BASE}/api2.php?epid=${anilistId}`, {
+            headers: { "User-Agent": UA_ANIBD, Accept: "application/json" },
+          });
+          if (!groupsRes.ok) return json({ error: `anibd api2 ${groupsRes.status}` }, 502);
+          const groups = await groupsRes.json();
+
+          // Step 2: find episode link for requested audio/ep
+          let providerLink = null;
+          for (const group of (Array.isArray(groups) ? groups : [])) {
+            const isMatchAudio = audio === "dub"
+              ? /dub/i.test(group.server_name || "")
+              : !/dub/i.test(group.server_name || "");
+            if (!isMatchAudio) continue;
+            for (const ep of (group.server_data || [])) {
+              if (Number(ep.name ?? ep.slug) === Number(epNum)) {
+                providerLink = ep.link;
+                break;
+              }
+            }
+            if (providerLink) break;
+          }
+          // Fallback: any audio if requested audio not found
+          if (!providerLink) {
+            for (const group of (Array.isArray(groups) ? groups : [])) {
+              for (const ep of (group.server_data || [])) {
+                if (Number(ep.name ?? ep.slug) === Number(epNum)) {
+                  providerLink = ep.link;
+                  break;
+                }
+              }
+              if (providerLink) break;
+            }
+          }
+          if (!providerLink) return json({ error: `Episode ${epNum} not found in anibd` }, 404);
+
+          // Step 3: resolve player links
+          const linksRes = await fetch(`${ANIBD_BASE}/apilink.php?data=${encodeURIComponent(providerLink)}`, {
+            headers: { "User-Agent": UA_ANIBD, Accept: "application/json" },
+          });
+          if (!linksRes.ok) return json({ error: `anibd apilink ${linksRes.status}` }, 502);
+          const playerEntries = await linksRes.json();
+
+          const streams = [];
+          for (const entry of (Array.isArray(playerEntries) ? playerEntries : [])) {
+            if (!entry?.link) continue;
+            try {
+              const origin = new URL(entry.link).origin;
+              const referer = `${origin}/`;
+              const htmlRes = await fetch(entry.link, {
+                headers: { "User-Agent": UA_ANIBD, Referer: referer, Accept: "text/html" },
+              });
+              if (!htmlRes.ok) throw new Error(`player ${htmlRes.status}`);
+              const html = await htmlRes.text();
+              const m = html.match(/videoUrl\s*:\s*"([^"]+)"/);
+              if (!m) throw new Error("no videoUrl");
+              const rawUrl = m[1];
+              const hlsUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `${origin}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}`;
+              streams.push({ url: hlsUrl, type: "hls", server: entry.server || "AniBD", referer });
+            } catch {
+              // Fallback: return embed link directly
+              const origin = new URL(entry.link).origin;
+              streams.push({ url: entry.link, type: "embed", server: entry.server || "AniBD", referer: `${origin}/` });
+            }
+          }
+
+          return json({ anilistId: Number(anilistId), episode: Number(epNum), audio, streams });
+        } catch (err) {
+          return json({ error: err.message }, 500);
+        }
+      }
+
+      return json({ error: "Not found" }, 404);
     }
 
 
