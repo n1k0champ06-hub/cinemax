@@ -32,6 +32,7 @@ interface StreamPickerProps {
   activeStream: StreamItem | null;
   onSelect: (stream: StreamItem) => void;
   onRetry?: () => void;
+  onLoadDeferred?: () => void;
   className?: string;
 }
 
@@ -181,6 +182,7 @@ export const StreamPicker: React.FC<StreamPickerProps> = ({
   activeStream,
   onSelect,
   onRetry,
+  onLoadDeferred,
   className,
 }) => {
   // Group sources based on category
@@ -349,6 +351,21 @@ export const StreamPicker: React.FC<StreamPickerProps> = ({
           </div>
         )}
       </div>
+
+      {/* Load Deferred Providers Button */}
+      {providers.some(p => p.status === 'deferred') && onLoadDeferred && (
+        <div className="pt-2 flex justify-center">
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={onLoadDeferred}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white text-xs font-semibold transition-all cursor-pointer shadow-lg"
+          >
+            <Globe size={14} className="text-amber-400" />
+            <span>Tải thêm nguồn dự phòng (Embed quốc tế)</span>
+          </motion.button>
+        </div>
+      )}
 
       {/* Info Legend Footer */}
       {streams.length > 0 && (

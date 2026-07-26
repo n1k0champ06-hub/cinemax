@@ -134,10 +134,16 @@ export const useMovieDetail = (rawSlug: string) => {
     const lowerSlug = (slug || '').toLowerCase();
     if (lowerSlug.includes('hoat-hinh') || lowerSlug.includes('hoathinh') || lowerSlug.includes('anime')) return true;
     if (finalTmdbData) {
-      const isJa = finalTmdbData.original_language === 'ja' || finalTmdbData.origin_country?.includes('JP');
-      const hasAnimGenre = finalTmdbData.genres?.some((g: any) => g.id === 16 || g.name?.toLowerCase() === 'animation' || g.name?.toLowerCase() === 'hoạt hình' || g.name?.toLowerCase() === 'anime');
-      if (isJa && hasAnimGenre) return true;
-      if (hasAnimGenre && (finalTmdbData.original_language === 'ja' || finalTmdbData.origin_country?.includes('JP'))) return true;
+      const isJa = finalTmdbData.original_language === 'ja' 
+        || finalTmdbData.origin_country?.includes('JP') 
+        || finalTmdbData.production_countries?.some((c: any) => c.iso_3166_1 === 'JP' || c.name === 'Japan');
+      const hasAnimGenre = finalTmdbData.genres?.some((g: any) => 
+        g.id === 16 || 
+        g.name?.toLowerCase() === 'animation' || 
+        g.name?.toLowerCase() === 'hoạt hình' || 
+        g.name?.toLowerCase() === 'anime'
+      );
+      if (isJa || hasAnimGenre) return true;
     }
     return false;
   }, [isAnilistSlug, finalTmdbData, slug]);
@@ -334,15 +340,15 @@ export const useMovieDetail = (rawSlug: string) => {
       const isCJK = (str: string) => /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uffef\u4e00-\u9faf]/.test(str);
 
       const candidates: string[] = [];
-      if (enTitle && !isCJK(enTitle)) candidates.push(enTitle);
+      if (enTitle) candidates.push(enTitle);
+      if (finalTmdbData.original_name) candidates.push(finalTmdbData.original_name);
+      if (finalTmdbData.original_title) candidates.push(finalTmdbData.original_title);
       if (finalTmdbData.name && !isCJK(finalTmdbData.name)) candidates.push(finalTmdbData.name);
       if (finalTmdbData.title && !isCJK(finalTmdbData.title)) candidates.push(finalTmdbData.title);
-      if (finalTmdbData.original_name && !isCJK(finalTmdbData.original_name)) candidates.push(finalTmdbData.original_name);
-      if (finalTmdbData.original_title && !isCJK(finalTmdbData.original_title)) candidates.push(finalTmdbData.original_title);
 
       const uniqueTitles = Array.from(new Set(candidates)).filter(Boolean);
       if (uniqueTitles.length === 0) {
-        const fallback = finalTmdbData.title || finalTmdbData.name || '';
+        const fallback = finalTmdbData.original_name || finalTmdbData.original_title || finalTmdbData.title || finalTmdbData.name || '';
         if (fallback) uniqueTitles.push(fallback);
       }
 
@@ -377,6 +383,13 @@ export const useMovieDetail = (rawSlug: string) => {
                       }
                     } catch {}
                   }
+                }
+                if (mediaType === 'tv') {
+                  const tvMatch = data.results.find((item: any) => item.format === 'TV' || item.format === 'TV_SHORT');
+                  if (tvMatch) return tvMatch.id;
+                } else if (mediaType === 'movie') {
+                  const movieMatch = data.results.find((item: any) => item.format === 'MOVIE');
+                  if (movieMatch) return movieMatch.id;
                 }
                 return data.results[0].id;
               }
@@ -755,20 +768,8 @@ export const useMovieDetail = (rawSlug: string) => {
       }
     });
 
-    // Merge HiAnime episodes if it's an Anime
-    if (isAnime && finalAnilistData?.episodes && finalAnilistData.episodes.length > 0) {
-      processedServers.push({
-        server_name: "HiAnime (MegaCloud)",
-        server_data: finalAnilistData.episodes.map((ep: any) => ({
-          name: ep.name,
-          filename: ep.title || `Tập ${ep.name}`,
-          link_embed: `/api/anime/stream?id=${ep.id}`,
-          link_m3u8: "",
-          hianime_episode_id: ep.id
-        })),
-        status: 'ok'
-      });
-    }
+
+
 
     // Filter out OPhim/KKPhim servers if they are completely empty, but only if we have at least one other server (like HiAnime)
     const hasAtLeastOneActiveServer = processedServers.some((s: any) => s.status === 'ok');

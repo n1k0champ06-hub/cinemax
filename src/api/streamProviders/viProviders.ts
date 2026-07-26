@@ -113,8 +113,15 @@ function getBestSlugMatch(
 
     let score = 0;
     
+    // Extract individual title aliases (handling comma/semicolon/slash separated title lists in original_name)
+    const rawAliases = `${rawName},${rawOrigin}`.split(/[,;/|]+/).map(a => normalizeViText(cleanSearchQuery(a))).filter(Boolean);
+    const hasExactAliasMatch = rawAliases.some(a => 
+      (qTitleViNorm && a === qTitleViNorm) || (qTitleNorm && a === qTitleNorm)
+    );
+
     // Title match
     if (
+      hasExactAliasMatch ||
       (qTitleViNorm && (titleNorm === qTitleViNorm || originNorm === qTitleViNorm)) ||
       (qTitleNorm && (titleNorm === qTitleNorm || originNorm === qTitleNorm))
     ) {

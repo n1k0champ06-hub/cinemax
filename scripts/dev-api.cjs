@@ -1167,7 +1167,16 @@ async function main() {
       res.end(Buffer.from(await response.arrayBuffer()));
       return;
     }
-    if (pathname === '/api/dev-logger' && req.method === 'POST') {
+    if (pathname === '/api/dev-logger') {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': '*',
+        });
+        res.end();
+        return;
+      }
       try {
         const bodyText = (body || Buffer.from([])).toString('utf-8');
         if (bodyText) {
@@ -1178,7 +1187,7 @@ async function main() {
       } catch (e) {
         // ignore log write errors
       }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ ok: true }));
       return;
     }
@@ -1229,20 +1238,31 @@ async function main() {
     };
 
     try {
+      const t0 = Date.now();
       const response = await worker.fetch(request, env, ctx);
-      
+      const ms = Date.now() - t0;
+
       const resHeaders = {};
       for (const [key, val] of response.headers.entries()) {
         resHeaders[key] = val;
       }
-      // Access-Control-Allow-Origin is already added by our server CORS logic or the worker
       resHeaders['Access-Control-Allow-Origin'] = '*';
+
+      // Log non-2xx responses for stream/api routes
+      if (response.status >= 400 && pathname.startsWith('/api/')) {
+        const cloned = response.clone();
+        let body = '';
+        try { body = await cloned.text(); } catch {}
+        console.error(`[dev-api] ${response.status} ${req.method} ${pathname} (${ms}ms)`, body.slice(0, 300));
+      } else if (pathname.startsWith('/api/anivexa') || pathname.startsWith('/api/allmanga') || pathname.startsWith('/api/anime/stream')) {
+        console.log(`[dev-api] ${response.status} ${req.method} ${pathname} (${ms}ms)`);
+      }
 
       res.writeHead(response.status, resHeaders);
       const arrayBuffer = await response.arrayBuffer();
       res.end(Buffer.from(arrayBuffer));
     } catch (err) {
-      console.error(`[dev-api worker] Error handling ${req.method} ${pathname}:`, err.message);
+      console.error(`[dev-api worker] CRASH ${req.method} ${pathname}:`, err.stack || err.message);
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
     }

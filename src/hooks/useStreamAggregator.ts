@@ -16,8 +16,9 @@ import { VI_PROVIDERS } from '../api/streamProviders/viProviders';
 import { animapperProvider } from '../api/streamProviders/animapperProvider';
 import { EMBED_PROVIDERS } from '../api/streamProviders/embedProviders';
 import { allmangaProvider } from '../api/streamProviders/allmangaProvider';
-import { hianimeProvider } from '../api/streamProviders/hianimeProvider';
+
 import { anivexaProvider } from '../api/streamProviders/anivexaProvider';
+import { kaaProvider } from '../api/streamProviders/kaaProvider';
 import type { StreamProvider } from '../api/streamProviders/types';
 import { computeScore } from '../api/streamProviders/types';
 import { buildProxiedM3u8Url } from '../api/m3u8ProxyApi';
@@ -74,6 +75,8 @@ export interface UseStreamAggregatorResult extends AggregatorState {
   activeStream: StreamItem | null;
   /** Retry — re-run all providers */
   retry: () => void;
+  /** Manually trigger loading deferred embed providers */
+  loadDeferredProviders: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,8 +129,7 @@ export function useStreamAggregator({
     year: query.year,
     ep: activeEpName,
     retry: retryCount,
-    hianimeEpisodeId: query.hianimeEpisodeId || activeEpisodeObj?.hianime_episode_id
-  }), [query.tmdbId, query.imdbId, query.anilistId, query.isAnime, query.type, query.season, query.episode, query.viSlug, query.title, query.titleVi, query.year, activeEpName, retryCount, query.hianimeEpisodeId, activeEpisodeObj?.hianime_episode_id]);
+  }), [query.tmdbId, query.imdbId, query.anilistId, query.isAnime, query.type, query.season, query.episode, query.viSlug, query.title, query.titleVi, query.year, activeEpName, retryCount]);
 
   const prevRef = useRef<{ queryKey: string; enabled: boolean }>({ queryKey: '', enabled: false });
   const episodeIdentityKey = useMemo(() => `${query.tmdbId || ''}:${query.type || ''}:${query.season || 1}:${query.episode || 1}:${activeEpName}`, [query.tmdbId, query.type, query.season, query.episode, activeEpName]);
@@ -179,18 +181,18 @@ export function useStreamAggregator({
     // 1.2. Anivexa Provider — AniBD (English sub, AniList ID direct)
     allProviders.push(anivexaProvider);
 
-
+    // 1.3. KickAssAnime Provider — kaa.lt HLS (English sub, romaji title search)
+    allProviders.push(kaaProvider);
 
 
 
     // 3. CinemaOS VIP Embed (Backup embed source)
     allProviders.push(cinemaosProvider);
 
-    // 3.5. AllManga Anime Provider (only queries for Anime)
-    allProviders.push(allmangaProvider);
+    // 3.5. AllManga Anime Provider — DISABLED (consistently returns 404, removed to stop retry loop)
+    // allProviders.push(allmangaProvider);
 
-    // 3.6. HiAnime Provider (queries Cloudflare Worker MegaCloud Decryptor)
-    allProviders.push(hianimeProvider);
+
 
     // 4. International Embed providers (VidSrc, VidSrc Embed, etc.)
     allProviders.push(...EMBED_PROVIDERS);
@@ -208,12 +210,7 @@ export function useStreamAggregator({
       autoSelected: null,
     });
 
-    const queryWithEpId = {
-      ...query,
-      hianimeEpisodeId: query.hianimeEpisodeId || activeEpisodeObj?.hianime_episode_id
-    };
-
-    aggregateStreams(allProviders, queryWithEpId, {
+    aggregateStreams(allProviders, query, {
       onUpdate: (newState) => {
         if (controller.signal.aborted) return;
         setState(newState);
@@ -398,6 +395,33 @@ export function useStreamAggregator({
     }
   }, [state.isLoading, finalStreams.length, autoSelected?.providerLabel]);
 
+  const loadDeferredProviders = () => {
+    const allProviders: StreamProvider[] = [
+      ...VI_PROVIDERS,
+      animapperProvider,
+      anivexaProvider,
+      kaaProvider,
+      cinemaosProvider,
+      ...EMBED_PROVIDERS,
+    ];
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    aggregateStreams(allProviders, query, {
+      onUpdate: (newState) => {
+        if (controller.signal.aborted) return;
+        setState(newState);
+        STREAM_CACHE.set(queryKey, {
+          state: newState,
+          timestamp: Date.now(),
+        });
+      },
+      signal: controller.signal,
+      forceAll: true,
+    });
+  };
+
   return {
     ...state,
     streams: finalStreams,
@@ -406,5 +430,6 @@ export function useStreamAggregator({
     selectStream: setSelectedStream,
     activeStream,
     retry: () => setRetryCount(c => c + 1),
+    loadDeferredProviders,
   };
 }

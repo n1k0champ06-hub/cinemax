@@ -3,7 +3,7 @@ import {
   Play, Pause, RotateCcw, RotateCw, Maximize, Minimize,
   VolumeX, Volume1, Volume2, Settings, ArrowLeft,
   Loader2, Check, ChevronRight, X, List, Flag,
-  Gauge, MessageSquare, SkipForward, Layers, Lock, Unlock, Server, FastForward,
+  Gauge, MessageSquare, SkipForward, Layers, Lock, Unlock, Server, FastForward, Globe,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Hls from 'hls.js';
@@ -278,8 +278,10 @@ interface NetflixPlayerProps {
   onSeasonChange?: (seasonNumber: number) => void;
   tmdbEpisodes?: any[];
   streams?: StreamItem[];
+  providers?: any[];
   activeStream?: StreamItem | null;
   onStreamSelect?: (stream: StreamItem) => void;
+  onLoadDeferred?: () => void;
   isAggregatorLoading?: boolean;
   tmdbId?: string | number;
   type?: string;
@@ -315,7 +317,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
   episodes = [], onEpisodeSelect,
   isTv = false, currentSeason = 1, activeEpSeason = 1,
   seasons = [], onSeasonChange, tmdbEpisodes = [],
-  streams = [], activeStream = null, onStreamSelect, isAggregatorLoading = false,
+  streams = [], providers = [], activeStream = null, onStreamSelect, onLoadDeferred, isAggregatorLoading = false,
   tmdbId, type,
 }) => {
   const videoRef    = useRef<HTMLVideoElement>(null);
@@ -742,8 +744,25 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
       try {
         if (d.exitFullscreen) await d.exitFullscreen();
         else if (d.webkitExitFullscreen) await d.webkitExitFullscreen();
+      } catch {}
+    }
+  };
+
+  const handleBack = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const d = document as any;
+    const isFull = !!(d.fullscreenElement || d.webkitFullscreenElement || simulatedFullscreen || isLandscape);
+    if (isFull) {
+      setSimulatedFullscreen(false);
+      try {
+        if (d.fullscreenElement || d.webkitFullscreenElement) {
+          if (d.exitFullscreen) await d.exitFullscreen();
+          else if (d.webkitExitFullscreen) await d.webkitExitFullscreen();
+        }
         if (screen.orientation?.unlock) screen.orientation.unlock();
       } catch {}
+    } else {
+      onClose?.();
     }
   };
 
@@ -1052,12 +1071,12 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                 <>
                   {/* Top bar */}
                   <div className="pointer-events-none flex items-center justify-between px-4 sm:px-6 pt-3 sm:pt-4 pb-8 sm:pb-12 bg-gradient-to-b from-black/90 via-black/40 to-transparent">
-                    {isMobile && isMobileFullscreenMode ? (
-                      <button onClick={(e) => { e.stopPropagation(); onClose?.(); }}
+                    {isMobile ? (
+                      <button onClick={handleBack}
                         className="pointer-events-auto w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-all cursor-pointer hover:scale-105 active:scale-95" title="Trở về">
                         <ArrowLeft size={20} className="text-white" />
                       </button>
-                    ) : isMobile ? <div className="w-8" /> : null}
+                    ) : null}
 
                     <div className="pointer-events-auto flex-1 text-center px-3 min-w-0">
                       <p className="text-white text-xs sm:text-base font-bold truncate tracking-wide">
@@ -1687,6 +1706,16 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
 
                                 {activeList.length === 0 && (
                                   <p className="text-xs text-gray-500 py-4 text-center">Không có nguồn phát nào ở mục này.</p>
+                                )}
+
+                                {onLoadDeferred && (providers?.some((p: any) => p.status === 'deferred') || activeList.length === 0) && (
+                                  <button
+                                    onClick={() => onLoadDeferred()}
+                                    className="mt-3 w-full py-2.5 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                                  >
+                                    <Globe size={14} />
+                                    <span>Tải thêm nguồn dự phòng (Embed quốc tế)</span>
+                                  </button>
                                 )}
                               </div>
                             </>

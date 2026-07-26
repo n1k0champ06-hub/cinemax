@@ -32,8 +32,7 @@ export interface StreamQuery {
   year?: number | string | null;
   /** Whether the query is for an Anime */
   isAnime?: boolean;
-  /** HiAnime explicit episode id if resolved */
-  hianimeEpisodeId?: string;
+
 }
 
 // ---------------------------------------------------------------------------
@@ -84,7 +83,7 @@ export interface StreamItem {
 // Provider Status
 // ---------------------------------------------------------------------------
 
-export type ProviderStatus = 'idle' | 'loading' | 'done' | 'error' | 'disabled';
+export type ProviderStatus = 'idle' | 'loading' | 'done' | 'error' | 'disabled' | 'deferred';
 
 export interface ProviderState {
   id: ProviderID;
@@ -153,7 +152,7 @@ export function computeScore(item: Omit<StreamItem, 'score'>): number {
 
   // Base by provider
   if (item.provider === 'animapper') score = 998; // AniMapper / Niniyo (Top priority for Anime VI streams)
-  else if (item.provider === 'hianime') score = 94; // HiAnime MegaCloud Decryptor
+  else if (item.provider === 'kaa') score = 88;   // KickAssAnime HLS
   else if (item.provider === 'cinepro') score = SCORE.HLS_CINEPRO;
   else if (item.provider === 'allmanga') score = 92; // Dedicated anime stream provider
   else if (item.provider === 'kkphim' && item.type === 'hls') score = 99; // KKPhim HLS (Preferred over OPhim/NguonC)

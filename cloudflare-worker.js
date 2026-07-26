@@ -1044,6 +1044,114 @@ async function handleRequest(request, env, ctx) {
       }
     }
 
+    // KickAssAnime (kaa.lt) proxy -> /api/kaa/watch/:anilistId/:audio/:ep
+    if (url.pathname.startsWith("/api/kaa")) {
+      const UA_KAA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+      const KAA_BASE = "https://kaa.lt";
+      const KAA_HLS = "https://hls.krussdomi.com/manifest";
+
+      const watchMatch = url.pathname.match(/^\/api\/kaa\/watch\/(\d+)\/(sub|dub)\/(\d+)$/);
+      if (!watchMatch) return json({ error: "Not found" }, 404);
+
+      const [, anilistId, audio, epNum] = watchMatch;
+      const titles = (url.searchParams.get("titles") || "").split("|").filter(Boolean);
+      if (!titles.length) return json({ error: "Missing titles param" }, 400);
+      const year = url.searchParams.get("year") ? Number(url.searchParams.get("year")) : null;
+
+      try {
+        // Step 1: search for show slug with year-aware scoring
+        let showSlug = null;
+        for (const title of titles.slice(0, 4)) {
+          if (/[\u3000-\u9fff\u4e00-\u9faf]/.test(title)) continue;
+          const clean = title.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+          if (clean.length < 2) continue;
+          const sr = await fetch(`${KAA_BASE}/api/fsearch`, {
+            method: "POST",
+            headers: { "User-Agent": UA_KAA, "Content-Type": "application/json", "Accept": "application/json" },
+            body: JSON.stringify({ page: 1, query: clean }),
+          });
+          if (!sr.ok) continue;
+          const sd = await sr.json();
+          const results = Array.isArray(sd?.result) ? sd.result : [];
+          if (!results.length) continue;
+          const normQ = clean.toLowerCase().replace(/[^a-z0-9]/g, "");
+          const mediaType = url.searchParams.get("mediaType") || "tv";
+          const scored = results.map(r => {
+            const t = (r.title_en || r.title || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+            const longer = Math.max(normQ.length, t.length) || 1;
+            let match = 0; for (let i = 0; i < Math.min(normQ.length, t.length); i++) if (normQ[i] === t[i]) match++;
+            let titleScore = match / longer;
+            // Year bonus/penalty
+            if (year && r.year) {
+              const diff = Math.abs(Number(r.year) - year);
+              if (diff === 0) titleScore *= 1.3;
+              else if (diff === 1) titleScore *= 0.7;
+              else titleScore *= 0.2;
+            }
+            // Type bonus/penalty — prefer TV for tv queries
+            const kaaType = (r.type || "").toLowerCase();
+            if (mediaType === "tv") {
+              if (kaaType === "tv") titleScore *= 1.4;
+              else if (kaaType === "ona" || kaaType === "ova") titleScore *= 0.5;
+            } else if (mediaType === "movie") {
+              if (kaaType === "movie") titleScore *= 1.4;
+            }
+            return { slug: r.slug, score: titleScore };
+          }).sort((a, b) => b.score - a.score);
+          if (scored[0]?.score >= 0.2) { showSlug = scored[0].slug; break; }
+          if (!showSlug) showSlug = results[0].slug;
+        }
+
+        if (!showSlug) return json({ error: `KAA: no match for: ${titles[0]}` }, 404);
+
+
+        // Step 2: fetch all episodes
+        const ep1 = await fetch(`${KAA_BASE}/api/show/${showSlug}/episodes?ep=1&lang=ja-JP`, {
+          headers: { "User-Agent": UA_KAA, "Accept": "application/json" },
+        });
+        if (!ep1.ok) return json({ error: `KAA episodes list ${ep1.status}` }, 502);
+        const epData = await ep1.json();
+        let allEps = Array.isArray(epData?.result) ? [...epData.result] : [];
+        for (const pg of (Array.isArray(epData?.pages) ? epData.pages.slice(1) : [])) {
+          if (!pg.eps?.[0]) continue;
+          const d = await fetch(`${KAA_BASE}/api/show/${showSlug}/episodes?ep=${pg.eps[0]}&lang=ja-JP`, {
+            headers: { "User-Agent": UA_KAA, "Accept": "application/json" },
+          }).then(r => r.json()).catch(() => null);
+          if (Array.isArray(d?.result)) allEps = allEps.concat(d.result);
+        }
+
+        const ep = allEps.find(e => e.episode_number === Number(epNum));
+        if (!ep) return json({ error: `KAA: ep ${epNum} not in ${showSlug}` }, 404);
+
+        // Step 3: get server list
+        const fullSlug = `ep-${ep.episode_number}-${ep.slug}`;
+        const svRes = await fetch(`${KAA_BASE}/api/show/${showSlug}/episode/${fullSlug}`, {
+          headers: { "User-Agent": UA_KAA, "Accept": "application/json" },
+        });
+        if (!svRes.ok) return json({ error: `KAA servers ${svRes.status}` }, 502);
+        const svData = await svRes.json();
+        const servers = Array.isArray(svData?.servers) ? svData.servers : [];
+
+        // Step 4: extract HLS manifest IDs
+        const streams = [];
+        for (const s of servers) {
+          const m = (s.src || "").match(/[?&]id=([^&]+)/);
+          if (!m) continue;
+          streams.push({
+            url: `${KAA_HLS}/${m[1]}/master.m3u8`,
+            type: "hls",
+            server: s.name || "KAA",
+            referer: "https://krussdomi.com/",
+          });
+        }
+        if (!streams.length) return json({ error: `KAA: no HLS for ep ${epNum}` }, 404);
+
+        return json({ anilistId: Number(anilistId), episode: Number(epNum), audio, showSlug, streams });
+      } catch (err) {
+        return json({ error: err.message }, 500);
+      }
+    }
+
     // Anivexa AniBD proxy -> /api/anivexa/anibd/
     if (url.pathname.startsWith("/api/anivexa/anibd")) {
       const UA_ANIBD = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -1137,6 +1245,93 @@ async function handleRequest(request, env, ctx) {
           }
 
           return json({ anilistId: Number(anilistId), episode: Number(epNum), audio, streams });
+        } catch (err) {
+          return json({ error: err.message }, 500);
+        }
+      }
+
+      return json({ error: "Not found" }, 404);
+    }
+
+    // Anivexa AniZone proxy -> /api/anivexa/anizone/watch
+    // GET /api/anivexa/anizone/watch/:ep?title=...&year=...
+    if (url.pathname.startsWith("/api/anivexa/anizone")) {
+      const UA_AZ = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+      const AZ_BASE = "https://anizone.to";
+
+      const azWatchMatch = url.pathname.match(/^\/api\/anivexa\/anizone\/watch\/(\d+)$/);
+      if (azWatchMatch) {
+        const epNum = azWatchMatch[1];
+        const title = url.searchParams.get("title") || "";
+        const slug = url.searchParams.get("slug") || "";
+
+        try {
+          let resolvedSlug = slug;
+
+          // If no slug provided, search by title
+          if (!resolvedSlug && title) {
+            const searchHtml = await fetch(`${AZ_BASE}/anime?search=${encodeURIComponent(title)}`, {
+              headers: { "User-Agent": UA_AZ, Accept: "text/html" },
+            }).then(r => r.text());
+
+            // Extract first slug from search results
+            const slugMatch = searchHtml.match(/href="(?:https:\/\/anizone\.to)?\/anime\/([a-z0-9-]+)"/);
+            if (slugMatch) resolvedSlug = slugMatch[1];
+          }
+
+          if (!resolvedSlug) return json({ error: "AniZone: no match found for title" }, 404);
+
+          // Fetch episode page
+          const epHtml = await fetch(`${AZ_BASE}/anime/${resolvedSlug}/${epNum}`, {
+            headers: { "User-Agent": UA_AZ, Accept: "text/html", Referer: `${AZ_BASE}/` },
+          }).then(r => r.text());
+
+          // Extract HLS URL from <media-player src="...m3u8">
+          const hlsMatch = epHtml.match(/<media-player[^>]+src="([^"]+\.m3u8[^"]*)"/i);
+          if (!hlsMatch) return json({ error: "AniZone: no HLS stream found" }, 404);
+
+          // Decode HTML entities in URL
+          const hlsUrl = hlsMatch[1].replace(/&amp;/g, "&").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n));
+
+          // Extract subtitles from <track> elements
+          const subtitles = [];
+          const trackRe = /<track\b([^>]*)>/gi;
+          let trackM;
+          while ((trackM = trackRe.exec(epHtml)) !== null) {
+            const attrs = trackM[1];
+            const kind = attrs.match(/kind="([^"]*)"/i)?.[1] ?? "";
+            if (kind !== "subtitles") continue;
+            const src = attrs.match(/src=["']?([^\s"'>]+)["']?/i)?.[1] ?? "";
+            const label = attrs.match(/label="([^"]*)"/i)?.[1] ?? "";
+            const srclang = attrs.match(/srclang="([^"]*)"/i)?.[1] ?? "";
+            if (src) subtitles.push({ url: src, label, srclang });
+          }
+
+          return json({
+            slug: resolvedSlug,
+            episode: Number(epNum),
+            streams: [{ url: hlsUrl, type: "hls", server: "AniZone", referer: `${AZ_BASE}/`, subtitles }],
+          });
+        } catch (err) {
+          return json({ error: err.message }, 500);
+        }
+      }
+
+      // GET /api/anivexa/anizone/search?title=...
+      if (url.pathname === "/api/anivexa/anizone/search") {
+        const title = url.searchParams.get("title") || "";
+        if (!title) return json({ error: "Missing title" }, 400);
+        try {
+          const searchHtml = await fetch(`${AZ_BASE}/anime?search=${encodeURIComponent(title)}`, {
+            headers: { "User-Agent": UA_AZ, Accept: "text/html" },
+          }).then(r => r.text());
+          const results = [];
+          const re = /href="(?:https:\/\/anizone\.to)?\/anime\/([a-z0-9-]+)"/g;
+          let m;
+          while ((m = re.exec(searchHtml)) !== null) {
+            if (!results.includes(m[1])) results.push(m[1]);
+          }
+          return json({ title, slugs: results.slice(0, 5) });
         } catch (err) {
           return json({ error: err.message }, 500);
         }

@@ -48,6 +48,22 @@ function pushLog(level: LogEntry['level'], message: string): void {
   if (logBuffer.length > MAX_BUFFER_SIZE) {
     logBuffer.shift();
   }
+
+  // Forward to /api/dev-logger for persistent file logging in cinemax-debug.log
+  try {
+    if (typeof fetch !== 'undefined') {
+      fetch('/api/dev-logger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          timestamp: entry.timestamp,
+          level: level.toUpperCase(),
+          category: 'GOD-EYES',
+          message,
+        }),
+      }).catch(() => {});
+    }
+  } catch {}
 }
 
 export function initLoggerBuffer(): void {

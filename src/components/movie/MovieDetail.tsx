@@ -361,6 +361,20 @@ const MovieDetailContent: React.FC<{
     const enData = translations.find((t: any) => t.iso_639_1 === 'en')?.data;
     const enTitle = enData?.name || enData?.title || '';
 
+    const isCJK = (str: string) => /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uffef\u4e00-\u9faf]/.test(str);
+
+    const englishOrOriginalTitle = enTitle 
+      || (!isCJK(finalTmdbData?.original_name || '') ? finalTmdbData?.original_name : '')
+      || (!isCJK(finalTmdbData?.original_title || '') ? finalTmdbData?.original_title : '')
+      || data?.movie?.origin_name 
+      || finalTmdbData?.original_name 
+      || finalTmdbData?.original_title 
+      || finalTmdbData?.name 
+      || finalTmdbData?.title 
+      || '';
+
+    const vietnameseTitle = finalTmdbData?.title || finalTmdbData?.name || data?.movie?.name || '';
+
     const currentSeasonObj = finalTmdbData?.seasons?.find((s: any) => s.season_number === currentSeason);
     const seasonYear = currentSeasonObj?.air_date ? currentSeasonObj.air_date.split('-')[0] : null;
 
@@ -373,8 +387,8 @@ const MovieDetailContent: React.FC<{
         || (finalTmdbData?.first_air_date ? finalTmdbData.first_air_date.split('-')[0] : null)
         || data?.movie?.year 
         || null,
-      title: (finalTmdbData?.name || finalTmdbData?.title || data?.movie?.origin_name || finalTmdbData?.original_name || finalTmdbData?.original_title || ''),
-      titleVi: finalTmdbData?.title || finalTmdbData?.name || data?.movie?.name || '',
+      title: englishOrOriginalTitle,
+      titleVi: vietnameseTitle,
       type: isTv ? 'tv' as const : 'movie' as const,
       season: isTv ? (currentSeason || 1) : undefined,
       episode: isTv ? (getEpisodeNumber(activeEp?.name) || 1) : undefined,
@@ -383,9 +397,8 @@ const MovieDetailContent: React.FC<{
       directors: finalTmdbData?.credits?.crew?.filter((c: any) => c.job === 'Director').map((c: any) => c.name || c.original_name) || [],
       countries: finalTmdbData?.production_countries?.map((c: any) => c.name || c.iso_3166_1).concat(finalTmdbData?.origin_country || []) || [],
       isAnime,
-      hianimeEpisodeId: activeEp?.hianime_episode_id,
     };
-  }, [finalTmdbData, resolvedImdbId, data?.movie, isTv, currentSeason, activeEp?.name, activeEp?.hianime_episode_id, slug, isAnime, activeAnilistId]);
+  }, [finalTmdbData, resolvedImdbId, data?.movie, isTv, currentSeason, activeEp?.name, slug, isAnime, activeAnilistId]);
 
   const {
     streams,
@@ -395,6 +408,7 @@ const MovieDetailContent: React.FC<{
     selectedStream,
     selectStream,
     retry: retryAggregate,
+    loadDeferredProviders,
   } = useStreamAggregator({
     query: streamQuery,
     servers: currentServers,
@@ -744,13 +758,25 @@ const MovieDetailContent: React.FC<{
   // 4. If not TV → use raw server list directly
   const baseEpList = (() => {
     if (!isTv) return fallbackRawEpList;
-    if (fallbackRawEpList.length === 0) return seasonData?.episodes || [];
+    let rawList = fallbackRawEpList.length === 0 ? (seasonData?.episodes || []) : fallbackRawEpList;
+
+    // Filter out episode 0 (PV/trailer artifacts) if TMDB season 1+ has no episode 0
+    const tmdbHasEp0 = seasonData?.episodes?.some((e: any) => e.episode_number === 0);
+    if (!tmdbHasEp0 && currentSeason >= 1) {
+      rawList = rawList.filter((ep: any) => {
+        const num = (ep.episode_number !== undefined && ep.episode_number !== null)
+          ? ep.episode_number
+          : getEpisodeNumber(ep.name);
+        return num !== 0;
+      });
+    }
+
     // Cap by TMDB episode count if TMDB season data is loaded
     const tmdbCount = seasonData?.episodes?.length;
-    if (tmdbCount && fallbackRawEpList.length > tmdbCount) {
-      return fallbackRawEpList.slice(0, tmdbCount);
+    if (tmdbCount && rawList.length > tmdbCount) {
+      return rawList.slice(0, tmdbCount);
     }
-    return fallbackRawEpList;
+    return rawList;
   })();
 
 
@@ -802,7 +828,7 @@ const MovieDetailContent: React.FC<{
   const getPlayButtonText = () => {
     if (savedProgress) {
       if (isTv) {
-        return `Xem tiếp (Tập ${savedProgress.episodeName.replace("Tập ", "")})`;
+        return `Xem tiếp (${savedProgress.episodeName.replace("Tập ", "")})`;
       } else {
         return "Xem tiếp";
       }
@@ -813,12 +839,12 @@ const MovieDetailContent: React.FC<{
   const getDesktopPlayButtonText = () => {
     if (savedProgress) {
       if (isTv) {
-        return `Xem tiếp: Tập ${savedProgress.episodeName.replace("Tập ", "")}`;
+        return `Xem tiếp: ${savedProgress.episodeName.replace("Tập ", "")}`;
       } else {
         return "Xem tiếp";
       }
     }
-    return isTv ? `Xem Tập ${activeEp?.name?.replace("Tập ", "") || "1"}` : "Xem Phim";
+    return isTv ? `Xem ${activeEp?.name?.replace("Tập ", "") || "1"}` : "Xem Phim";
   };
 
   const handlePlayOrResume = () => {
@@ -932,7 +958,17 @@ const MovieDetailContent: React.FC<{
           >
             <div className="flex justify-between items-center z-[210] relative max-w-[1600px] w-full mx-auto mb-3 sm:mb-4 shrink-0">
               <button
-                onClick={() => setIsPlaying(false)}
+                onClick={async () => {
+                  const d = document as any;
+                  if (d.fullscreenElement || d.webkitFullscreenElement) {
+                    try {
+                      if (d.exitFullscreen) await d.exitFullscreen();
+                      else if (d.webkitExitFullscreen) await d.webkitExitFullscreen();
+                    } catch {}
+                  } else {
+                    setIsPlaying(false);
+                  }
+                }}
                 className="flex items-center justify-center gap-2 text-gray-300 hover:text-white bg-black/80 backdrop-blur-md hover:bg-neutral-900 border border-white/15 p-2.5 sm:px-4 sm:py-2.5 rounded-full transition-all font-bold tracking-wide shadow-lg cursor-pointer hover:scale-105 active:scale-95 shrink-0"
               >
                 <ChevronLeft size={20} className="sm:hidden" />
@@ -1007,8 +1043,10 @@ const MovieDetailContent: React.FC<{
                   onSeasonChange={handleSeasonSwitch}
                   tmdbEpisodes={seasonData?.episodes || []}
                   streams={streams}
+                  providers={providers}
                   activeStream={activeStream}
                   onStreamSelect={selectStream}
+                  onLoadDeferred={loadDeferredProviders}
                   isAggregatorLoading={isAggregatorLoading}
                 />
               </div>
@@ -1029,7 +1067,7 @@ const MovieDetailContent: React.FC<{
                             "px-3.5 py-1 rounded-full text-xs font-bold transition-all border cursor-pointer",
                             currentSeason === s.season_number
                               ? "bg-[#e50914] border-[#e50914] text-white shadow-md"
-                              : "bg-white/5 border-white/10 text-gray-400 hover:text-white"
+                              : "bg-black border-white/15 text-gray-400 hover:text-white"
                           )}
                         >
                           Mùa {s.season_number}
@@ -1073,8 +1111,8 @@ const MovieDetailContent: React.FC<{
                           className={cn(
                             "w-52 sm:w-64 shrink-0 flex flex-col gap-2 p-2 rounded-xl text-left transition-all border snap-start group cursor-pointer",
                             isSelected
-                              ? "bg-white/10 border-[#e50914] shadow-[0_0_15px_rgba(229,9,20,0.3)]"
-                              : "bg-white/5 border-white/10 hover:bg-white/10"
+                              ? "bg-black border-[#e50914] shadow-[0_0_15px_rgba(229,9,20,0.4)]"
+                              : "bg-black border-white/15 hover:border-white/30"
                           )}
                         >
                           <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-black/60 border border-white/10 shrink-0">
@@ -1088,7 +1126,7 @@ const MovieDetailContent: React.FC<{
 
                             {/* EP Badge Top Right */}
                             <div className="absolute top-2 right-2 bg-black/80 backdrop-blur-md px-1.5 py-0.5 rounded text-[10px] font-black text-white z-10 border border-white/10 select-none">
-                              EP {ep.episode_number || i + 1}
+                              {ep.episode_number || i + 1}
                             </div>
 
                             <div className={cn(
@@ -1106,7 +1144,7 @@ const MovieDetailContent: React.FC<{
 
                           <div className="flex flex-col gap-0.5 px-0.5 min-w-0">
                             <span className={cn("text-xs font-extrabold truncate", isSelected ? "text-[#e50914]" : "text-white")}>
-                              {displayEpName}{displayEpTitle ? ` — ${displayEpTitle}` : ''}
+                              {displayEpTitle || displayEpName}
                             </span>
                             <p className="text-[11px] text-gray-400 line-clamp-2 leading-relaxed font-medium">
                               {getEpOverview(epNameStr, overview) || "Đang cập nhật nội dung cho tập này."}
@@ -1191,12 +1229,12 @@ const MovieDetailContent: React.FC<{
                     )}
                     
                     <div className="flex gap-3">
-                      <button onClick={handleToggleList} className="flex-1 bg-transparent border border-white/10 hover:bg-white/10 text-white px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors text-sm">
+                      <button onClick={handleToggleList} className="flex-1 bg-black border border-white/15 hover:bg-neutral-900 text-white px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors text-sm">
                          {inList ? <Check size={16} /> : <Plus size={16} />} Lưu Lại
                       </button>
                       <button 
                         onClick={handleShare}
-                        className="flex-1 bg-transparent border border-white/10 hover:bg-white/10 text-white px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors text-sm cursor-pointer"
+                        className="flex-1 bg-black border border-white/15 hover:bg-neutral-900 text-white px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors text-sm cursor-pointer"
                       >
                          <Share2 size={16} /> Chia Sẻ
                       </button>
@@ -1290,7 +1328,7 @@ const MovieDetailContent: React.FC<{
                       {(() => {
                         const categories = Array.isArray(finalTmdbData?.genres) ? finalTmdbData.genres : (Array.isArray(movie.category) ? movie.category : []);
                         return categories.slice(0, 4).map((c: any) => (
-                        <span key={c.name} className="bg-[#1a1a1a] border border-white/10 px-4 py-1.5 rounded-md text-xs font-bold text-gray-300">
+                        <span key={c.name} className="bg-black border border-white/15 px-4 py-1.5 rounded-md text-xs font-bold text-gray-300">
                           {c.name === "Hanh Dong" ? "Hành Động" : 
                            c.name === "Tinh Cam" ? "Tình Cảm" : 
                            c.name === "Hai Huoc" ? "Hài Hước" : 
@@ -1342,7 +1380,7 @@ const MovieDetailContent: React.FC<{
                                className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x w-full scroll-smooth"
                              >
                                {actorsData.slice(0, 15).map((actor: any) => (
-                                 <div key={actor.id} className="flex-shrink-0 flex items-center gap-3 bg-[#111] border border-white/10 pr-4 rounded-full snap-start hover:bg-white/5 transition-colors cursor-pointer group">
+                                 <div key={actor.id} className="flex-shrink-0 flex items-center gap-3 bg-black border border-white/15 pr-4 rounded-full snap-start hover:bg-neutral-900 transition-colors cursor-pointer group">
                                    {actor.image ? (
                                      <img src={actor.image} alt={actor.name} className="w-12 h-12 rounded-full object-cover group-hover:scale-105 transition-transform" />
                                    ) : (
@@ -1470,7 +1508,7 @@ const MovieDetailContent: React.FC<{
                     {(() => {
                       const categories = Array.isArray(finalTmdbData?.genres) ? finalTmdbData.genres : (Array.isArray(movie.category) ? movie.category : []);
                       return categories.slice(0, 4).map((c: any) => (
-                        <span key={c.name} className="bg-white/5 border border-white/10 px-3 py-1 rounded-md text-[11px] font-bold text-gray-300">
+                        <span key={c.name} className="bg-black border border-white/15 px-3 py-1 rounded-md text-[11px] font-bold text-gray-300">
                           {c.name === "Hanh Dong" ? "Hành Động" : 
                            c.name === "Tinh Cam" ? "Tình Cảm" : 
                            c.name === "Hai Huoc" ? "Hài Hước" : 
@@ -1530,7 +1568,7 @@ const MovieDetailContent: React.FC<{
                               options={epList.map((ep: any) => {
                                  const n = ep.episode_number ? `${ep.episode_number}` : ep.name.replace("Tập ", "");
                                  return {
-                                   label: `Tập ${n}`,
+                                   label: `${n}`,
                                    value: n
                                  }
                                })}
@@ -1543,7 +1581,7 @@ const MovieDetailContent: React.FC<{
                           onClick={() => setIsPlaying(true)}
                           className="w-full bg-white hover:bg-gray-200 text-black py-2.5 rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 mt-1 active:scale-95 transition-transform"
                         >
-                          <Play size={14} fill="currentColor" /> Phát {activeEp ? `Tập ${activeEp.name.replace("Tập ", "")}` : "Tập hiện tại"}
+                          <Play size={14} fill="currentColor" /> Phát {activeEp ? `${activeEp.name.replace("Tập ", "")}` : "hiện tại"}
                         </button>
                       </motion.div>
                     )}
@@ -1563,8 +1601,8 @@ const MovieDetailContent: React.FC<{
                       <button 
                         onClick={handleToggleList} 
                         className={cn(
-                          "flex-1 bg-[#131313] border px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition-all text-sm active:scale-95",
-                          inList ? "border-green-500/30 text-green-400" : "border-white/10 text-white"
+                          "flex-1 bg-black border-white/15 border px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition-all text-sm active:scale-95",
+                          inList ? "border-green-500/30 text-green-400" : "border-white/15 text-white"
                         )}
                       >
                          {inList ? <Check size={16} className="text-green-400" /> : <Plus size={16} />} {inList ? "Đã Lưu Phim" : "Lưu Phim"}
@@ -1573,7 +1611,7 @@ const MovieDetailContent: React.FC<{
                         onClick={() => setShowMobileDetails(!showMobileDetails)}
                         className={cn(
                           "w-14 h-12 rounded-xl flex items-center justify-center transition-all shrink-0 active:scale-95 border",
-                          showMobileDetails ? "border-white bg-white/10 text-white" : "border-white/10 bg-[#131313] text-gray-400"
+                          showMobileDetails ? "border-white bg-white/10 text-white" : "border-white/15 bg-black text-gray-400"
                         )}
                         aria-label="More options"
                       >
@@ -1613,7 +1651,7 @@ const MovieDetailContent: React.FC<{
                                <h4 className="text-sm font-black text-white mb-2 uppercase tracking-wide">Diễn Viên</h4>
                                <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar snap-x w-full">
                                  {actorsData.slice(0, 10).map((actor: any) => (
-                                   <div key={actor.id} className="flex-shrink-0 flex items-center gap-3 bg-[#171717] border border-white/5 pr-4 pl-1.5 py-1.5 rounded-full snap-start">
+                                   <div key={actor.id} className="flex-shrink-0 flex items-center gap-3 bg-black border border-white/15 pr-4 pl-1.5 py-1.5 rounded-full snap-start">
                                      {actor.image ? (
                                        <img src={actor.image} alt={actor.name} className="w-10 h-10 rounded-full object-cover" />
                                      ) : (
@@ -1750,10 +1788,7 @@ const MovieDetailContent: React.FC<{
                                     "font-extrabold text-sm line-clamp-2 text-wrap",
                                     isSelected ? "text-white" : "text-gray-200"
                                   )}>
-                                    {displayEpName}
-                                    {displayEpTitle && (
-                                      <span className="font-semibold text-gray-400 text-xs ml-1.5">— {displayEpTitle}</span>
-                                    )}
+                                    {displayEpTitle || displayEpName}
                                   </h4>
                                   <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed mt-0.5">
                                     {getEpOverview(epNameStr, overview) || "Đang cập nhật nội dung cho tập này."}
@@ -1816,14 +1851,19 @@ const MovieDetailContent: React.FC<{
                             const overview = tmdbEp?.overview || ep.overview;
                           
                           return (
-                            <div 
+                            <button
                               key={i} 
                               onClick={() => handleSelectEpisode(ep)}
-                              className="min-w-[280px] sm:min-w-[320px] max-w-[320px] flex-shrink-0 flex flex-col gap-3 group cursor-pointer snap-start"
+                              className={cn(
+                                "w-56 sm:w-64 md:w-72 shrink-0 flex flex-col gap-2 p-2.5 rounded-2xl text-left transition-all border snap-start group cursor-pointer",
+                                isSelected
+                                  ? "bg-black border-[#e50914] shadow-[0_0_20px_rgba(229,9,20,0.4)]"
+                                  : "bg-black border-white/15 hover:border-white/30"
+                              )}
                             >
-                              <div className="w-full aspect-video rounded-xl overflow-hidden relative bg-black border border-white/5 flex items-center justify-center">
+                              <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black/60 border border-white/10 shrink-0">
                                 {stillPath ? (
-                                  <SafeImage src={stillPath} alt={ep.name} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500" /> 
+                                  <SafeImage src={stillPath} alt={ep.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" /> 
                                 ) : (
                                   <>
                                     <SafeImage src={bgDetailImg || ''} alt={ep.name} className="w-full h-full object-cover opacity-20 group-hover:opacity-40 transition-opacity mix-blend-luminosity absolute inset-0" />
@@ -1836,30 +1876,32 @@ const MovieDetailContent: React.FC<{
                                   </>
                                 )}
                                 
-                                <div className="absolute top-2 right-2 bg-black/80 backdrop-blur-md px-2 py-1 rounded text-[10px] font-black text-white z-10 border border-white/10">
-                                  EP {ep.episode_number || getEpisodeNumber(ep.name) || ep.name}
+                                <div className="absolute top-2 right-2 bg-black/80 backdrop-blur-md px-1.5 py-0.5 rounded text-[10px] font-black text-white z-10 border border-white/10 select-none">
+                                  {ep.episode_number || getEpisodeNumber(ep.name) || ep.name}
                                 </div>
 
-                                <div className="absolute inset-0 flex justify-center items-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <div className="w-12 h-12 rounded-full border-2 border-white flex justify-center items-center backdrop-blur-md shadow-2xl">
-                                     <Play size={20} fill="white" className="ml-1 text-white" />
+                                <div className={cn(
+                                  "absolute inset-0 flex items-center justify-center transition-all",
+                                  isSelected ? "bg-black/40" : "bg-black/20 group-hover:bg-black/0"
+                                )}>
+                                  <div className={cn(
+                                    "w-9 h-9 rounded-full flex items-center justify-center transition-all shadow-lg backdrop-blur-md",
+                                    isSelected ? "bg-[#e50914] text-white" : "bg-black/60 text-white border border-white/20 group-hover:scale-110"
+                                  )}>
+                                    <Play size={16} fill="white" className="ml-0.5" />
                                   </div>
                                 </div>
-                                
-                                {isSelected && (
-                                  <div className="absolute bottom-0 left-0 w-full h-1 bg-white" />
-                                )}
                               </div>
                               
-                              <div className="flex flex-col gap-1 px-1">
-                                <h4 className="font-bold text-lg text-white line-clamp-1 group-hover:text-gray-300">
-                                  {displayEpName}{displayEpTitle ? `: ${displayEpTitle}` : ""}
+                              <div className="flex flex-col gap-0.5 px-0.5 min-w-0">
+                                <h4 className={cn("text-xs sm:text-sm font-extrabold truncate leading-snug", isSelected ? "text-[#e50914]" : "text-white group-hover:text-gray-200")}>
+                                  {displayEpTitle || displayEpName}
                                 </h4>
-                                <p className="text-sm text-gray-500 line-clamp-2 leading-relaxed">
+                                <p className="text-[11px] sm:text-xs text-gray-400 line-clamp-2 leading-relaxed font-medium">
                                   {getEpOverview(epNameStr, overview) || "Đang cập nhật nội dung cho tập này."}
                                 </p>
                               </div>
-                            </div>
+                            </button>
                           );
                         })
                         )}

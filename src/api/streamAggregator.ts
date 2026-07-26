@@ -67,23 +67,41 @@ export interface AggregateOptions {
   onUpdate: (state: AggregatorState) => void;
   /** AbortSignal to cancel all pending providers */
   signal?: AbortSignal;
+  /** If true, fetch all providers concurrently without deferring Tier 2 */
+  forceAll?: boolean;
 }
 
 /**
- * Run all providers in parallel.
- * Each provider's results are merged into the shared state as they arrive.
- * onUpdate fires after each provider completes or a background ping resolves.
+ * Run providers with Tiered Staging:
+ * - Tier 1: HLS & VI providers (KKPhim, OPhim, NguonC, AniMapper, CinePro...)
+ * - Tier 2: Embed fallback providers (VidSrc, 2Embed, CinemaOS...)
+ * 
+ * If Tier 1 produces HLS streams, Tier 2 providers remain 'deferred' to avoid
+ * unnecessary network traffic and embed interference.
  */
 export async function aggregateStreams(
   providers: StreamProvider[],
   query: StreamQuery,
   options: AggregateOptions
 ): Promise<AggregatorState> {
-  const { onUpdate, signal } = options;
+  const { onUpdate, signal, forceAll = false } = options;
 
-  // Initial state
+  // Classify providers into Tier 1 (HLS/VI) and Tier 2 (Embed)
+  const isTier1 = (p: StreamProvider) => p.group === 'vi' || p.group === 'hls';
+  const tier1Providers = providers.filter(isTier1);
+  const tier2Providers = providers.filter(p => !isTier1(p));
+
+  // Initial state setup: Tier 1 -> loading, Tier 2 -> deferred (unless forceAll)
   const providerStates: Map<string, ProviderState> = new Map(
-    providers.map(p => [p.id, { id: p.id, label: p.label, status: 'loading', streams: [] }])
+    providers.map(p => [
+      p.id,
+      {
+        id: p.id,
+        label: p.label,
+        status: (forceAll || isTier1(p)) ? 'loading' : 'deferred',
+        streams: [],
+      },
+    ])
   );
 
   const allStreams: StreamItem[] = [];
@@ -100,11 +118,22 @@ export async function aggregateStreams(
     };
   }
 
-  // Fire all providers concurrently
-  const promises = providers.map(async provider => {
+  async function fetchProvider(provider: StreamProvider) {
     if (signal?.aborted) return;
+    providerStates.set(provider.id, {
+      id: provider.id,
+      label: provider.label,
+      status: 'loading',
+      streams: [],
+    });
+    onUpdate(buildState());
+
     try {
-      const timeoutMs = provider.id === 'cinepro' ? 8000 : 5000;
+      const timeoutMs = provider.id === 'cinepro' ? 8000
+        : provider.id === 'anivexa' ? 15000
+        : provider.id === 'kaa' ? 20000
+        : 5000;
+
       const streams = await Promise.race([
         provider.fetchStreams(query),
         new Promise<StreamItem[]>((_, reject) =>
@@ -117,7 +146,6 @@ export async function aggregateStreams(
       // Deduplicate by URL
       for (const s of streams) {
         if (!allStreams.some(existing => existing.url === s.url)) {
-          // Initialize with testing state
           s.latencyLabel = 'Testing...';
           allStreams.push(s);
 
@@ -149,8 +177,25 @@ export async function aggregateStreams(
     }
 
     onUpdate(buildState());
-  });
+  }
 
-  await Promise.allSettled(promises);
+  if (forceAll) {
+    // Fire all providers concurrently
+    await Promise.allSettled(providers.map(p => fetchProvider(p)));
+  } else {
+    // 1. Fire Tier 1 (HLS / VI) providers first
+    await Promise.allSettled(tier1Providers.map(p => fetchProvider(p)));
+
+    if (signal?.aborted) return buildState();
+
+    // 2. Check if Tier 1 found any HLS streams
+    const hasHlsStream = allStreams.some(s => s.type === 'hls' || s.category === 'vi');
+
+    if (!hasHlsStream && tier2Providers.length > 0) {
+      // No HLS found in Tier 1 -> Automatically trigger Tier 2 (Embed fallbacks)
+      await Promise.allSettled(tier2Providers.map(p => fetchProvider(p)));
+    }
+  }
+
   return buildState();
 }

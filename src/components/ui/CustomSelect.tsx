@@ -68,8 +68,8 @@ export const CustomSelect = ({
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-           "w-full bg-[#121212] hover:bg-[#1a1a1a] border border-white/10 rounded-xl px-4 py-2.5 flex items-center justify-between text-sm text-white font-medium transition-all duration-200 shadow-[0_4px_12px_rgba(0,0,0,0.3)] cursor-pointer hover:border-white/20 active:scale-[0.98]",
-           isOpen && "border-white/30 bg-[#1a1a1a]"
+           "w-full bg-black hover:bg-neutral-900 border border-white/15 rounded-xl px-4 py-2.5 flex items-center justify-between text-sm text-white font-medium transition-all duration-200 shadow-[0_4px_12px_rgba(0,0,0,0.5)] cursor-pointer hover:border-white/30 active:scale-[0.98]",
+           isOpen && "border-white/40 bg-neutral-900"
         )}
       >
         <span className="truncate mr-2 text-white font-medium">{selectedOption?.label}</span>
@@ -80,7 +80,7 @@ export const CustomSelect = ({
         <div 
           ref={dropdownRef}
           style={dropdownStyle} 
-          className="bg-[#121212]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.8)] p-1.5 overflow-hidden text-sm"
+          className="bg-black/95 backdrop-blur-xl border border-white/15 rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.9)] p-1.5 overflow-hidden text-sm"
         >
           <motion.div
             initial={{ opacity: 0, y: -5 }}
