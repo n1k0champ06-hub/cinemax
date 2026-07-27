@@ -129,6 +129,9 @@ const MAL_TO_TMDB_GENRE: Record<string, string> = {
   '13': '36',    // History
   '15': '10762', // Kids
   '27': '10759', // Shounen
+  '30': '10759', // Sports
+  '37': '10765', // Supernatural
+  '41': '53',    // Suspense
 };
 
 const YEARS = [
@@ -304,8 +307,14 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
     // Genres mapping
     let genreId = selectedGenre;
     if (selectedMediaType === 'anime') {
-      const mappedGenre = MAL_TO_TMDB_GENRE[genreId] || genreId;
-      genreId = genreId === 'all' ? '16' : `${mappedGenre},16`;
+      const mappedGenre = MAL_TO_TMDB_GENRE[genreId];
+      if (genreId === 'all') {
+        genreId = '16';
+      } else if (mappedGenre) {
+        genreId = `${mappedGenre},16`;
+      } else {
+        genreId = '16';
+      }
       if (selectedCountry === 'all') {
         params.with_original_language = 'ja';
       }
@@ -394,7 +403,7 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
 
           const queryStr = new URLSearchParams(params as any).toString();
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 3500);
+          const timeoutId = setTimeout(() => controller.abort(), 6000);
 
           const response = await fetch(`https://api.jikan.moe/v4/anime?${queryStr}`, {
             signal: controller.signal
@@ -968,7 +977,12 @@ export const DiscoverPage = ({ onSelect, setTab }: DiscoverPageProps) => {
 
        {!isLoading && movies.length > 0 && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-7">
+          <div className={cn(
+            "grid gap-x-4 gap-y-7",
+            selectedMediaType === 'anime'
+              ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
+              : "grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+          )}>
             {movies.map((movie: any, idx: number) => {
               const displayName = typeof movie.name === 'string' ? movie.name : (movie.title || '');
               const isOriginallyTvPattern = /phần|season|tập|mùa|part|\b(tv|series)\b/i.test(displayName);

@@ -328,7 +328,7 @@ async function fetchFromVietnameseApi(
         if (res.ok) {
           detailData = await res.json();
           if (detailData && (detailData.status === true || detailData.status === 'success' || detailData.movie || detailData.film || detailData.data)) {
-            const movieInfo = detailData.movie || detailData.film || detailData.data || detailData;
+            const movieInfo = detailData?.data?.item || detailData.movie || detailData.film || detailData.data || detailData;
             const fetchedYear = movieInfo?.year ? parseInt(movieInfo.year) : 0;
             const queryYear = query.year ? (typeof query.year === 'string' ? parseInt(query.year) : query.year) : 0;
             
@@ -523,7 +523,8 @@ async function fetchFromVietnameseApi(
                 const res = await fetchWithTimeout(candidateUrl, 6000);
                 if (res.ok) {
                   const data = await res.json();
-                  const movie = data?.movie || data?.film || data?.data;
+                  // v1 API: data.data.item | legacy: data.movie | data.film | data.data
+                  const movie = data?.data?.item || data?.movie || data?.film || data?.data;
                   const mTmdb = movie?.tmdb?.id || movie?.tmdb_id || movie?.tmdbId;
                   const mImdb = movie?.imdb?.id || movie?.imdb_id || movie?.imdbId;
 
@@ -599,8 +600,12 @@ async function fetchFromVietnameseApi(
     if (!detailFetched || !detailData) return [];
 
     // 3. Extract episodes list
+    // /v1/api/phim/ → data.item.episodes | legacy /phim/ → movie.episodes | fallback → episodes
     let serversList: any[] = [];
-    serversList = detailData?.movie?.episodes || detailData?.episodes || [];
+    serversList = detailData?.data?.item?.episodes
+      || detailData?.movie?.episodes
+      || detailData?.episodes
+      || [];
 
     if (!serversList || serversList.length === 0) return [];
 
