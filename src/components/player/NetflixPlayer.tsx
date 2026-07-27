@@ -1446,7 +1446,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                   <div className="space-y-2.5 overflow-y-auto custom-scrollbar pr-2 flex-1">
                     {(() => {
                       const formatAudioName = (s: any) => {
-                        if (!s) return 'Ngôn ngữ gốc [Gốc]';
+                        if (!s) return 'Ngôn ngữ gốc';
                         const label = (s.providerLabel || s.label || s.name || s.provider || '').toLowerCase();
                         const lang = (s.lang || '').toLowerCase();
                         
@@ -1456,27 +1456,25 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                                           label.includes('lồng tiếng việt') || label.includes('thuyết minh việt');
 
                         if (isVietDub) {
-                          if (label.includes('thuyết minh') || label.includes('thuyet minh')) return 'Tiếng Việt [Thuyết minh]';
-                          if (label.includes('lồng tiếng') || label.includes('long tieng')) return 'Tiếng Việt [Lồng tiếng]';
                           return 'Tiếng Việt';
                         }
 
                         // 2. Nếu là nguồn phim sản xuất tại Việt Nam:
-                        if (label.includes('phim việt') || label.includes('phim viet')) return 'Tiếng Việt [Gốc]';
+                        if (label.includes('phim việt') || label.includes('phim viet')) return 'Tiếng Việt';
 
                         // 3. Phim Nhật (Anime), Hàn, Anh, Mỹ:
                         if (lang === 'ja' || label.includes('japanese') || label.includes('anime')) {
-                          return 'Tiếng Nhật [Gốc]';
+                          return 'Tiếng Nhật';
                         }
                         if (lang === 'ko' || label.includes('korean')) {
-                          return 'Tiếng Hàn [Gốc]';
+                          return 'Tiếng Hàn';
                         }
                         if (lang === 'en' || label.includes('english')) {
-                          return 'Tiếng Anh [Gốc]';
+                          return 'Tiếng Anh';
                         }
 
-                        // 4. Mặc định là Ngôn ngữ gốc [Gốc]
-                        return 'Ngôn ngữ gốc [Gốc]';
+                        // 4. Mặc định là Ngôn ngữ gốc
+                        return 'Ngôn ngữ gốc';
                       };
 
                       // CHỈ lọc các nguồn phim HLS (loại bỏ các nguồn embed iframe 3rd party không can thiệp được)
@@ -1490,7 +1488,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                             displayName: formatAudioName(s)
                           }))
                         : [
-                            { displayName: 'Ngôn ngữ gốc [Gốc]', url: url },
+                            { displayName: 'Ngôn ngữ gốc', url: url },
                           ];
 
                       const seenNames = new Set<string>();
@@ -1748,7 +1746,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                             <div className="space-y-2 overflow-y-auto custom-scrollbar pr-1 flex-1 max-h-[25vh]">
                               {(() => {
                                 const formatAudioName = (s: any) => {
-                                  if (!s) return 'Ngôn ngữ gốc [Gốc]';
+                                  if (!s) return 'Ngôn ngữ gốc';
                                   const label = (s.providerLabel || s.label || s.name || s.provider || '').toLowerCase();
                                   const lang = (s.lang || '').toLowerCase();
                                   
@@ -1758,27 +1756,25 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                                                     label.includes('lồng tiếng việt') || label.includes('thuyết minh việt');
 
                                   if (isVietDub) {
-                                    if (label.includes('thuyết minh') || label.includes('thuyet minh')) return 'Tiếng Việt [Thuyết minh]';
-                                    if (label.includes('lồng tiếng') || label.includes('long tieng')) return 'Tiếng Việt [Lồng tiếng]';
                                     return 'Tiếng Việt';
                                   }
 
                                   // 2. Nếu là nguồn phim sản xuất tại Việt Nam:
-                                  if (label.includes('phim việt') || label.includes('phim viet')) return 'Tiếng Việt [Gốc]';
+                                  if (label.includes('phim việt') || label.includes('phim viet')) return 'Tiếng Việt';
 
                                   // 3. Phim Nhật (Anime), Hàn, Anh, Mỹ:
                                   if (lang === 'ja' || label.includes('japanese') || label.includes('anime')) {
-                                    return 'Tiếng Nhật [Gốc]';
+                                    return 'Tiếng Nhật';
                                   }
                                   if (lang === 'ko' || label.includes('korean')) {
-                                    return 'Tiếng Hàn [Gốc]';
+                                    return 'Tiếng Hàn';
                                   }
                                   if (lang === 'en' || label.includes('english')) {
-                                    return 'Tiếng Anh [Gốc]';
+                                    return 'Tiếng Anh';
                                   }
 
-                                  // 4. Mặc định là Ngôn ngữ gốc [Gốc]
-                                  return 'Ngôn ngữ gốc [Gốc]';
+                                  // 4. Mặc định là Ngôn ngữ gốc
+                                  return 'Ngôn ngữ gốc';
                                 };
 
                                 // CHỈ lọc các nguồn phim HLS (loại bỏ các nguồn embed iframe 3rd party không can thiệp được)
@@ -1792,7 +1788,7 @@ export const NetflixPlayer: React.FC<NetflixPlayerProps> = ({
                                       displayName: formatAudioName(s)
                                     }))
                                   : [
-                                      { displayName: 'Ngôn ngữ gốc [Gốc]', url: url },
+                                      { displayName: 'Ngôn ngữ gốc', url: url },
                                     ];
 
                                 const seenNames = new Set<string>();

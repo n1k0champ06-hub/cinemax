@@ -317,11 +317,11 @@ async function fetchFromVietnameseApi(
     if (canDirectFetch && slug) {
       let detailUrl = '';
       if (providerId === 'ophim') {
-        detailUrl = `https://ophim1.com/phim/${slug}`;
+        detailUrl = `https://ophim1.com/v1/api/phim/${slug}`;
       } else if (providerId === 'nguonc') {
         detailUrl = `https://phim.nguonc.com/api/film/${slug}`;
       } else {
-        detailUrl = `https://phimapi.com/phim/${slug}`;
+        detailUrl = `https://phimapi.com/v1/api/phim/${slug}`;
       }
       try {
         const res = await fetchWithTimeout(detailUrl, 6000);
@@ -354,11 +354,11 @@ async function fetchFromVietnameseApi(
           const aiSlug = aiMapping.slug;
           let aiDetailUrl = '';
           if (providerId === 'ophim') {
-            aiDetailUrl = `https://ophim1.com/phim/${aiSlug}`;
+            aiDetailUrl = `https://ophim1.com/v1/api/phim/${aiSlug}`;
           } else if (providerId === 'nguonc') {
             aiDetailUrl = `https://phim.nguonc.com/api/film/${aiSlug}`;
           } else {
-            aiDetailUrl = `https://phimapi.com/phim/${aiSlug}`;
+            aiDetailUrl = `https://phimapi.com/v1/api/phim/${aiSlug}`;
           }
 
           const res = await fetchWithTimeout(aiDetailUrl, 5000);
@@ -492,10 +492,10 @@ async function fetchFromVietnameseApi(
 
         if (directMatch && directMatch.slug) {
           let directUrl = providerId === 'ophim'
-            ? `https://ophim1.com/phim/${directMatch.slug}`
+            ? `https://ophim1.com/v1/api/phim/${directMatch.slug}`
             : providerId === 'nguonc'
             ? `https://phim.nguonc.com/api/film/${directMatch.slug}`
-            : `https://phimapi.com/phim/${directMatch.slug}`;
+            : `https://phimapi.com/v1/api/phim/${directMatch.slug}`;
 
           try {
             const res = await fetchWithTimeout(directUrl, 6000);
@@ -515,10 +515,10 @@ async function fetchFromVietnameseApi(
           const idMatches = await Promise.allSettled(
             topCandidates.map(async (item) => {
               let candidateUrl = providerId === 'ophim'
-                ? `https://ophim1.com/phim/${item.slug}`
+                ? `https://ophim1.com/v1/api/phim/${item.slug}`
                 : providerId === 'nguonc'
                 ? `https://phim.nguonc.com/api/film/${item.slug}`
-                : `https://phimapi.com/phim/${item.slug}`;
+                : `https://phimapi.com/v1/api/phim/${item.slug}`;
               try {
                 const res = await fetchWithTimeout(candidateUrl, 6000);
                 if (res.ok) {
@@ -576,11 +576,11 @@ async function fetchFromVietnameseApi(
           slug = matchedSlug;
           let detailUrl = '';
           if (providerId === 'ophim') {
-            detailUrl = `https://ophim1.com/phim/${slug}`;
+            detailUrl = `https://ophim1.com/v1/api/phim/${slug}`;
           } else if (providerId === 'nguonc') {
             detailUrl = `https://phim.nguonc.com/api/film/${slug}`;
           } else {
-            detailUrl = `https://phimapi.com/phim/${slug}`;
+            detailUrl = `https://phimapi.com/v1/api/phim/${slug}`;
           }
           
           try {
