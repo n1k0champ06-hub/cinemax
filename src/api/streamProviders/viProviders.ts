@@ -477,54 +477,82 @@ async function fetchFromVietnameseApi(
       // 2a. 100% Exact TMDB/IMDb ID Verification on Top Candidates
       // Search list endpoint (/v1/api/tim-kiem) doesn't include tmdb/imdb IDs in items array.
       // We check detail endpoint (/phim/{slug}) for top candidates to match TMDB/IMDb IDs with 100% precision.
-      if (query.tmdbId || query.imdbId) {
-        const topCandidates = uniqueItems.slice(0, 5);
-        const idMatches = await Promise.allSettled(
-          topCandidates.map(async (item) => {
-            let candidateUrl = '';
-            if (providerId === 'ophim') {
-              candidateUrl = `https://ophim1.com/phim/${item.slug}`;
-            } else if (providerId === 'nguonc') {
-              candidateUrl = `https://phim.nguonc.com/api/film/${item.slug}`;
-            } else {
-              candidateUrl = `https://phimapi.com/phim/${item.slug}`;
+      // 2a. 100% Exact TMDB/IMDb ID Verification on Candidates
+      const targetTmdb = query.tmdbId ? String(query.tmdbId) : null;
+      const targetImdb = query.imdbId ? String(query.imdbId) : null;
+
+      if (targetTmdb || targetImdb) {
+        // First check if search response items already contain matching TMDB/IMDb ID
+        const directMatch = uniqueItems.find(item => {
+          const mTmdb = item.tmdb?.id || item.tmdb_id || item.tmdbId;
+          const mImdb = item.imdb?.id || item.imdb_id || item.imdbId;
+          return (targetTmdb && mTmdb && String(mTmdb) === targetTmdb) ||
+                 (targetImdb && mImdb && String(mImdb) === targetImdb);
+        });
+
+        if (directMatch && directMatch.slug) {
+          let directUrl = providerId === 'ophim'
+            ? `https://ophim1.com/phim/${directMatch.slug}`
+            : providerId === 'nguonc'
+            ? `https://phim.nguonc.com/api/film/${directMatch.slug}`
+            : `https://phimapi.com/phim/${directMatch.slug}`;
+
+          try {
+            const res = await fetchWithTimeout(directUrl, 6000);
+            if (res.ok) {
+              detailData = await res.json();
+              slug = directMatch.slug;
+              detailFetched = true;
+              console.log(`[${providerLabel}] Direct search TMDB/IMDb ID Match confirmed for slug: ${slug}`);
             }
-            try {
-              const res = await fetchWithTimeout(candidateUrl, 3500);
-              if (res.ok) {
-                const data = await res.json();
-                const movie = data?.movie || data?.film || data?.data;
-                const mTmdb = movie?.tmdb?.id || movie?.tmdb_id || movie?.tmdbId;
-                const mImdb = movie?.imdb?.id || movie?.imdb_id || movie?.imdbId;
-                
-                const targetTmdb = query.tmdbId ? String(query.tmdbId) : null;
-                const targetImdb = query.imdbId ? String(query.imdbId) : null;
+          } catch (e) {
+            console.warn(`[${providerLabel}] Direct match fetch failed for ${directMatch.slug}:`, e);
+          }
+        }
 
-                const tmdbMatched = targetTmdb && mTmdb && String(mTmdb) === targetTmdb;
-                const imdbMatched = targetImdb && mImdb && String(mImdb) === targetImdb;
+        if (!detailFetched) {
+          const topCandidates = uniqueItems.slice(0, 5);
+          const idMatches = await Promise.allSettled(
+            topCandidates.map(async (item) => {
+              let candidateUrl = providerId === 'ophim'
+                ? `https://ophim1.com/phim/${item.slug}`
+                : providerId === 'nguonc'
+                ? `https://phim.nguonc.com/api/film/${item.slug}`
+                : `https://phimapi.com/phim/${item.slug}`;
+              try {
+                const res = await fetchWithTimeout(candidateUrl, 6000);
+                if (res.ok) {
+                  const data = await res.json();
+                  const movie = data?.movie || data?.film || data?.data;
+                  const mTmdb = movie?.tmdb?.id || movie?.tmdb_id || movie?.tmdbId;
+                  const mImdb = movie?.imdb?.id || movie?.imdb_id || movie?.imdbId;
 
-                if (tmdbMatched || imdbMatched) {
-                  if (isTv && query.season && movie?.tmdb?.season) {
-                    if (Number(movie.tmdb.season) === query.season) {
+                  const tmdbMatched = targetTmdb && mTmdb && String(mTmdb) === targetTmdb;
+                  const imdbMatched = targetImdb && mImdb && String(mImdb) === targetImdb;
+
+                  if (tmdbMatched || imdbMatched) {
+                    if (isTv && query.season && movie?.tmdb?.season) {
+                      if (Number(movie.tmdb.season) === query.season) {
+                        return { slug: item.slug, data };
+                      }
+                    } else {
                       return { slug: item.slug, data };
                     }
-                  } else {
-                    return { slug: item.slug, data };
                   }
                 }
-              }
-            } catch (_) {}
-            return null;
-          })
-        );
+              } catch (_) {}
+              return null;
+            })
+          );
 
-        for (const res of idMatches) {
-          if (res.status === 'fulfilled' && res.value) {
-            slug = res.value.slug;
-            detailData = res.value.data;
-            detailFetched = true;
-            console.log(`[${providerLabel}] 100% TMDB/IMDb ID Match confirmed for slug: ${slug}`);
-            break;
+          for (const res of idMatches) {
+            if (res.status === 'fulfilled' && res.value) {
+              slug = res.value.slug;
+              detailData = res.value.data;
+              detailFetched = true;
+              console.log(`[${providerLabel}] 100% TMDB/IMDb ID Match confirmed for slug: ${slug}`);
+              break;
+            }
           }
         }
       }
