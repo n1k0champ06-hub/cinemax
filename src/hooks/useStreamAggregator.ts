@@ -268,13 +268,14 @@ export function useStreamAggregator({
                 referer = 'https://phim.nguonc.com/';
               }
 
-              const proxiedUrl = buildProxiedM3u8Url(directUrl, referer);
+              const isViCDN = directUrl.includes('phimapi') || directUrl.includes('ophim') || directUrl.includes('phimimg') || directUrl.includes('nguonc');
+              const finalUrl = isViCDN ? directUrl : buildProxiedM3u8Url(directUrl, referer);
               const normDirectUrl = directUrl.trim().toLowerCase();
-              const normProxiedUrl = proxiedUrl.trim().toLowerCase();
+              const normFinalUrl = finalUrl.trim().toLowerCase();
 
               const exists = updatedList.some(s => {
                 const u = s.url.trim().toLowerCase();
-                return u === normDirectUrl || u === normProxiedUrl;
+                return u === normDirectUrl || u === normFinalUrl;
               });
 
               if (!exists) {
@@ -283,7 +284,7 @@ export function useStreamAggregator({
                   provider: providerId,
                   providerLabel: serverLabel,
                   type: 'hls',
-                  url: proxiedUrl, // Use proxied URL to filter ads and bypass CORS/403
+                  url: finalUrl, // Use proxied URL to filter ads and bypass CORS/403
                   quality: 'auto',
                   lang: 'vi',
                   label: `${serverLabel} · auto (Direct)`,

@@ -641,12 +641,8 @@ async function fetchFromVietnameseApi(
       // Add HLS stream if available (skip NguonC HLS — không ổn định, chỉ giữ embed)
       if (providerId !== 'nguonc' && activeEp.link_m3u8 && String(activeEp.link_m3u8).startsWith('http')) {
         const rawUrl = activeEp.link_m3u8;
-        let referer = '';
-        if (providerId === 'ophim') referer = 'https://ophim1.com/';
-        else if (providerId === 'kkphim') referer = 'https://phimapi.com/';
-        else if (providerId === 'nguonc') referer = 'https://phim.nguonc.com/';
-
-        const url = buildProxiedM3u8Url(rawUrl, referer);
+        // Direct stream URL for VI CDN (KKPhim/OPhim support CORS natively and block proxy IPs)
+        const url = rawUrl;
 
         const item: Omit<StreamItem, 'score'> = {
           id: `${providerId}:hls:${serverName}:${rawUrl}`,
