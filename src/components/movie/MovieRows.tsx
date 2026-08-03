@@ -1,7 +1,7 @@
 // Added imports and logic for TmdbMovieRow
 import React, { useRef, useState, useEffect, useMemo } from "react";
 import { ChevronLeft, ChevronRight, ArrowLeft, ArrowRight, ListFilter } from "lucide-react";
-import { keepPreviousData, useQueries } from "@tanstack/react-query";
+import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 import { cn } from "../../lib/utils";
 import { MovieCard } from "./MovieCard";
 import { RankingCard } from "./RankingCard";
@@ -10,6 +10,77 @@ import { useIntersectionObserver } from "../../hooks/useIntersectionObserver";
 import { useWatchProgress, useMyList } from "../../hooks/useStorage";
 import { fetchDetail } from "../../api/phimApi";
 import { useTmdbDiscover, useTmdbBulkDetails } from "../../hooks/useTmdb";
+import { fetchAnimeSfw } from "../../api/tmdbApi";
+
+// Genre map từ row type sang fetchAnimeSfw genre param
+const ANIME_SFW_GENRE_MAP: Record<string, 'action' | 'fantasy' | 'romance' | 'comedy' | 'kids' | ''> = {
+  'anime-action':  'action',
+  'anime-fantasy': 'fantasy',
+  'anime-romance': 'romance',
+  'anime-comedy':  'comedy',
+  'anime-kids':    'kids',
+  'anime-popular': '',
+  'hoat-hinh-nhat': '',
+};
+
+/**
+ * Hook: Lấy SFW anime từ MongoDB catalog trước, fallback về TMDB discover nếu DB chưa có dữ liệu.
+ * Kết quả trả về đã có TMDB ID → dùng TMDB images.
+ */
+function useAnimeSfwOrDiscover(
+  type: string,
+  tmdbMovieParams: any,
+  tmdbTvParams: any,
+  enabled: boolean
+) {
+  const sfwGenre = ANIME_SFW_GENRE_MAP[type];
+  const isAnimeRow = type in ANIME_SFW_GENRE_MAP;
+
+  // Primary: MongoDB SFW catalog
+  const { data: sfwData, isLoading: sfwLoading } = useQuery({
+    queryKey: ['anime-sfw', type, sfwGenre],
+    queryFn: () => fetchAnimeSfw({ genre: sfwGenre }),
+    enabled: enabled && isAnimeRow,
+    staleTime: 60 * 60 * 1000, // 1h — MongoDB data được sync mỗi 24h
+    retry: 1,
+  });
+
+  // Fallback: TMDB discover (khi MongoDB chưa có data)
+  const sfwEmpty = !sfwLoading && (!sfwData?.results?.length);
+  const { data: movieData, isLoading: movieLoading } = useTmdbDiscover(
+    'movie', tmdbMovieParams,
+    { enabled: enabled && (!isAnimeRow || sfwEmpty) }
+  );
+  const { data: tvData, isLoading: tvLoading } = useTmdbDiscover(
+    'tv', tmdbTvParams,
+    { enabled: enabled && (!isAnimeRow || sfwEmpty) }
+  );
+
+  if (isAnimeRow && !sfwEmpty && sfwData?.results?.length) {
+    // Transform SFW catalog items sang format MovieRow cần
+    const results = sfwData.results
+      .filter(item => item.tmdb_id)
+      .map(item => ({
+        id:           Number(item.tmdb_id),
+        _mediaType:   (item.type === 'Movie' ? 'movie' : 'tv') as 'movie' | 'tv',
+        name:         item.title || item.title_ja,
+        title:        item.title || item.title_ja,
+        poster_path:  null, // sẽ được resolve qua useTmdbBulkDetails bên dưới
+        backdrop_path: null,
+        popularity:   item.score,
+        _tmdbId:      item.tmdb_id,
+      }));
+    return { results, isLoading: sfwLoading };
+  }
+
+  // TMDB discover fallback
+  const movieResults = movieData?.results?.map((m: any) => ({ ...m, _mediaType: 'movie' as const })) || [];
+  const tvResults    = tvData?.results?.map((m: any) => ({ ...m, _mediaType: 'tv' as const })) || [];
+  return {
+    results: [...movieResults, ...tvResults],
+    isLoading: movieLoading || tvLoading,
+  };
+}
 
 export const CustomMovieRowContainer = React.memo(({
   title,
@@ -255,6 +326,7 @@ export const MovieRow = ({
   
   if (isAnime) {
     movieParams.with_original_language = 'ja';
+    movieParams.without_keywords = '190370,198385,155477,256466,325693'; // hentai/softcore/erotic keyword IDs trên TMDB
     if (type === 'anime-action') {
       movieParams.with_genres = '16,28';
       movieParams.without_genres = '10751,10762'; // Exclude Family, Kids to prevent family anime from bloating action rows
@@ -290,6 +362,7 @@ export const MovieRow = ({
 
   if (isAnime) {
     tvParams.with_original_language = 'ja';
+    tvParams.without_keywords = '190370,198385,155477,256466,325693'; // hentai/softcore/erotic keyword IDs trên TMDB
     if (type === 'anime-action') {
       tvParams.with_genres = '16,10759';
       tvParams.without_genres = '10751,10762'; // Exclude Family, Kids to prevent family anime from bloating action rows
@@ -313,10 +386,12 @@ export const MovieRow = ({
     tvParams.with_origin_country = 'CN|HK|TW';
   }
 
-  // Dual React Queries — fetch sớm khi shouldFetch, render khi hasIntersected
-  const { data: movieData, isLoading: movieLoading } = useTmdbDiscover('movie', movieParams, { enabled: shouldFetch && showMovie });
-  const { data: tvData, isLoading: tvLoading } = useTmdbDiscover('tv', tvParams, { enabled: shouldFetch && showTv });
+  // Primary: MongoDB SFW catalog (anime rows) | Fallback: TMDB discover (non-anime or empty DB)
+  const { results: combinedRaw, isLoading } = useAnimeSfwOrDiscover(
+    type, movieParams, tvParams, shouldFetch
+  );
   const { progressStore } = useWatchProgress();
+
 
   if (!hasIntersected) {
     return (
@@ -335,19 +410,11 @@ export const MovieRow = ({
     );
   }
 
-  const isLoading = (showMovie && movieLoading) || (showTv && tvLoading);
-  const showLoading = isLoading;
+  const isLoading_ = isLoading;
+  const showLoading = isLoading_;
 
-  const movieResults = showMovie && movieData?.results ? movieData.results : [];
-  const tvResults = showTv && tvData?.results ? tvData.results : [];
+  const sortedResults = combinedRaw.sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0));
 
-  const combinedResults = [
-    ...movieResults.map((item: any) => ({ ...item, _mediaType: 'movie' as const })),
-    ...tvResults.map((item: any) => ({ ...item, _mediaType: 'tv' as const })),
-  ];
-
-  // Sort dynamically by popularity descending across both types
-  const sortedResults = combinedResults.sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0));
 
   const seenTmdbIds = new Set();
   const moviesToDisplay = sortedResults

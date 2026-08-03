@@ -4,6 +4,10 @@
 const USE_PROXY = true;
 export const TMDB_BASE_URL = 'https://focusflow.id.vn/tmdb';
 
+// Backend URL (Cloudflare Worker) — proxies to Hollysheesh bridge
+const BACKEND_BASE_URL = (import.meta.env?.VITE_BACKEND_URL || 'https://focusflow.id.vn').replace(/\/$/, '');
+
+
 // Nếu dùng PROXY thì client sẽ KHÔNG truyền token nữa (để ẩn token)
 // Hãy cấu hình biến môi trường VITE_TMDB_ACCESS_TOKEN (hoặc TMDB_ACCESS_TOKEN) trên Cloudflare Dashboard hoặc wrangler.json
 
@@ -136,8 +140,8 @@ export const tmdbGetTopRated = (mediaType: 'movie' | 'tv' = 'movie', page = 1) =
 export const tmdbGetPopular = (mediaType: 'movie' | 'tv' = 'movie', page = 1) => 
   fetchTmdb(`/${mediaType}/popular`, { page });
 
-export const tmdbDiscover = (mediaType: 'movie' | 'tv' = 'movie', params: Record<string, string | number | boolean> = {}) => 
-  fetchTmdb(`/discover/${mediaType}`, params);
+export const tmdbDiscover = (mediaType: 'movie' | 'tv' = 'movie', params: Record<string, string | number | boolean> = {}) =>
+  fetchTmdb(`/discover/${mediaType}`, { include_adult: false, ...params });
 
 export const tmdbFindByExternalId = (externalId: string, source: 'imdb_id' | 'tvdb_id' = 'imdb_id') => 
   fetchTmdb(`/find/${externalId}`, { external_source: source });
@@ -174,3 +178,43 @@ export const tmdbBackdropUrl = (path: string | null | undefined, forceSize?: 'w3
   const size = forceSize ?? (isMobileScreen() ? 'w780' : 'w1280');
   return `https://image.tmdb.org/t/p/${size}${cleanPath}`;
 };
+
+// ─── SFW Anime Catalog (MongoDB-backed, Jikan-synced) ─────────────────────────
+
+export type AnimeSfwItem = {
+  mal_id: number;
+  tmdb_id: string | null;
+  title: string;
+  title_ja: string;
+  type: 'TV' | 'Movie' | string;
+  genres: string[];
+  score: number;
+  year: number | null;
+};
+
+/**
+ * Fetch SFW anime list từ MongoDB (synced từ Jikan với sfw=true).
+ * Chỉ trả về items có tmdb_id để frontend dùng TMDB images.
+ */
+export const fetchAnimeSfw = async (params: {
+  genre?: 'action' | 'fantasy' | 'romance' | 'comedy' | 'kids' | '';
+  type?: 'TV' | 'Movie' | '';
+  page?: number;
+} = {}): Promise<{ results: AnimeSfwItem[]; has_next_page: boolean; total: number }> => {
+  const qs = new URLSearchParams();
+  if (params.genre) qs.set('genre', params.genre);
+  if (params.type)  qs.set('type', params.type);
+  if (params.page)  qs.set('page', String(params.page));
+
+  const res = await fetch(`${BACKEND_BASE_URL}/api/anime-sfw?${qs}`, {
+    signal: AbortSignal.timeout(6000),
+  });
+  if (!res.ok) throw new Error(`anime-sfw API error: ${res.status}`);
+  const data = await res.json();
+  return {
+    results:       data.results || [],
+    has_next_page: data.has_next_page || false,
+    total:         data.total || 0,
+  };
+};
+

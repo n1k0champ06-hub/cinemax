@@ -1542,9 +1542,50 @@ async function handleRequest(request, env, ctx) {
       }
     }
 
+    // 8b. SFW Anime catalog từ MongoDB (Jikan-synced) → /api/anime-sfw
+    if (url.pathname === "/api/anime-sfw") {
+      const hollysheeshApiUrl = (env.HOLLYSHEESH_API_URL || '').trim().replace(/\/$/, '');
+      if (!hollysheeshApiUrl) {
+        return json({ ok: true, results: [], note: 'HOLLYSHEESH_API_URL not configured' });
+      }
+      try {
+        const forwardUrl = `${hollysheeshApiUrl}/api/anime-sfw${url.search}`;
+        const res = await fetch(forwardUrl, {
+          headers: { 'User-Agent': 'CinemaxWorker/1.0', 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (!res.ok) return json({ ok: true, results: [], error: `Bridge returned ${res.status}` });
+        const data = await res.json();
+        return new Response(JSON.stringify(data), {
+          status: 200,
+          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=3600' },
+        });
+      } catch (err) {
+        console.error('[worker-anime-sfw] Bridge error:', err.message);
+        return json({ ok: true, results: [], error: err.message });
+      }
+    }
+
+    // 8c. Trigger Jikan sync → /api/anime-sfw/sync (POST)
+    if (url.pathname === "/api/anime-sfw/sync" && request.method === "POST") {
+      const hollysheeshApiUrl = (env.HOLLYSHEESH_API_URL || '').trim().replace(/\/$/, '');
+      if (!hollysheeshApiUrl) return json({ ok: false, error: 'HOLLYSHEESH_API_URL not configured' }, 503);
+      try {
+        const res = await fetch(`${hollysheeshApiUrl}/api/anime-sfw/sync`, {
+          method: 'POST',
+          headers: { 'User-Agent': 'CinemaxWorker/1.0', 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(5000),
+        });
+        const data = await res.json();
+        return json(data);
+      } catch (err) {
+        return json({ ok: false, error: err.message }, 502);
+      }
+    }
 
     // 9a. AniList bulk cover resolver -> /api/anilist/bulk
     if (url.pathname === "/api/anilist/bulk") {
+
       const queriesParam = url.searchParams.get('queries') || '';
       if (!queriesParam) {
         return json({ error: 'Missing queries param' }, 400);

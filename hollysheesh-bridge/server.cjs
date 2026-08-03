@@ -3,10 +3,12 @@
 /**
  * Hollysheesh Bridge API
  * Routes:
- *   GET /health                      — health check
- *   GET /api/admin/scraper/streams   — MongoDB stream lookup
- *   GET /api/admin/scraper/stats     — DB stats
- *   GET /proxy/m3u8                  — HLS proxy (bypass Cloudflare IP block for VI CDNs)
+ *   GET /health                        — health check
+ *   GET /api/admin/scraper/streams     — MongoDB stream lookup
+ *   GET /api/admin/scraper/stats       — DB stats
+ *   GET /api/anime-sfw                 — Query SFW anime từ MongoDB (filter by genre, type, page)
+ *   POST /api/anime-sfw/sync           — Trigger Jikan sync job
+ *   GET /proxy/m3u8                    — HLS proxy (bypass Cloudflare IP block for VI CDNs)
  */
 
 const http = require('http');
@@ -354,8 +356,98 @@ async function handleSemanticSearch(req, res, searchParams) {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP Server
+// Route: GET /api/anime-sfw
+// Query SFW anime từ MongoDB anime_sfw collection
+// Params:
+//   genre    - tên genre (action|fantasy|romance|comedy|kids|) — empty = tất cả
+//   type     - TV | Movie | (empty = tất cả)
+//   tmdb_only - true = chỉ trả về những item có tmdb_id
+//   page     - page number (default 1, 20 items/page)
 // ---------------------------------------------------------------------------
+async function handleAnimeSfw(req, res, searchParams) {
+  if (!db) return json(res, { ok: false, error: 'Database not connected', results: [] }, 503);
+
+  const genreParam  = searchParams.get('genre') || '';
+  const typeParam   = searchParams.get('type') || '';
+  const tmdbOnly    = searchParams.get('tmdb_only') !== 'false'; // default true
+  const page        = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+  const limit       = 20;
+  const skip        = (page - 1) * limit;
+
+  const GENRE_MAP = {
+    action:  'Action',
+    fantasy: 'Fantasy',
+    romance: 'Romance',
+    comedy:  'Comedy',
+    kids:    'Kids',
+  };
+
+  try {
+    const filter = {};
+
+    // Chỉ trả về anime có tmdb_id để frontend có thể dùng TMDB images
+    if (tmdbOnly) filter.tmdb_id = { $ne: null };
+
+    // Filter theo genre
+    if (genreParam && GENRE_MAP[genreParam.toLowerCase()]) {
+      filter.genres = GENRE_MAP[genreParam.toLowerCase()];
+    }
+
+    // Filter theo type (TV / Movie)
+    if (typeParam && ['TV', 'Movie'].includes(typeParam)) {
+      filter.type = typeParam;
+    }
+
+    const [results, total] = await Promise.all([
+      db.collection('anime_sfw')
+        .find(filter)
+        .sort({ popularity: 1 }) // MAL popularity: số nhỏ hơn = phổ biến hơn
+        .skip(skip)
+        .limit(limit)
+        .project({ _id: 0, mal_id: 1, tmdb_id: 1, title: 1, title_ja: 1, type: 1, genres: 1, score: 1, year: 1 })
+        .toArray(),
+      db.collection('anime_sfw').countDocuments(filter),
+    ]);
+
+    return json(res, {
+      ok: true,
+      page,
+      total,
+      has_next_page: skip + results.length < total,
+      results,
+    });
+  } catch (err) {
+    console.error('[Bridge] anime-sfw query error:', err.message);
+    return json(res, { ok: false, error: err.message, results: [] }, 500);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Route: POST /api/anime-sfw/sync — trigger Jikan sync (chạy background)
+// ---------------------------------------------------------------------------
+async function handleAnimeSfwSync(req, res) {
+  // Prevent concurrent syncs
+  if (handleAnimeSfwSync._running) {
+    return json(res, { ok: false, error: 'Sync already running' }, 409);
+  }
+  handleAnimeSfwSync._running = true;
+
+  // Respond ngay, sync chạy background
+  json(res, { ok: true, message: 'Jikan sync started in background' });
+
+  try {
+    const { runSync } = require('./jikan-sync.cjs');
+    const result = await runSync();
+    console.log('[Bridge] Jikan sync completed:', result);
+  } catch (e) {
+    console.error('[Bridge] Jikan sync error:', e.message);
+  } finally {
+    handleAnimeSfwSync._running = false;
+  }
+}
+handleAnimeSfwSync._running = false;
+
+
 const server = http.createServer(async (req, res) => {
   const parsed = urlModule.parse(req.url, true);
   const pathname = parsed.pathname;
@@ -400,6 +492,14 @@ const server = http.createServer(async (req, res) => {
   }
 
 
+
+  if (pathname === '/api/anime-sfw') {
+    return await handleAnimeSfw(req, res, searchParams);
+  }
+
+  if (pathname === '/api/anime-sfw/sync' && req.method === 'POST') {
+    return await handleAnimeSfwSync(req, res);
+  }
 
   return json(res, { error: 'Not found' }, 404);
 });
