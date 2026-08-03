@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, HelpCircle, Film, Play, Subtitles, Keyboard, Search, 
-  Heart, Clock, Smartphone, Download, Check, Sparkles, Monitor, Lock, ShieldCheck, Activity
+  Heart, Clock, Smartphone, Download, Check, Sparkles, Monitor, Lock, ShieldCheck, Activity,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { ApiStatusDashboard } from './ApiStatusDashboard';
@@ -15,6 +16,7 @@ type TabId = 'general' | 'player' | 'subtitle' | 'pwa' | 'shortcuts' | 'api-stat
 
 export const UserGuideModal: React.FC<UserGuideModalProps> = ({ onClose }) => {
   const [activeTab, setActiveTab] = useState<TabId>('general');
+  const tabNavRef = useRef<HTMLDivElement>(null);
 
   const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
     { id: 'general', label: 'Hướng dẫn Xem phim', icon: <Film size={15} /> },
@@ -32,6 +34,19 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({ onClose }) => {
         (window as any).triggerPWAInstall();
       }
     }, 200);
+  };
+
+  const scrollTabs = (direction: 'left' | 'right') => {
+    if (tabNavRef.current) {
+      const scrollAmount = direction === 'left' ? -200 : 200;
+      tabNavRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (tabNavRef.current && e.deltaY !== 0) {
+      tabNavRef.current.scrollLeft += e.deltaY;
+    }
   };
 
   return (
@@ -66,30 +81,55 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({ onClose }) => {
           </button>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex border-b border-white/5 bg-[#0f0f13] overflow-x-auto scrollbar-hide shrink-0 px-4">
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "px-4 py-3.5 text-xs font-bold transition-all relative flex items-center gap-2 shrink-0 cursor-pointer",
-                  isActive ? "text-[#E50914]" : "text-gray-400 hover:text-white"
-                )}
-              >
-                {tab.icon}
-                <span>{tab.label}</span>
-                {isActive && (
-                  <motion.div 
-                    layoutId="activeGuideTabLine" 
-                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#E50914]" 
-                  />
-                )}
-              </button>
-            );
-          })}
+        {/* Tab Navigation with PC Scroll Buttons */}
+        <div className="relative flex items-center border-b border-white/5 bg-[#0f0f13] shrink-0 group">
+          {/* Scroll Left Button */}
+          <button
+            onClick={() => scrollTabs('left')}
+            className="absolute left-1 z-10 p-1.5 rounded-lg bg-[#0d0d10]/90 text-gray-400 hover:text-white hover:bg-white/10 border border-white/10 shadow-md backdrop-blur-md transition-all cursor-pointer hidden sm:flex items-center justify-center"
+            title="Cuộn qua trái"
+          >
+            <ChevronLeft size={16} />
+          </button>
+
+          {/* Scrollable Tabs */}
+          <div 
+            ref={tabNavRef}
+            onWheel={handleWheel}
+            className="flex overflow-x-auto scrollbar-hide shrink-0 px-4 sm:px-8 space-x-1 scroll-smooth w-full select-none"
+          >
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    "px-4 py-3.5 text-xs font-bold transition-all relative flex items-center gap-2 shrink-0 cursor-pointer whitespace-nowrap",
+                    isActive ? "text-[#E50914]" : "text-gray-400 hover:text-white"
+                  )}
+                >
+                  {tab.icon}
+                  <span>{tab.label}</span>
+                  {isActive && (
+                    <motion.div 
+                      layoutId="activeGuideTabLine" 
+                      className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#E50914]" 
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Scroll Right Button */}
+          <button
+            onClick={() => scrollTabs('right')}
+            className="absolute right-1 z-10 p-1.5 rounded-lg bg-[#0d0d10]/90 text-gray-400 hover:text-white hover:bg-white/10 border border-white/10 shadow-md backdrop-blur-md transition-all cursor-pointer hidden sm:flex items-center justify-center"
+            title="Cuộn qua phản"
+          >
+            <ChevronRight size={16} />
+          </button>
         </div>
 
         {/* Content Box */}
