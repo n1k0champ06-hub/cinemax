@@ -2,15 +2,16 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, HelpCircle, Film, Play, Subtitles, Keyboard, Search, 
-  Heart, Clock, Smartphone, Download, Check, Sparkles, Monitor, Lock, ShieldCheck
+  Heart, Clock, Smartphone, Download, Check, Sparkles, Monitor, Lock, ShieldCheck, Activity
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { ApiStatusDashboard } from './ApiStatusDashboard';
 
 interface UserGuideModalProps {
   onClose: () => void;
 }
 
-type TabId = 'general' | 'player' | 'subtitle' | 'pwa' | 'shortcuts';
+type TabId = 'general' | 'player' | 'subtitle' | 'pwa' | 'shortcuts' | 'api-status';
 
 export const UserGuideModal: React.FC<UserGuideModalProps> = ({ onClose }) => {
   const [activeTab, setActiveTab] = useState<TabId>('general');
@@ -21,6 +22,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({ onClose }) => {
     { id: 'subtitle', label: 'Bật Phụ đề (Sub)', icon: <Subtitles size={15} /> },
     { id: 'pwa', label: 'Tải App Cinemax (PWA)', icon: <Smartphone size={15} /> },
     { id: 'shortcuts', label: 'Phím tắt nhanh', icon: <Keyboard size={15} /> },
+    { id: 'api-status', label: 'Trạng thái API', icon: <Activity size={15} /> },
   ];
 
   const handleOpenPWAPrompt = () => {
@@ -331,6 +333,9 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({ onClose }) => {
                   </div>
                 </div>
               )}
+
+              {/* TAB 6: API STATUS DASHBOARD */}
+              {activeTab === 'api-status' && <ApiStatusDashboard />}
             </motion.div>
           </AnimatePresence>
         </div>

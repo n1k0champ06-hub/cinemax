@@ -2792,7 +2792,14 @@ function filterPlaylistAds(text, url = '') {
   }
 
   const hadTrailingNewline = /\r?\n$/.test(text);
-  const lines = text.split(/\r?\n/);
+  let normalized = false;
+  const lines = text.split(/\r?\n/).map((line) => {
+    if (isSegmentUri(line) && CONVERT_PREFIX_PATTERN.test(line.trim())) {
+      normalized = true;
+      return normalizeSegmentUri(line);
+    }
+    return line;
+  });
 
   const blocks = [];
   let blockStart = 0;
