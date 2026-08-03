@@ -28,16 +28,12 @@ const importSearchPage = () => import("./components/pages/SearchPage");
 const importListingPage = () => import("./components/pages/ListingPage");
 const importDiscoverPage = () => import("./components/pages/DiscoverPage");
 const importSwipePage = () => import("./components/pages/SwipePage");
-const importFootballPage = () => import("./components/pages/FootballPage");
-const importMusicPage = () => import("./components/pages/MusicPage");
 
 const MovieDetail = lazy(() => importMovieDetail().then(m => ({ default: m.MovieDetail })));
 const SearchPage = lazy(() => importSearchPage().then(m => ({ default: m.SearchPage })));
 const ListingPage = lazy(() => importListingPage().then(m => ({ default: m.ListingPage })));
 const DiscoverPage = lazy(() => importDiscoverPage().then(m => ({ default: m.DiscoverPage })));
 const SwipePage = lazy(() => importSwipePage().then(m => ({ default: m.SwipePage })));
-const FootballPage = lazy(() => importFootballPage().then(m => ({ default: m.FootballPage })));
-const MusicPage = lazy(() => importMusicPage().then(m => ({ default: m.MusicPage })));
 const UserGuideModal = lazy(() => import("./components/layout/UserGuideModal").then(m => ({ default: m.UserGuideModal })));
 const ReportNotification = lazy(() => import("./components/layout/ReportNotification").then(m => ({ default: m.ReportNotification })));
 const GodModeConsole = lazy(() => import("./components/debug/GodModeConsole").then(m => ({ default: m.GodModeConsole })));
@@ -51,8 +47,6 @@ if (typeof window !== 'undefined') {
     importListingPage();
     importDiscoverPage();
     importSwipePage();
-    importFootballPage();
-    importMusicPage();
   };
   if ('requestIdleCallback' in window) {
     window.requestIdleCallback(preloadAllPages, { timeout: 3000 });
@@ -592,26 +586,6 @@ export default function App() {
               </div>
             </motion.div>
 
-          ) : currentTab === "football" ? (
-            <motion.div
-              key="football"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.18, ease: "easeInOut" }}
-            >
-              <FootballPage />
-            </motion.div>
-          ) : currentTab === "music" ? (
-            <motion.div
-              key="music"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.18, ease: "easeInOut" }}
-            >
-              <MusicPage />
-            </motion.div>
           ) : currentTab === "discover" ? (
             <motion.div
               key="discover"

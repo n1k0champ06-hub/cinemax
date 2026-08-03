@@ -10,8 +10,6 @@ import {
   LayoutGrid,
   Heart,
   ChevronDown,
-  Trophy,
-  Music,
   HelpCircle,
   Flame
 } from "lucide-react";
@@ -125,8 +123,6 @@ export const NavBar = ({
                 if (tab.id === "phim-le") return Film;
                 if (tab.id === "hoat-hinh") return Cat;
                 if (tab.id === "swipe") return Flame;
-                if (tab.id === "football") return Trophy;
-                if (tab.id === "music") return Music;
                 if (tab.id === "discover") return LayoutGrid;
                 return Heart;
               })();
