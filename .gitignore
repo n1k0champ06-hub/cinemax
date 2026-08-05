@@ -7,6 +7,10 @@ coverage/
 .env*
 !.env.example
 
+# Cloudflare Worker config — contains real API keys, never commit
+wrangler.json
+!wrangler.example.json
+
 .vercel
 scratch/
 .agent/
