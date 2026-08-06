@@ -13,14 +13,24 @@ import { useTmdbDiscover, useTmdbBulkDetails } from "../../hooks/useTmdb";
 import { fetchAnimeSfw } from "../../api/tmdbApi";
 
 // Genre map từ row type sang fetchAnimeSfw genre param
+// Không có 'hoat-hinh-nhat' → dùng TMDB discover với date filter 2025 (anime mới)
 const ANIME_SFW_GENRE_MAP: Record<string, 'action' | 'fantasy' | 'romance' | 'comedy' | 'kids' | ''> = {
+  'anime-popular': '',
   'anime-action':  'action',
   'anime-fantasy': 'fantasy',
   'anime-romance': 'romance',
   'anime-comedy':  'comedy',
   'anime-kids':    'kids',
-  'anime-popular': '',
-  'hoat-hinh-nhat': '',
+};
+
+// Page offset để tránh duplicate content giữa các rows cùng genre
+const ANIME_SFW_PAGE: Record<string, number> = {
+  'anime-popular': 1,
+  'anime-action':  1,
+  'anime-fantasy': 1,
+  'anime-romance': 1,
+  'anime-comedy':  1,
+  'anime-kids':    1,
 };
 
 /**
@@ -35,11 +45,12 @@ function useAnimeSfwRows(
   enabled: boolean
 ) {
   const sfwGenre = ANIME_SFW_GENRE_MAP[type];
+  const sfwPage  = ANIME_SFW_PAGE[type] ?? 1;
 
   // Primary: MongoDB SFW catalog
   const { data: sfwData, isLoading: sfwLoading } = useQuery({
-    queryKey: ['anime-sfw', type, sfwGenre],
-    queryFn: () => fetchAnimeSfw({ genre: sfwGenre }),
+    queryKey: ['anime-sfw', type, sfwGenre, sfwPage],
+    queryFn: () => fetchAnimeSfw({ genre: sfwGenre, page: sfwPage }),
     enabled,
     staleTime: 60 * 60 * 1000,
     retry: 1,
