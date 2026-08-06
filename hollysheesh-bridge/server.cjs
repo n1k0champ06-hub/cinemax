@@ -409,7 +409,7 @@ async function handleAnimeSfw(req, res, searchParams) {
     const [rawResults, total] = await Promise.all([
       db.collection('anime_sfw')
         .find(filter)
-        .sort({ popularity: 1 }) // MAL popularity: số nhỏ hơn = phổ biến hơn
+        .sort({ score: -1, popularity: 1 }) // score cao tr\u01b0\u1edbc, c\u00f9ng score th\u00ec MAL popularity
         .skip(skip)
         .limit(limit)
         .project({ _id: 0, mal_id: 1, tmdb_id: 1, tmdb_type: 1, title: 1, title_ja: 1, type: 1, genres: 1, score: 1, year: 1, rating: 1 })

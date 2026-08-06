@@ -13,9 +13,9 @@ import { useTmdbDiscover, useTmdbBulkDetails } from "../../hooks/useTmdb";
 import { fetchAnimeSfw } from "../../api/tmdbApi";
 
 // Genre map từ row type sang fetchAnimeSfw genre param
-// Không có 'hoat-hinh-nhat' → dùng TMDB discover với date filter 2025 (anime mới)
-const ANIME_SFW_GENRE_MAP: Record<string, 'action' | 'fantasy' | 'romance' | 'comedy' | 'kids' | ''> = {
-  'anime-popular': '',
+// Chỉ giữ genre rows trong map — 'anime-popular' dùng TMDB discover (recent, recency-biased)
+// 'hoat-hinh-nhat' cũng dùng TMDB với date filter 2025
+const ANIME_SFW_GENRE_MAP: Record<string, 'action' | 'fantasy' | 'romance' | 'comedy' | 'kids'> = {
   'anime-action':  'action',
   'anime-fantasy': 'fantasy',
   'anime-romance': 'romance',
@@ -23,9 +23,8 @@ const ANIME_SFW_GENRE_MAP: Record<string, 'action' | 'fantasy' | 'romance' | 'co
   'anime-kids':    'kids',
 };
 
-// Page offset để tránh duplicate content giữa các rows cùng genre
+// Page offset (dành cho tương lai khi có đủ data phân trang)
 const ANIME_SFW_PAGE: Record<string, number> = {
-  'anime-popular': 1,
   'anime-action':  1,
   'anime-fantasy': 1,
   'anime-romance': 1,
@@ -322,12 +321,11 @@ export const MovieRow = ({
   const minVotesMovie = isAnime ? 5 : (isAsian ? 5 : 20);
   const minVotesTv = isAnime ? 5 : (isAsian ? 5 : 10);
 
-  // Dynamic date floor for Anime to prioritize new & popular releases
+  // Dynamic date floor — 2024+ cho anime gần đây, 2025+ cho anime mới nhất
   const getAnimeDateFloor = (rowType: string) => {
-    if (rowType === 'hoat-hinh-nhat') return '2025-01-01'; // New anime (from 2025-2026)
-    if (rowType === 'anime-popular') return '2022-01-01'; // Popular anime (from 2022-2026)
-    if (rowType === 'anime-kids') return '2010-01-01';    // Kids anime (can go back further for classics)
-    return '2022-01-01';                                 // Default for genre rows (Action, Fantasy, Romance, Comedy)
+    if (rowType === 'hoat-hinh-nhat') return '2025-01-01'; // Anime mới 2025-2026
+    if (rowType === 'anime-kids')    return '2015-01-01';  // Kids anime có thể là bộ cũ kinh điển
+    return '2024-01-01';                                  // Popular + genre rows: 2 năm gần nhất
   };
   const animeDateFloor = isAnime ? getAnimeDateFloor(type) : '2024-01-01';
 
