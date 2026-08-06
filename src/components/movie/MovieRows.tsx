@@ -25,60 +25,65 @@ const ANIME_SFW_GENRE_MAP: Record<string, 'action' | 'fantasy' | 'romance' | 'co
 
 /**
  * Hook: Lấy SFW anime từ MongoDB catalog trước, fallback về TMDB discover nếu DB chưa có dữ liệu.
- * Kết quả trả về đã có TMDB ID → dùng TMDB images.
+ * Chỉ áp dụng cho anime rows (type in ANIME_SFW_GENRE_MAP).
+ * Non-anime rows: không dùng hook này, dùng thẳng useTmdbDiscover với showMovie/showTv.
  */
-function useAnimeSfwOrDiscover(
+function useAnimeSfwRows(
   type: string,
   tmdbMovieParams: any,
   tmdbTvParams: any,
   enabled: boolean
 ) {
   const sfwGenre = ANIME_SFW_GENRE_MAP[type];
-  const isAnimeRow = type in ANIME_SFW_GENRE_MAP;
 
   // Primary: MongoDB SFW catalog
   const { data: sfwData, isLoading: sfwLoading } = useQuery({
     queryKey: ['anime-sfw', type, sfwGenre],
     queryFn: () => fetchAnimeSfw({ genre: sfwGenre }),
-    enabled: enabled && isAnimeRow,
-    staleTime: 60 * 60 * 1000, // 1h — MongoDB data được sync mỗi 24h
+    enabled,
+    staleTime: 60 * 60 * 1000,
     retry: 1,
   });
 
-  // Fallback: TMDB discover (khi MongoDB chưa có data)
-  const sfwEmpty = !sfwLoading && (!sfwData?.results?.length);
+  // Fallback: TMDB discover khi MongoDB chưa có data hoặc API lỗi
+  const sfwHasData = !sfwLoading && (sfwData?.results?.length ?? 0) > 0;
   const { data: movieData, isLoading: movieLoading } = useTmdbDiscover(
     'movie', tmdbMovieParams,
-    { enabled: enabled && (!isAnimeRow || sfwEmpty) }
+    { enabled: enabled && !sfwHasData }
   );
   const { data: tvData, isLoading: tvLoading } = useTmdbDiscover(
     'tv', tmdbTvParams,
-    { enabled: enabled && (!isAnimeRow || sfwEmpty) }
+    { enabled: enabled && !sfwHasData }
   );
 
-  if (isAnimeRow && !sfwEmpty && sfwData?.results?.length) {
-    // Transform SFW catalog items sang format MovieRow cần
+  if (sfwHasData && sfwData?.results?.length) {
+    // Transform SFW items: tmdb_id + tmdb_type để xây dựng URL image trực tiếp
     const results = sfwData.results
       .filter(item => item.tmdb_id)
-      .map(item => ({
-        id:           Number(item.tmdb_id),
-        _mediaType:   (item.type === 'Movie' ? 'movie' : 'tv') as 'movie' | 'tv',
-        name:         item.title || item.title_ja,
-        title:        item.title || item.title_ja,
-        poster_path:  null, // sẽ được resolve qua useTmdbBulkDetails bên dưới
-        backdrop_path: null,
-        popularity:   item.score,
-        _tmdbId:      item.tmdb_id,
-      }));
+      .map(item => {
+        const mediaType = item.type === 'Movie' ? 'movie' : 'tv';
+        return {
+          id:            Number(item.tmdb_id),
+          _mediaType:    mediaType as 'movie' | 'tv',
+          name:          item.title || item.title_ja,
+          title:         item.title || item.title_ja,
+          // Placeholder path — MovieCard sẽ gọi TMDB bulk details để resolve
+          poster_path:   `__sfw_${item.tmdb_id}_${mediaType}`,
+          backdrop_path: null,
+          popularity:    item.score || 0,
+          vote_average:  item.score || 0,
+          _isSfw:        true,
+        };
+      });
     return { results, isLoading: sfwLoading };
   }
 
-  // TMDB discover fallback
+  // TMDB fallback
   const movieResults = movieData?.results?.map((m: any) => ({ ...m, _mediaType: 'movie' as const })) || [];
   const tvResults    = tvData?.results?.map((m: any) => ({ ...m, _mediaType: 'tv' as const })) || [];
   return {
-    results: [...movieResults, ...tvResults],
-    isLoading: movieLoading || tvLoading,
+    results:   [...movieResults, ...tvResults],
+    isLoading: sfwLoading || movieLoading || tvLoading,
   };
 }
 
@@ -386,11 +391,23 @@ export const MovieRow = ({
     tvParams.with_origin_country = 'CN|HK|TW';
   }
 
-  // Primary: MongoDB SFW catalog (anime rows) | Fallback: TMDB discover (non-anime or empty DB)
-  const { results: combinedRaw, isLoading } = useAnimeSfwOrDiscover(
-    type, movieParams, tvParams, shouldFetch
+  // Anime rows: dùng MongoDB SFW catalog (primary) + TMDB discover (fallback)
+  // Non-anime rows: dùng TMDB discover trực tiếp với showMovie/showTv flags
+  const isAnimeRow = type in ANIME_SFW_GENRE_MAP;
+
+  const { results: sfwResults, isLoading: sfwRowLoading } = useAnimeSfwRows(
+    type, movieParams, tvParams, shouldFetch && isAnimeRow
   );
+
+  const { data: movieData, isLoading: movieLoading } = useTmdbDiscover(
+    'movie', movieParams, { enabled: shouldFetch && showMovie && !isAnimeRow }
+  );
+  const { data: tvData, isLoading: tvLoading } = useTmdbDiscover(
+    'tv', tvParams, { enabled: shouldFetch && showTv && !isAnimeRow }
+  );
+
   const { progressStore } = useWatchProgress();
+
 
 
   if (!hasIntersected) {
@@ -410,34 +427,75 @@ export const MovieRow = ({
     );
   }
 
-  const isLoading_ = isLoading;
-  const showLoading = isLoading_;
+  const isLoading = isAnimeRow
+    ? sfwRowLoading
+    : (showMovie && movieLoading) || (showTv && tvLoading);
+  const showLoading = isLoading;
 
-  const sortedResults = combinedRaw.sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0));
+  // Build combinedRaw theo đúng nguồn
+  let combinedRaw: any[];
+  if (isAnimeRow) {
+    combinedRaw = sfwResults;
+  } else {
+    const movieResults = showMovie && movieData?.results ? movieData.results : [];
+    const tvResults    = showTv && tvData?.results ? tvData.results : [];
+    combinedRaw = [
+      ...movieResults.map((m: any) => ({ ...m, _mediaType: 'movie' as const })),
+      ...tvResults.map((m: any) => ({ ...m, _mediaType: 'tv' as const })),
+    ];
+  }
+
+  const sortedResults = [...combinedRaw].sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0));
+
 
 
   const seenTmdbIds = new Set();
   const moviesToDisplay = sortedResults
-    .filter((m: any) => m.poster_path || m.backdrop_path)
+    // SFW items: poster_path là placeholder __sfw_*, luôn pass qua
+    // TMDB items: cần có poster_path hoặc backdrop_path thực
+    .filter((m: any) => m._isSfw || m.poster_path || m.backdrop_path)
     .filter((item: any) => {
+
       if (!item.id || seenTmdbIds.has(item.id)) return false;
       seenTmdbIds.add(item.id);
       return true;
     })
     .map((item: any) => {
       const actualMediaType = item._mediaType;
+
+      // SFW items: poster_path là placeholder '__sfw_{id}_{type}'
+      // thumb_url/poster_url sẽ được resolve qua useTmdbBulkDetails trong CustomMovieRowContainer
+      const isSfw = item._isSfw;
+      const tmdbPosterBase = 'https://image.tmdb.org/t/p/w500';
+      const tmdbBackdropBase = 'https://image.tmdb.org/t/p/w780';
+
+      let thumb_url: string;
+      let poster_url: string | null;
+
+      if (isSfw) {
+        // Ảnh sẽ được resolve bởi useTmdbBulkDetails qua enDetails trong CustomMovieRowContainer
+        thumb_url  = '';
+        poster_url = null;
+
+      } else {
+        thumb_url = item.backdrop_path
+          ? (item.backdrop_path.startsWith('http') ? item.backdrop_path : `${tmdbBackdropBase}/${item.backdrop_path.split('/').pop()}`)
+          : (item.poster_path?.startsWith('http') ? item.poster_path : `${tmdbPosterBase}/${item.poster_path?.split('/').pop()}`);
+        poster_url = item.poster_path
+          ? (item.poster_path.startsWith('http') ? item.poster_path : `${tmdbPosterBase}/${item.poster_path.split('/').pop()}`)
+          : null;
+      }
+
       return {
-        slug: `tmdb-${item.id}-${actualMediaType}`,
-        name: item.title || item.name,
-        thumb_url: item.backdrop_path 
-          ? (item.backdrop_path?.startsWith('http') ? item.backdrop_path : `https://image.tmdb.org/t/p/w780/${item.backdrop_path?.split('/').pop()}`) 
-          : (item.poster_path?.startsWith('http') ? item.poster_path : `https://image.tmdb.org/t/p/w500/${item.poster_path?.split('/').pop()}`),
-        poster_url: item.poster_path 
-          ? (item.poster_path?.startsWith('http') ? item.poster_path : `https://image.tmdb.org/t/p/w500/${item.poster_path?.split('/').pop()}`) 
-          : null,
-        tmdb: item
+        slug:      `tmdb-${item.id}-${actualMediaType}`,
+        name:      item.title || item.name,
+        thumb_url,
+        poster_url,
+        tmdb:      item,
+        _isSfw:    isSfw,
       };
     });
+
 
   if (!showLoading && moviesToDisplay.length === 0) return null;
 

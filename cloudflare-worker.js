@@ -9,6 +9,11 @@
 
 import crypto from 'node:crypto';
 import { unzipSync } from 'fflate';
+import {
+  CONVERT_PREFIX_PATTERN,
+  isKnownAdSegmentUri,
+  normalizeConvertedHlsSegmentUri,
+} from './src/lib/hlsAdFilter.js';
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -2663,70 +2668,11 @@ async function fetchStremioSubtitles(addonUrl, type, imdbId, season, episode, la
 // Extended with ad CDN hostname blocklist for OPhim/KKPhim gambling ads
 // ---------------------------------------------------------------------------
 
-const REMOVE_URI_PATTERNS = [
-  // KKPhim / OPhim convertv ad segment pattern
-  /convertv\d*/i,
-  // Original: opstream/ophim convertv pattern
-  /\/v\d+\/[a-f0-9]{16,}\/segment_\d+\.ts(?:[?#].*)?$/i,
-  // Ad segment with random hex token in path
-  /\/[a-f0-9]{32,}\/[^/]+\.ts(?:[?#].*)?$/i,
-  // Segments from paths with "ads", "advert", "commercial" keywords
-  /\/(?:ads?|advert|commercial|sponsor|promo)[_\-/][^/]*\.ts(?:[?#].*)?$/i,
-  // Gambling & betting ads (e.g. 9922, kubet, shbet, okvip, 789bet)
-  /(?:9922|nhacai|cacuoc|kubet|shbet|okvip|789bet|new88|hi88|jun88|f8bet|bk8|w88|fun88|fb88|v9bet|ae888|mb66)/i,
-  // Segments from paths matching typical gambling ad CDN structure
-  /\/(?:quangcao|qc|banner)[_\-/][^/]*\.ts(?:[?#].*)?$/i,
-];
-
-// Ad CDN hostnames — segments served from these hosts are always ads
-// These are domains known to inject gambling/betting ads into OPhim/KKPhim streams
-const AD_CDN_HOSTNAMES = new Set([
-  // Known ad injection CDNs for VN streaming
-  '9922.com',
-  'cdn-ads.vip',
-  'ads.opstream.vip',
-  'adstream.vip',
-  'cdn-ad.net',
-  'staticads.net',
-  'adcdn.net',
-  'stream-ads.net',
-  'quangcao.net',
-  'adserver.vn',
-  'ads.vn',
-  // Generic ad networks often injected
-  'doubleclick.net',
-  'googlesyndication.com',
-  'adnxs.com',
-  'adsrvr.org',
-  'smartadserver.com',
-  'rubiconproject.com',
-  'openx.net',
-  'pubmatic.com',
-  'casalemedia.com',
-  'criteo.com',
-  'aniview.com',
-  'springserve.com',
-  'yieldmo.com',
-]);
-
-const CONVERT_PREFIX_PATTERN = /(^|\/)convertv\d+\//i;
 const URI_LINE_PATTERN = /^[^#\s][^\s]*\.(?:ts|aac|m4s|fmp4)(?:[?#].*)?$/i;
 const TAGS_TO_DROP_WITH_AD = new Set([
   "#EXT-X-DISCONTINUITY",
   "#EXT-X-KEY"
 ]);
-
-/**
- * Extracts hostname from a URL string, returns null if not a full URL.
- */
-function extractHostname(urlStr) {
-  try {
-    if (urlStr.startsWith('http://') || urlStr.startsWith('https://')) {
-      return new URL(urlStr).hostname.toLowerCase();
-    }
-  } catch (_) {}
-  return null;
-}
 
 function isPlaylist(text) {
   return typeof text === "string" && text.includes("#EXTM3U") && text.includes("#EXTINF");
@@ -2736,26 +2682,7 @@ function isPlaylist(text) {
  * Returns true if the segment URI is from a known ad CDN or matches an ad URI pattern.
  */
 function isAdUri(line) {
-  const value = line.trim();
-  if (CONVERT_PREFIX_PATTERN.test(value)) {
-    return true;
-  }
-  // Check URI patterns
-  if (REMOVE_URI_PATTERNS.some((pattern) => pattern.test(value))) return true;
-  // Check hostname blocklist
-  const hostname = extractHostname(value);
-  if (hostname && AD_CDN_HOSTNAMES.has(hostname)) return true;
-  // Check if hostname ends with any blocked domain (subdomain matching)
-  if (hostname) {
-    for (const blocked of AD_CDN_HOSTNAMES) {
-      if (hostname === blocked || hostname.endsWith('.' + blocked)) return true;
-    }
-  }
-  return false;
-}
-
-function normalizeSegmentUri(line) {
-  return line.replace(CONVERT_PREFIX_PATTERN, "$1");
+  return isKnownAdSegmentUri(line.trim());
 }
 
 function isSegmentUri(line) {
@@ -2764,16 +2691,6 @@ function isSegmentUri(line) {
 
 function isExtinf(line) {
   return line.trim().toUpperCase().startsWith("#EXTINF:");
-}
-
-/**
- * Returns the duration in seconds from an EXTINF line, or null if not parseable.
- * e.g. "#EXTINF:5.005," → 5.005
- */
-function getExtinfDuration(line) {
-  const match = line.trim().match(/^#EXTINF:([\d.]+)/i);
-  if (!match) return null;
-  return parseFloat(match[1]);
 }
 
 function isDropTag(line) {
@@ -2786,7 +2703,7 @@ function isDropTag(line) {
   return false;
 }
 
-function filterPlaylistAds(text, url = '') {
+export function filterPlaylistAds(text, url = '') {
   if (!isPlaylist(text)) {
     return { text, removed: 0 };
   }
@@ -2796,7 +2713,7 @@ function filterPlaylistAds(text, url = '') {
   const lines = text.split(/\r?\n/).map((line) => {
     if (isSegmentUri(line) && CONVERT_PREFIX_PATTERN.test(line.trim())) {
       normalized = true;
-      return normalizeSegmentUri(line);
+      return normalizeConvertedHlsSegmentUri(line);
     }
     return line;
   });
@@ -2820,7 +2737,7 @@ function filterPlaylistAds(text, url = '') {
 
   // --- Pass 1: URI pattern / hostname blocklist detection ---
   for (const block of blocks) {
-    if (isAdUri(block.uri, isKKPhim)) {
+    if (isAdUri(block.uri)) {
       let start = block.uriIndex;
       for (let index = block.uriIndex - 1; index >= block.start; index -= 1) {
         const line = lines[index];
@@ -2831,95 +2748,6 @@ function filterPlaylistAds(text, url = '') {
         break;
       }
       removalRanges.push({ start, end: block.end });
-    }
-  }
-
-  // --- Pass 2: Foreign-CDN & Discontinuity-bounded region ad detection ---
-  if (blocks.length > 1) {
-    // Determine main CDN host from majority of segments
-    const hostCounts = new Map();
-    for (const block of blocks) {
-      const h = extractHostname(block.uri);
-      if (h) hostCounts.set(h, (hostCounts.get(h) || 0) + 1);
-    }
-    let mainHost = null;
-    let maxCount = 0;
-    for (const [h, count] of hostCounts) {
-      if (count > maxCount) { mainHost = h; maxCount = count; }
-    }
-
-    // Group blocks into regions separated by DISCONTINUITY tags
-    const regions = [];
-    let currentRegionBlocks = [];
-    let regionStartLine = 0;
-    let hasDiscBefore = false;
-
-    for (let bi = 0; bi < blocks.length; bi++) {
-      const b = blocks[bi];
-      let discBeforeThisBlock = false;
-      for (let i = b.start; i < b.uriIndex; i++) {
-        if (lines[i].trim().toUpperCase() === "#EXT-X-DISCONTINUITY") {
-          discBeforeThisBlock = true;
-          break;
-        }
-      }
-
-      if (discBeforeThisBlock && currentRegionBlocks.length > 0) {
-        const prevBlock = currentRegionBlocks[currentRegionBlocks.length - 1];
-        regions.push({
-          blocks: currentRegionBlocks,
-          startLine: regionStartLine,
-          endLine: prevBlock.end,
-          hasDiscBefore,
-          hasDiscAfter: true,
-        });
-        currentRegionBlocks = [];
-        regionStartLine = b.start;
-        hasDiscBefore = true;
-      } else if (bi === 0) {
-        hasDiscBefore = discBeforeThisBlock;
-        regionStartLine = b.start;
-      }
-
-      currentRegionBlocks.push(b);
-    }
-
-    if (currentRegionBlocks.length > 0) {
-      const lastBlock = currentRegionBlocks[currentRegionBlocks.length - 1];
-      regions.push({
-        blocks: currentRegionBlocks,
-        startLine: regionStartLine,
-        endLine: lastBlock.end,
-        hasDiscBefore,
-        hasDiscAfter: false,
-      });
-    }
-
-    // Evaluate regions for ad characteristics
-    for (const region of regions) {
-      if (region.blocks.length === 0) continue;
-      const isAdRegion = region.blocks.some((b) => {
-        const norm = b.uri.toLowerCase();
-        const segHost = extractHostname(b.uri);
-        const isForeignHost = Boolean(mainHost && segHost && segHost !== mainHost);
-        const matchesAdPattern = isAdUri(b.uri);
-        return isForeignHost || matchesAdPattern;
-      });
-
-      if (isAdRegion && (region.hasDiscBefore || region.hasDiscAfter)) {
-        for (const b of region.blocks) {
-          let start = b.uriIndex;
-          for (let index = b.uriIndex - 1; index >= b.start; index -= 1) {
-            const line = lines[index];
-            if (isExtinf(line) || isDropTag(line) || line.trim() === "") {
-              start = index;
-              continue;
-            }
-            break;
-          }
-          removalRanges.push({ start, end: b.end });
-        }
-      }
     }
   }
 
@@ -4705,4 +4533,3 @@ async function callGemini(apiKey, systemPrompt, userPrompt) {
 }
 
 const STATIC_PNG_PIXELS_BASE64 = "9vb2/+Lq7P9xqrv/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP8A//8BPYujwDyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP6CtMT+8vP0/vb29v7z9PX+aaW4/jyMpP48i6T+PIuk/jyMpP48jKT+PIuk/jyMpP48jKT+PIuk/jyMpP48jKT+PIyk/jyLpP48jKT+PIyk/jyLpP48jKT+PIyk/zyLpP48i6T+PIyk/jyMpP48i6T+PIyk/jyMpP48i6T+PIyk/jyMpP48jKT+PIuk/jyMpP48jKT+PIuk/jyMpP48jKT+PIyk/jyLpP48jKT+PIyk/jyLpP48jKT+PIyk/jyLpP48i6T+PIyk/jyMpP48i6T+PIyk/jyMpP48i6T+PIyk/jyMpP48jKT+PIuk/jyMpP48jKT+PIuk/jyMpP48jKT+PIuk/jyLpP6EtcT+8/X1/rzU3P48i6T+PIyk/jyMpP48i6T+PIuk/jyMpP48i6T+PIuk/jyMpP48i6T/PIuk/jyLpP48jKT+PIuk/jyLpP48jKT+PIuk/jyLpP48jKT+PIyk/jyLpP48jKT+PIyk/jyLpP48i6T+PIyk/jyMpP48i6T+PIyk/jyMpP48i6T+PIuk/jyMpP48jKT+PIuk/jyMpP48jKT+PIuk/jyLpP48jKT+PIyk/jyLpP48jKT+PIyk/jyLpP48i6T+PIyk/jyMpP48i6T+PIyk/jyLpP48i6T+PIuk/jyMpP48i6T+PIuk/jyMpP48i6T+PIuk/jyMpP48jKT+PIuk/j+Opf7Z5un+hLXE/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/zyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T/PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/rHO2P53rr7/PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+pMbS/3euvv48jKT+PIyl/jyMpP48jKT+PIyk/jyMpf48jKT+PIyk/jyMpf48jKT+PIyk/jyMpP48jKX+PIyk/jyMpP88jKX+PIyk/jyMpP48jKX+PIyk/jyMpP48jKT+PIyl/jyMpP48jKT+PIyl/jyMpP48jKT+PIyk/jyMpf48jKT+PIyk/jyMpf48jKT+PIyk/jyMpP48jKX+PIyk/jyMpP48jKX+PIyk/jyMpP48jKX+PIyk/jyMpP48jKT+PIyl/jyMpP48jKT+PIyl/jyMpP48jKT+PIyk/jyMpf48jKT+PIyk/jyMpf48jKT+PIyk/jyMpf48jKT+PIyk/jyMpP+jxtL+d66+/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/zyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T+PIuk/jyLpP48i6T/PIuk/qPG0v53rr7+PIuk/jyMpP48i6T+PIuk/jyLpP88jKT+PIuk/jyLpP48jKT+PIuk/jyLpP48i6T+PIyk/zyLpP48i6T/PIuk/zyLpP88i6T/PIyk/zyLpP88i6T/PIyk/zyLpP88i6T/PIuk/zyMpP88i6T/PIuk/zyMpP88i6T/PIuk/zyLpP88jKT/PIuk/zyLpP88jKT/PIuk/zyLpP88i6T/PIyk/zyLpP88i6T/PIyk/zyLpP88i6T/PIuk/zyMpP88i6T/PIuk/zyMpP88i6T/PIuk/zyLpP88jKT/PIuk/zyLpP88jKT/PIuk/zyLpP88jKT/PIuk/zyLpP88jKT/o8bS/3euvv88jKT/PIyk/zyLpP+DtMP/6e/w/+nv8P/p7/D/6e/w/+nv8P/p7/D/6e/w/+nv8P/p7/D/6e/w/+nv8P/p7/D/6e/w/+nv8P/p7/D/6e/w/+nv8P/p7/D/6e/w/+nv8P/p7/D/6e/w/+nv8P/p7/D/6e/w/+nv8P/p7/D/6e/w/+nv8P/p7/D/6e/w/+nv8P/p7/D/6e/w/+nv8P/a5ur/j7vI/0KPp/88jKT/PIuk/zyLpP88jKT/PIyk/zyLpP88jKT/PIyk/zyLpP88jKT/PIyk/zyMpP88i6T/PIyk/zyMpP88i6T/PIyk/zyMpP88i6T/PIuk/zyMpP+jxtL/d62+/zyLpP88jKT/PIyk/4u5x//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/3+ns/4i3xf9Fkaj/PIuk/zyLpP88jKT/PIyk/zyLpP88jKT/PIuk/zyLpP88i6T/PIyk/zyLpP88i6T/PIyk/zyLpP88i6T/PIyk/zyMpP88i6T/PIyk/6PG0v93rr7/PIuk/zyLpP88i6T/i7jH//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//Lz9P/b5+v/2eXp/9nl6f/Z5en/2eXp/9nl6f/Z5en/2eXp/9nl6f/Z5en/2eXp/9nl6f/Z5en/2eXp/9nl6f9hoLT/PIuk/zyLpP88i6T/o8bS/3euvv88jKT/PIyk/zyLpP+Lucf/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/2akt/88i6T/PIuk/zyMpP+jxtL/d62+/zyMpP88jKX/PIyk/4u5x//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/ZqS3/zyMpP88jKT/PIyk/6PG0v93rr7/PIuk/zyLpP88i6T/i7nH//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v9mpLf/PIuk/zyLpP88i6T/o8bS/3euvv88i6T/PIyk/zyLpP+Lucf/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/2akt/88i6T/PIuk/zyMpP+jxtL/d66+/zyMpP88jKT/PIuk/4u5x//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/ZqS3/zyLpP88i6T/PIyk/6PG0v93rb7/PIuk/zyMpP88jKT/i7nH//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v9mpLf/PIyk/zyLpP88jKT/o8bS/3euvv88i6T/PIuk/zyLpP+LuMf/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/2akt/88i6T/PIuk/zyLpP+jxtL/d66+/zyMpP88jKT/PIuk/4u5x//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/ZqS3/zyLpP88i6T/PIyk/6PG0v93rb7/PIuk/zyLpP88i6T/i7nH//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v9mpLf/PIuk/zyLpP88i6T/o8bS/3euvv88i6T/PIuk/zyLpP+Lucf/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/x8/T/4+vu//P19f/29vb/9vb2//b29v/29vb/5u3v/+/y8//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/p7/H/6+/x//b29v/29vb/9vb2//b29v/v8vP/5uzv//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/2akt/88i6T/PIuk/zyLpP+jxtL/d66+/zyLpP88jKT/PIuk/4u5x//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/2Obp/16gs/9Cj6b/Y6G2/93o7P/29vb/9fX1/3+ywv9EkKj/T5at/7vV3P/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/msHN/0mTqv9Ikqn/nMLO//b29v/29vb/0N/l/1WasP9Bj6b/cKm7/+zw8v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/ZqS3/zyLpP88i6T/PIyk/6PG0v93rr7/PIyk/zyMpf88jKT/i7nH//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v+JuMX/PIyl/zyMpP88jKT/WJyx/9Li5v+FtcT/PIyk/zyMpf88jKT/VZqv//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/+/y8/9Aj6b/PIyl/zyMpP88jKT/kr3K/8vd4/9Gkaj/PIyk/zyMpf88jKT/pcjS//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v9mpLf/PIyk/zyMpP88jKT/o8bS/3etvv88i6T/PIuk/zyLpP+Lucf/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/4m3xv88i6T/PIuk/zyLpP88i6T/Q5Cn/zyLpP88i6T/PIuk/zyLpP9Wmq//9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/7fHy/0COpv88i6T/PIuk/zyLpP88jKT/QI2m/zyLpP88i6T/PIuk/zyLpP+kyNP/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/2ajt/88i6T/PIuk/zyLpP+jxtL/d66+/zyLpP88i6T/PIuk/4u4x//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/2ubq/1OZrv88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/Q5Cn/67O1//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/mcHN/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/ZaO2/+Lr7v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/ZqS3/zyLpP88i6T/PIuk/6PG0v93rr7/PIyk/zyMpP88i6T/i7nH//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/1ePn/1War/88jKT/PIyk/zyLpP88i6T/PIyk/0COpf+y0Nj/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/y8/T/lL3L/zyLpP88jKT/PIyk/zyLpP88i6T/PIyk/2GgtP/n7vD/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v9mpLf/PIuk/zyLpP88jKT/o8bS/3etvv88i6T/PIuk/zyLpP+Lucf/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/09fX/cKm7/zyLpP88i6T/PIuk/zyLpP88i6T/Q4+n/+Xs7//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/I3OL/PY2l/zyLpP88i6T/PIuk/zyLpP88i6T/jLrH//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/2akt/88i6T/PIuk/zyLpP+jxtL/d66+/zyLpP88i6T/PIuk/4u5x//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/6/Dy/4W1xP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/Vpuw/93o7P/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/y93j/0aRqP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/lr/M//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/ZqS3/zyLpP88i6T/PIuk/6PG0v93rr7/PIyk/zyMpP88i6T/i7nH//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v+lx9L/PIuk/zyLpP88i6T/PIyk/zyLpP88i6T/PIyk/zyLpP88i6T/c6u8//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//X19f9Tma7/PIyk/zyLpP88jKT/PIyk/zyLpP88i6T/PIyk/zyMpP89jaX/wNfe//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v9mpLf/PIuk/zyLpP88jKT/o8bS/3euvv88jKT/PIyl/zyMpP+Lucf/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/4O1xP88jKX/PIyk/zyMpP9Dj6j/jLnI/1OZrv88jKT/PIyl/zyMpP9Pl63/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/5+7w/zyMpP88jKX/PIyk/zyMpP9ZnLH/fLDA/zyMpP88jKT/PIyl/zyMpP+ew8//9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/2akt/88jKT/PIyk/zyMpP+jxtL/d62+/zyLpP88i6T/PIuk/4u5x//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/tdDZ/0SQp/88i6T/QI2m/67N1v/19vb/0eDl/1GXrf88i6T/PIuk/4Gzwv/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/19vb/aKW4/zyLpP88i6T/YKC0/+ft7//y9PT/jLnI/zyLpP88i6T/RJCo/83e5P/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/ZqO3/zyLpP88i6T/PIuk/6PG0v93rr7/PIuk/zyLpP88i6T/i7nH//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/wNfe/5vCzv/C2N//9fb2//b29v/29vb/3Ofr/6DF0P+xz9f/7vLy//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/j7O3/qcrU/6nK1P/i6u3/9vb2//b29v/y9PT/t9Lb/5vCzv/N3uT/9fb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v9mpLf/PIuk/zyLpP88i6T/o8bS/3euvv88jKT/PIyk/zyLpP+Lucf/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/2akt/88i6T/PIuk/zyMpP+jxtL/d62+/zyLpP88i6T/PIuk/4u5x//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/ZqS3/zyLpP88i6T/PIuk/6PG0v93rr7/PIuk/zyLpP88i6T/i7jH//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v9mpLf/PIuk/zyLpP88i6T/o8bS/3euvv88jKT/PIyk/zyLpP+Lucf/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/1+Xp/97p7P/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/f6ez/1ePo//X19f/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/2akt/88i6T/PIuk/zyMpP+jxtL/d66+/zyMpP88jKX/PIyk/4u5x//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/8vT0/2+puv88jKX/QI6m/4S1xP/Y5en/9vb2//b29v/e6ez/pMfS/2GhtP9Jk6r/aqa4/7LP2P/r7/L/9vb2//Hz9P/J3eL/day9/z2Npf89jKT/irnG//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/ZqS3/zyMpP88jKT/PIyk/6PG0v93rb7/PIuk/zyLpP88i6T/i7nH//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/E2eD/PIuk/zyLpP88i6T/PIuk/0qTq/+EtcP/lr/M/02VrP88i6T/PIuk/zyLpP88i6T/PIuk/1+gtP+exM//eK2//z2Mpf88i6T/PIuk/zyLpP8/jaX/5u3v//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v9mo7f/PIuk/zyLpP88i6T/o8bS/3euvv88i6T/PIuk/zyLpP+Lucf/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/8rd4v88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/0OQp//s8fL/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/2akt/88i6T/PIuk/zyLpP+jxtL/d66+/zyMpP88jKX/PIyk/4u5x//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/4i3xv9Ajqb/PIyk/zyMpP88jKX/PIyk/zyMpP88jKT/PIyl/zyMpP88jKT/PIyl/zyMpP88jKT/PIyk/zyMpf88jKT/PIyk/zyMpf9Hkaj/mcDN//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/ZqS3/zyMpP88jKT/PIyk/6PG0v93rb7/PIuk/zyLpP88i6T/i7nH//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/87g5f92rL7/QI2l/zyLpP88i6T/PIuk/zyLpP88i6T/X6C0/4+7yP9Xm7D/PIuk/zyLpP88i6T/PIuk/zyLpP8/jaX/hrXE/+Hr7f/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v9mo7f/PIuk/zyLpP88i6T/o8bS/3euvv88i6T/PIuk/zyLpP+LuMf/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/U4+f/gbPC/1mdsf9Vmq//b6m7/7fS2//29vb/9vb2//P19f+sy9X/aqW4/1OZrv9dn7P/jrvJ/93n6//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/2akt/88i6T/PIuk/zyLpP+jxtL/d66+/zyMpP88jKT/PIuk/4u5x//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9PX2//T19f/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/8/T1//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/ZqS3/zyLpP88i6T/PIyk/6PG0v93rr7/PIuk/zyMpP88jKT/i7nH//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v9mpLf/PIyk/zyLpP88jKT/o8bS/3euvv88i6T/PIuk/zyLpP+Lucf/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2/2ajt/88i6T/PIuk/zyLpP+jxtL/d66+/zyLpP88i6T/PIuk/4u5x//29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/9vb2//b29v/29vb/ZqS3/zyLpP88i6T/PIuk/6PG0v+BtMP/PIyk/zyMpf88jKT/XZ6y/57Ez/+fxc//n8XP/5/Fz/+fxc//n8XP/5/Fz/+fxc//n8XP/5/Fz/+fxc//n8XP/5/Fz/+fxc//n8XP/5/Fz/+fxc//n8XP/5/Fz/+fxc//n8XP/5/Fz/+fxc//n8XP/5/Fz/+fxc//n8XP/5/Fz/+fxc//n8XP/5/Fz/+fxc//n8XP/5/Fz/+fxc//n8XP/5/Fz/+fxc//n8XP/5/Fz/+fxc//n8XP/5/Fz/+fxc//n8XP/5/Fz/+fxc//n8XP/5/Fz/+fxc//n8XP/5/Fz/+fxc//n8XP/5zCz/9FkKj/PIyk/zyMpP88jKT/qcrU/7DO1/88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP/L3eP/6u/w/1SZr/88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/PIuk/zyLpP88i6T/a6e5//Hz9P/29vb/y93j/1WasP88i6T/PIuk/zyMpP88jKT/PIuk/zyMpP88jKT/PIuk/zyLpP88jKT/PIyk/zyLpP88jKT/PIuk/zyLpP88i6T/PIyk/zyLpP88i6T/PIyk/zyLpP88i6T/PIuk/zyMpP88i6T/PIyk/zyMpP88i6T/PIuk/zyMpP88jKT/PIuk/zyMpP88jKT/PIuk/zyLpP88jKT/PIyk/zyLpP88jKT/PIyk/zyLpP88i6T/PIyk/zyMpP88i6T/PIyk/zyMpP88i6T/PIuk/zyMpP88jKT/PIuk/zyMpP88jKT/PIuk/zyLpP88jKT/PIuk/1yds//e6Oz/9vb2/w==";
-

@@ -398,27 +398,57 @@ async function handleAnimeSfw(req, res, searchParams) {
       filter.type = typeParam;
     }
 
-    const [results, total] = await Promise.all([
+    // Safety: entries chưa verify qua Jikan (rating='unknown') chỉ hiển thị nếu là TV
+    // OVA/Special không có Jikan rating có thể là hentai → exclude
+    filter.$or = [
+      { rating: { $nin: ['unknown', null] } },   // Có Jikan rating → luôn an toàn
+      { type: 'TV' },                             // TV không có rating → chấp nhận (mainstream)
+    ];
+
+
+    const [rawResults, total] = await Promise.all([
       db.collection('anime_sfw')
         .find(filter)
         .sort({ popularity: 1 }) // MAL popularity: số nhỏ hơn = phổ biến hơn
         .skip(skip)
         .limit(limit)
-        .project({ _id: 0, mal_id: 1, tmdb_id: 1, title: 1, title_ja: 1, type: 1, genres: 1, score: 1, year: 1 })
+        .project({ _id: 0, mal_id: 1, tmdb_id: 1, tmdb_type: 1, title: 1, title_ja: 1, type: 1, genres: 1, score: 1, year: 1, rating: 1 })
         .toArray(),
       db.collection('anime_sfw').countDocuments(filter),
     ]);
+
+    // Secondary safety: TMDB adult flag check (chạy parallel cho 20 items)
+    // Chỉ check items có rating='unknown' để tránh overhead
+    const TMDB_TOKEN = process.env.TMDB_ACCESS_TOKEN || '';
+    const results = await Promise.all(rawResults.map(async item => {
+      if (item.rating && item.rating !== 'unknown') return item; // Jikan đã verify → tin tưởng
+      if (!item.tmdb_id || !TMDB_TOKEN) return item;            // Không có token → pass through
+
+      try {
+        const mediaType = item.tmdb_type || (item.type === 'Movie' ? 'movie' : 'tv');
+        const tmdbRes = await fetch(
+          `https://api.themoviedb.org/3/${mediaType}/${item.tmdb_id}?language=en`,
+          { headers: { Authorization: `Bearer ${TMDB_TOKEN}` }, signal: AbortSignal.timeout(3000) }
+        );
+        if (!tmdbRes.ok) return item;
+        const tmdbData = await tmdbRes.json();
+        if (tmdbData.adult === true) return null; // TMDB flagged as adult → exclude
+      } catch (_) {}
+
+      return item;
+    }));
 
     return json(res, {
       ok: true,
       page,
       total,
-      has_next_page: skip + results.length < total,
-      results,
+      has_next_page: skip + rawResults.length < total,
+      results: results.filter(Boolean).map(r => { delete r.rating; return r; }), // strip internal rating field
     });
   } catch (err) {
     console.error('[Bridge] anime-sfw query error:', err.message);
     return json(res, { ok: false, error: err.message, results: [] }, 500);
+
   }
 }
 
