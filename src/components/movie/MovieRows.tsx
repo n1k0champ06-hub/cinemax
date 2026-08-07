@@ -367,6 +367,12 @@ export const MovieRow = ({
     movieParams.with_origin_country = 'CN|HK|TW';
   }
 
+  // Non-anime, non-hoạt-hình rows: exclude Animation genre (16) để loại toàn bộ anime/hentai
+  // Đã có tab Anime riêng, không cần anime xuất hiện trong Phim Bộ/Phim Lẻ
+  if (!isAnime && type !== 'hoat-hinh') {
+    movieParams.without_genres = [movieParams.without_genres, '16'].filter(Boolean).join(',');
+  }
+
   // TV parameters setup
   const tvParams: any = {
     sort_by: type === 'phim-moi-cap-nhat' ? 'first_air_date.desc' : 'popularity.desc',
@@ -404,6 +410,11 @@ export const MovieRow = ({
     tvParams.with_origin_country = COUNTRY_MAP[type];
   } else if (isCổTrang) {
     tvParams.with_origin_country = 'CN|HK|TW';
+  }
+
+  // Non-anime, non-hoạt-hình rows: exclude Animation genre (16)
+  if (!isAnime && type !== 'hoat-hinh') {
+    tvParams.without_genres = [tvParams.without_genres, '16'].filter(Boolean).join(',');
   }
 
   // Anime rows: dùng MongoDB SFW catalog (primary) + TMDB discover (fallback)
