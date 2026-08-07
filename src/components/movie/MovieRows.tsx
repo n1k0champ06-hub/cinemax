@@ -332,15 +332,18 @@ export const MovieRow = ({
   const movieParams: any = {
     sort_by: type === 'phim-moi-cap-nhat' ? 'primary_release_date.desc' : 'popularity.desc',
     'vote_count.gte': type === 'phim-moi-cap-nhat' ? 0 : minVotesMovie,
-    'primary_release_date.gte': isAnime ? animeDateFloor : '2024-01-01', // Fetch only movies from specified floor onwards
+    'primary_release_date.gte': isAnime ? animeDateFloor : '2024-01-01',
     page: 1,
+    include_adult: false,
+    // Block hentai/softcore keywords globally — không chỉ cho anime rows
+    without_keywords: '190370,198385,155477,256466,325693',
   };
   const movieGenre = GENRE_MAP_MOVIE[type];
   if (movieGenre) movieParams.with_genres = movieGenre;
   
   if (isAnime) {
     movieParams.with_original_language = 'ja';
-    movieParams.without_keywords = '190370,198385,155477,256466,325693'; // hentai/softcore/erotic keyword IDs trên TMDB
+    // without_keywords đã được set trong base params
     if (type === 'anime-action') {
       movieParams.with_genres = '16,28';
       movieParams.without_genres = '10751,10762'; // Exclude Family, Kids to prevent family anime from bloating action rows
@@ -368,15 +371,18 @@ export const MovieRow = ({
   const tvParams: any = {
     sort_by: type === 'phim-moi-cap-nhat' ? 'first_air_date.desc' : 'popularity.desc',
     'vote_count.gte': type === 'phim-moi-cap-nhat' ? 0 : minVotesTv,
-    'first_air_date.gte': isAnime ? animeDateFloor : '2024-01-01', // Fetch only series from specified floor onwards
+    'first_air_date.gte': isAnime ? animeDateFloor : '2024-01-01',
     page: 1,
+    include_adult: false,
+    // Block hentai/softcore keywords globally — không chỉ cho anime rows
+    without_keywords: '190370,198385,155477,256466,325693',
   };
   const tvGenre = GENRE_MAP_TV[type];
   if (tvGenre) tvParams.with_genres = tvGenre;
 
   if (isAnime) {
     tvParams.with_original_language = 'ja';
-    tvParams.without_keywords = '190370,198385,155477,256466,325693'; // hentai/softcore/erotic keyword IDs trên TMDB
+    // without_keywords đã được set trong base params, anime chỉ cần thêm language filter
     if (type === 'anime-action') {
       tvParams.with_genres = '16,10759';
       tvParams.without_genres = '10751,10762'; // Exclude Family, Kids to prevent family anime from bloating action rows
